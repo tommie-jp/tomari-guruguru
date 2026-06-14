@@ -36,7 +36,10 @@ const MAIN_BLENDSHAPES = [
   { key: 'eyeBlinkRight', label: 'まばたき右' },
   { key: 'eyeWideLeft', label: '目見開き左' },
   { key: 'eyeWideRight', label: '目見開き右' },
-  { key: 'cheekPuff', label: '頬ふくらみ' },
+  // cheekPuff(頬ふくらみ)は MediaPipe モデルがほぼ反応しないため、確実に動く
+  // cheekSquint(笑う/目を細めると頬が上がる)に差し替え。
+  { key: 'cheekSquintLeft', label: '頬上げ左' },
+  { key: 'cheekSquintRight', label: '頬上げ右' },
 ];
 
 const { rows: ROWS, cols: COLS } = charConfig;
