@@ -13,14 +13,27 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "invertX": false,
   "invertY": false,
   "preview": true,
+  "mouthGain": 1.3,
+  "thHalf": 0.12,
+  "thFull": 0.35,
+  "release": 0.25,
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "showDebug": false
 }/*EDITMODE-END*/;
 
 const { rows: ROWS, cols: COLS } = charConfig;
-const SRC = (r, c) => charConfig.src(charConfig.sheets.eyesOpen.close, r, c);
-const BLINK_SRC = (r, c) => charConfig.src(charConfig.sheets.eyesClosed.close, r, c);
+// シート: 目開け×口[とじ/中間/開け] = A/B/C, 目閉じ×口[とじ/中間/開け] = D/E/F
+const SHEETS = [
+  charConfig.sheets.eyesOpen.close,   // A
+  charConfig.sheets.eyesOpen.half,    // B
+  charConfig.sheets.eyesOpen.open,    // C
+  charConfig.sheets.eyesClosed.close, // D
+  charConfig.sheets.eyesClosed.half,  // E
+  charConfig.sheets.eyesClosed.open,  // F
+];
+const sheetFor = (eyesClosed, mouth) => SHEETS[(eyesClosed ? 3 : 0) + mouth];
+const SRC = (s, r, c) => charConfig.src(s, r, c);
 
 const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
 
@@ -36,10 +49,12 @@ function App() {
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
   const [blink, setBlink] = useState(false);
+  const [mouth, setMouth] = useState(0);    // 0:とじ 1:中間 2:開け
   const stageRef = useRef(null);
   const charRef = useRef(null);
   const target = useRef({ x: 0, y: 0 });   // -1..1（顔向きが書き込む）
   const current = useRef({ x: 0, y: 0 });
+  const mouthEnv = useRef(0);               // 口の開きの平滑化エンベロープ
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
 
@@ -52,7 +67,7 @@ function App() {
     invertX: t.invertX,
     invertY: t.invertY,
   };
-  const { videoRef, poseRef, status } = useFacePose(target, { enabled: true, poseOptions });
+  const { videoRef, poseRef, mouthRef, status } = useFacePose(target, { enabled: true, poseOptions });
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -65,19 +80,31 @@ function App() {
     setTweak('biasPitchDeg', 0);
   }
 
-  // 平滑化してグリッドに変換（マウス版と同一ロジック）
+  // メインループ: 顔向き→グリッド + 口の開き→口パク段階
   useEffect(() => {
     let raf;
     let last = { r: 2, c: 2 };
-    function tick() {
-      const k = tweaksRef.current.smoothing;
-      current.current.x += (target.current.x - current.current.x) * k;
-      current.current.y += (target.current.y - current.current.y) * k;
+    let lastMouth = 0;
+    let lastSwitch = 0;
+    function tick(now) {
+      const tw = tweaksRef.current;
+      // 向き（マウス版と同一ロジック）
+      current.current.x += (target.current.x - current.current.x) * tw.smoothing;
+      current.current.y += (target.current.y - current.current.y) * tw.smoothing;
       const c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
       const r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
       if (r !== last.r || c !== last.c) {
         last = { r, c };
         setCell(last);
+      }
+      // 口パク: jawOpen(0..1) を envelope（開きは速く・閉じは release で）→ しきい値で3段階に
+      const raw = mouthRef.current * tw.mouthGain;
+      if (raw > mouthEnv.current) mouthEnv.current += (raw - mouthEnv.current) * 0.6;
+      else mouthEnv.current += (raw - mouthEnv.current) * tw.release;
+      const lv = mouthEnv.current;
+      const m = lv >= tw.thFull ? 2 : lv >= tw.thHalf ? 1 : 0;
+      if (m !== lastMouth && now - lastSwitch > 60) {
+        lastMouth = m; lastSwitch = now; setMouth(m);
       }
       raf = requestAnimationFrame(tick);
     }
@@ -127,6 +154,13 @@ function App() {
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ r, c });
     return arr;
   }, []);
+  // 6シート×25セル分の全フレーム（表示は active のみ）
+  const allFrames = useMemo(() => {
+    const arr = [];
+    for (const s of SHEETS) for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ s, r, c });
+    return arr;
+  }, []);
+  const activeSheet = sheetFor(blink, mouth);
 
   const dark = t.bgColor === '#2B2926';
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
@@ -181,30 +215,19 @@ function App() {
           userSelect: 'none', touchAction: 'none'
         }}
       >
-        {frames.map(({ r, c }) => (
+        {allFrames.map(({ s, r, c }) => (
           <img
-            key={`${r}-${c}`}
-            src={SRC(r, c)}
+            key={`${s}${r}${c}`}
+            src={SRC(s, r, c)}
             alt=""
             draggable="false"
             style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%',
-              opacity: r === cell.r && c === cell.c ? 1 : 0,
+              opacity: s === activeSheet && r === cell.r && c === cell.c ? 1 : 0,
               pointerEvents: 'none'
             }}
           ></img>
         ))}
-        {blink ? (
-          <img
-            src={BLINK_SRC(cell.r, cell.c)}
-            alt=""
-            draggable="false"
-            style={{
-              position: 'absolute', inset: 0, width: '100%', height: '100%',
-              pointerEvents: 'none'
-            }}
-          ></img>
-        ) : null}
       </div>
 
       <div style={{
@@ -212,6 +235,7 @@ function App() {
         textAlign: 'center', pointerEvents: 'none'
       }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>トマリぐるぐる カメラ版</div>
+        <div style={{ fontSize: 'clamp(11px, 1.5vmin, 14px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
         <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 6, letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, display: 'inline-block' }}></span>
           {statusText}
@@ -238,6 +262,7 @@ function App() {
         }}>
           <div>row {cell.r} / col {cell.c}</div>
           <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
+          <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][mouth]}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginTop: 6 }}>
             {frames.map(({ r, c }) => (
               <div key={`d${r}-${c}`} style={{
@@ -269,6 +294,15 @@ function App() {
           onChange={(v) => setTweak('invertY', v)}></TweakToggle>
         <TweakToggle label="カメラ映像を表示" value={t.preview}
           onChange={(v) => setTweak('preview', v)}></TweakToggle>
+        <TweakSection label="口パク"></TweakSection>
+        <TweakSlider label="口の感度" value={t.mouthGain} min={0.3} max={4} step={0.1}
+          onChange={(v) => setTweak('mouthGain', v)}></TweakSlider>
+        <TweakSlider label="しきい値（はんびらき）" value={t.thHalf} min={0.02} max={0.5} step={0.01}
+          onChange={(v) => setTweak('thHalf', v)}></TweakSlider>
+        <TweakSlider label="しきい値（ぜんかい）" value={t.thFull} min={0.05} max={0.8} step={0.01}
+          onChange={(v) => setTweak('thFull', v)}></TweakSlider>
+        <TweakSlider label="口を閉じる速さ" value={t.release} min={0.05} max={0.5} step={0.01}
+          onChange={(v) => setTweak('release', v)}></TweakSlider>
         <TweakSection label="見た目"></TweakSection>
         <TweakSlider label="キャラサイズ" value={t.charSize} min={30} max={92} unit="vmin"
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>

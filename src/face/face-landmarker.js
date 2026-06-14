@@ -21,7 +21,7 @@ export async function createFaceLandmarker(paths = {}) {
     },
     runningMode: 'VIDEO',
     numFaces: 1,
-    outputFacialTransformationMatrixes: true, // ← 頭部姿勢行列を出力させる
-    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: true, // ← 頭部姿勢行列（向き）を出力
+    outputFaceBlendshapes: true, // ← 表情ブレンドシェイプ（jawOpen=口の開き）を出力
   });
 }
