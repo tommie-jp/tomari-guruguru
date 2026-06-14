@@ -7,12 +7,16 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --base /tomari-guruguru/",
-    "verify:pages": "node scripts/verify-pages-build.mjs"
+    "verify:pages": "node scripts/verify-pages-build.mjs",
+    "setup:mediapipe": "node scripts/copy-mediapipe-assets.mjs",
+    "predev": "node scripts/copy-mediapipe-assets.mjs",
+    "prebuild": "node scripts/copy-mediapipe-assets.mjs"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
