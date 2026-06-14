@@ -175,6 +175,26 @@ const __TWEAKS_STYLE = `
   .twk-chip>span>i:first-child{box-shadow:none}
   .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
     filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+
+  /* モバイル（狭いポートレイト）: 横幅いっぱい＋タッチしやすい大きめUI */
+  @media (max-width:480px){
+    .twk-panel{width:calc(100vw - 24px);right:12px;bottom:12px;max-height:72vh}
+    .twk-fab{right:12px;bottom:12px;padding:12px 16px;font-size:13px}
+    .twk-hd{padding:12px 10px 12px 16px}
+    .twk-hd b{font-size:14px}
+    .twk-x{width:32px;height:32px;font-size:17px}
+    .twk-body{padding:2px 16px 16px;gap:14px;font-size:13px}
+    .twk-sect{font-size:11px}
+    .twk-slider{height:6px;margin:9px 0}
+    .twk-slider::-webkit-slider-thumb{width:24px;height:24px}
+    .twk-slider::-moz-range-thumb{width:24px;height:24px}
+    .twk-toggle{width:44px;height:26px}
+    .twk-toggle i{width:22px;height:22px}
+    .twk-toggle[data-on="1"] i{transform:translateX(18px)}
+    .twk-btn{height:36px;padding:0 14px}
+    .twk-field,.twk-num{height:34px}
+    .twk-swatch{height:30px;width:66px}
+  }
 `;
 
 // ── useTweaks ───────────────────────────────────────────────────────────────
@@ -302,6 +322,22 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     window.parent.postMessage({ type: '__edit_mode_available' }, '*');
     return () => window.removeEventListener('message', onMsg);
   }, []);
+
+  // 範囲外のクリック/タップでパネルを閉じる（pointerdown でマウス・タッチ両対応）。
+  // capture フェーズで拾い、パネル内（dragRef）のタップは無視する。開いた瞬間の
+  // クリックは open=false 時にはリスナ未登録なので即閉じは起きない。
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const onOutsidePointer = (e) => {
+      const panel = dragRef.current;
+      if (panel && !panel.contains(e.target)) {
+        setOpen(false);
+        window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+      }
+    };
+    document.addEventListener('pointerdown', onOutsidePointer, true);
+    return () => document.removeEventListener('pointerdown', onOutsidePointer, true);
+  }, [open]);
 
   const dismiss = () => {
     setOpen(false);

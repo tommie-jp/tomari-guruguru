@@ -158,7 +158,7 @@ function App() {
         playsInline
         muted
         style={t.preview ? {
-          position: 'absolute', top: 16, left: 16, width: 160, borderRadius: 12,
+          position: 'absolute', top: 16, left: 16, width: 'min(160px, 34vw)', borderRadius: 12,
           transform: 'scaleX(-1)', // 鏡像（自撮り表示）
           boxShadow: '0 4px 16px rgba(0,0,0,0.2)', zIndex: 5, background: '#000'
         } : {
@@ -231,7 +231,7 @@ function App() {
 
       {t.showDebug ? (
         <div style={{
-          position: 'absolute', top: 16, left: t.preview ? 190 : 16,
+          position: 'absolute', top: 16, left: t.preview ? 'calc(min(160px, 34vw) + 30px)' : 16,
           background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
           padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
           pointerEvents: 'none', lineHeight: 1.5
