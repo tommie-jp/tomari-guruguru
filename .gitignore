@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 node_modules/
 dist/
+public/slices3/
 screenshot*
 .DS_Store
 Thumbs.db
