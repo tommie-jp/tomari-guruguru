@@ -56,21 +56,26 @@ def probe_size(path: Path) -> tuple[int, int]:
     return int(w), int(h)
 
 
-def decode_rgba(path: Path) -> bytes:
-    return run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-i",
-            str(path),
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgba",
-            "-",
-        ]
-    )
+def decode_rgba(path: Path, target_size: int | None = None) -> bytes:
+    cmd = [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-i",
+        str(path),
+    ]
+    if target_size is not None:
+        # Fit the source inside the target square without distorting the aspect
+        # ratio, then pad the remaining area with transparency.
+        resize_filter = (
+            f"scale={target_size}:{target_size}:"
+            "force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={target_size}:{target_size}:(ow-iw)/2:(oh-ih)/2:color=black@0,"
+            "format=rgba"
+        )
+        cmd += ["-vf", resize_filter]
+    cmd += ["-f", "rawvideo", "-pix_fmt", "rgba", "-"]
+    return run(cmd)
 
 
 class UnionFind:
@@ -537,10 +542,18 @@ def main() -> None:
 
     for sheet in SHEET_NAMES:
         src = find_source(args.source, sheet)
-        w, h = probe_size(src)
+        w_orig, h_orig = probe_size(src)
         expected = args.cell * 5
-        if (w, h) != (expected, expected):
-            raise ValueError(f"{src} is {w}x{h}; expected {expected}x{expected}")
+        if (w_orig, h_orig) != (expected, expected):
+            print(
+                f"  NOTE: {src.name} is {w_orig}x{h_orig}, "
+                f"will fit into {expected}x{expected} without stretching"
+            )
+            w, h = expected, expected
+            resize_target = expected
+        else:
+            w, h = w_orig, h_orig
+            resize_target = None
 
         shutil.copy2(src, args.sheets_out / f"{sheet}.png")
         shutil.copy2(src, args.uploads_out / src.name)
@@ -558,7 +571,7 @@ def main() -> None:
         if not pending:
             continue
 
-        data = decode_rgba(src)
+        data = decode_rgba(src, target_size=resize_target)
         if args.component_mode:
             components = components_from_sheet(
                 data,
