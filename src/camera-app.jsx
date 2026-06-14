@@ -390,9 +390,14 @@ function App() {
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>口パク版 →</a>
 
+      <a href="tracking.html" style={{
+        position: 'absolute', top: 40, right: 18, fontSize: 13, fontWeight: 700,
+        color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
+      }}>手・ポーズ →</a>
+
       {/* このページURLのQRコード画像へのリンク（スマホで開いてもらう用） */}
       <a href="camera-qr.svg" target="_blank" rel="noopener" style={{
-        position: 'absolute', top: 40, right: 18, fontSize: 13, fontWeight: 700,
+        position: 'absolute', top: 62, right: 18, fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>QRコード</a>
 

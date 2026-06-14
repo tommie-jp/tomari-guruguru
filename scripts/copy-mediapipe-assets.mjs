@@ -8,11 +8,23 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const wasmSrc = resolve(root, 'node_modules/@mediapipe/tasks-vision/wasm');
 const wasmDest = resolve(root, 'public/mediapipe/wasm');
-const modelDest = resolve(root, 'public/mediapipe/face_landmarker.task');
+const modelsDir = resolve(root, 'public/mediapipe');
 
-// float16 版（精度と軽さのバランスが良い公式モデル）
-const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+// float16 版（精度と軽さのバランスが良い公式モデル）。無い時だけDLする。
+const MODELS = [
+  {
+    file: 'face_landmarker.task',
+    url: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+  },
+  {
+    file: 'gesture_recognizer.task',
+    url: 'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
+  },
+  {
+    file: 'pose_landmarker_lite.task',
+    url: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  },
+];
 
 async function exists(path) {
   try {
@@ -21,6 +33,22 @@ async function exists(path) {
   } catch {
     return false;
   }
+}
+
+async function downloadModel({ file, url }) {
+  const dest = resolve(modelsDir, file);
+  if (await exists(dest)) {
+    console.log('[mediapipe] 配置済みのためスキップ →', file);
+    return;
+  }
+  console.log('[mediapipe] ダウンロード中 …', file);
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`モデルのダウンロードに失敗 (${file}): ${res.status} ${res.statusText}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  await writeFile(dest, buf);
+  console.log(`[mediapipe] 保存しました (${(buf.length / 1e6).toFixed(1)} MB) → ${file}`);
 }
 
 async function main() {
@@ -34,22 +62,9 @@ async function main() {
   await cp(wasmSrc, wasmDest, { recursive: true });
   console.log('[mediapipe] WASM をコピーしました →', wasmDest);
 
-  if (await exists(modelDest)) {
-    console.log('[mediapipe] モデルは配置済みのためスキップ →', modelDest);
-    return;
+  for (const model of MODELS) {
+    await downloadModel(model);
   }
-
-  console.log('[mediapipe] モデルをダウンロード中 …', MODEL_URL);
-  const res = await fetch(MODEL_URL);
-  if (!res.ok) {
-    throw new Error(`モデルのダウンロードに失敗: ${res.status} ${res.statusText}`);
-  }
-  const buf = Buffer.from(await res.arrayBuffer());
-  await writeFile(modelDest, buf);
-  console.log(
-    `[mediapipe] モデルを保存しました (${(buf.length / 1e6).toFixed(1)} MB) →`,
-    modelDest,
-  );
 }
 
 main().catch((err) => {

@@ -24,6 +24,7 @@ export default defineConfig(({ command, mode }) => {
           guruguru: resolve(import.meta.dirname, 'guruguru.html'),
           talk: resolve(import.meta.dirname, 'talk.html'),
           camera: resolve(import.meta.dirname, 'camera.html'),
+          tracking: resolve(import.meta.dirname, 'tracking.html'),
         },
       },
     },
