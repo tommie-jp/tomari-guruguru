@@ -19,6 +19,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "release": 0.25,
   "blinkSync": true,
   "blinkSensitivity": 1.0,
+  "eyesOpenBias": 0,
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "showDebug": false,
@@ -103,6 +104,16 @@ function App() {
     setTweak('biasPitchDeg', 0);
   }
 
+  // いまの目の状態（開いている想定）を「まばたきなし」の基準にする。
+  // 細目やカメラ角度で eyeBlink が開眼時でも高めに出る人向け。現在の値を
+  // オフセットとして記録し、以降はこれを差し引いて閉じ具合を判定する。
+  function calibrateEyesOpen() {
+    setTweak('eyesOpenBias', Math.round(eyesClosedRef.current * 100) / 100);
+  }
+  function resetEyesOpen() {
+    setTweak('eyesOpenBias', 0);
+  }
+
   // メインループ: 顔向き→グリッド + 口の開き→口パク段階 + まばたき同調
   useEffect(() => {
     let raf;
@@ -134,7 +145,9 @@ function App() {
       // まばたき同調: eyeBlink(0..1) をヒステリシスで開閉判定。OFF時は自動まばたきに委譲。
       // 感度が高いほど閉じ判定の閾値が下がり、わずかな閉眼でも瞬きと判定する。
       if (tw.blinkSync) {
-        const closed = eyesClosedRef.current;
+        // 開眼基準(eyesOpenBias)を差し引いて 0..1 に再正規化（開=0, 完全閉=1）
+        const denom = Math.max(0.05, 1 - tw.eyesOpenBias);
+        const closed = clamp((eyesClosedRef.current - tw.eyesOpenBias) / denom, 0, 1);
         const closeTh = clamp(0.5 / tw.blinkSensitivity, 0.15, 0.9);
         const openTh = closeTh * 0.6; // ヒステリシス（チラつき防止）
         if (!blinkState && closed > closeTh) blinkState = true;
@@ -365,6 +378,8 @@ function App() {
           onChange={(v) => setTweak('blinkSync', v)}></TweakToggle>
         <TweakSlider label="まばたき感度" value={t.blinkSensitivity} min={0.5} max={2.5} step={0.1}
           onChange={(v) => setTweak('blinkSensitivity', v)}></TweakSlider>
+        <TweakButton label="今の目の大きさを まばたきなし にする" onClick={calibrateEyesOpen}></TweakButton>
+        <TweakButton label="まばたき基準をリセット" secondary onClick={resetEyesOpen}></TweakButton>
         <TweakSection label="正面バイアス"></TweakSection>
         <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
           onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
