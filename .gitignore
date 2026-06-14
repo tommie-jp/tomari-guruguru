@@ -13,3 +13,7 @@ public/*
 !public/slices2/
 .DS_Store
 Thumbs.db
+
+# ローカル環境変数（個人設定の上書き）
+.env.local
+.env.*.local
