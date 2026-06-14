@@ -8,6 +8,8 @@ const { useState, useEffect, useRef, useMemo } = React;
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "smoothing": 0.3,
   "sensitivity": 1.0,
+  "biasYawDeg": 0,
+  "biasPitchDeg": 0,
   "invertX": false,
   "invertY": false,
   "preview": true,
@@ -25,11 +27,12 @@ const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
 // 感度を頭の振り角(rad)に変換。感度が高いほど少ない首振りで端まで届く。
 const BASE_MAX_YAW = 0.5;
 const BASE_MAX_PITCH = 0.4;
+const DEG = Math.PI / 180;
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
 function App() {
-  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [t, setTweak, resetTweaks] = useTweaks(TWEAK_DEFAULTS);
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
   const [blink, setBlink] = useState(false);
@@ -44,10 +47,23 @@ function App() {
   const poseOptions = {
     maxYaw: BASE_MAX_YAW / t.sensitivity,
     maxPitch: BASE_MAX_PITCH / t.sensitivity,
+    biasYaw: t.biasYawDeg * DEG,
+    biasPitch: t.biasPitchDeg * DEG,
     invertX: t.invertX,
     invertY: t.invertY,
   };
-  const { videoRef, status } = useFacePose(target, { enabled: true, poseOptions });
+  const { videoRef, poseRef, status } = useFacePose(target, { enabled: true, poseOptions });
+
+  // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
+  // 自然な姿勢を中立にしたいとき用。
+  function calibrateCenter() {
+    setTweak('biasYawDeg', Math.round(poseRef.current.yaw / DEG));
+    setTweak('biasPitchDeg', Math.round(poseRef.current.pitch / DEG));
+  }
+  function resetCenter() {
+    setTweak('biasYawDeg', 0);
+    setTweak('biasPitchDeg', 0);
+  }
 
   // 平滑化してグリッドに変換（マウス版と同一ロジック）
   useEffect(() => {
@@ -233,6 +249,14 @@ function App() {
           onChange={(v) => setTweak('sensitivity', v)}></TweakSlider>
         <TweakSlider label="追従速度" value={t.smoothing} min={0.04} max={0.5} step={0.01}
           onChange={(v) => setTweak('smoothing', v)}></TweakSlider>
+        <TweakSection label="正面バイアス"></TweakSection>
+        <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
+          onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
+        <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
+          onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
+        <TweakButton label="今の向きを正面にする" onClick={calibrateCenter}></TweakButton>
+        <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
+        <TweakSection label="反転"></TweakSection>
         <TweakToggle label="左右反転" value={t.invertX}
           onChange={(v) => setTweak('invertX', v)}></TweakToggle>
         <TweakToggle label="上下反転" value={t.invertY}
@@ -247,6 +271,8 @@ function App() {
         <TweakSection label="デバッグ"></TweakSection>
         <TweakToggle label="グリッド表示" value={t.showDebug}
           onChange={(v) => setTweak('showDebug', v)}></TweakToggle>
+        <TweakSection label="リセット"></TweakSection>
+        <TweakButton label="設定をデフォルトに戻す" secondary onClick={resetTweaks}></TweakButton>
       </TweaksPanel>
     </div>
   );

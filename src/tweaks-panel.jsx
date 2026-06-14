@@ -179,9 +179,56 @@ const __TWEAKS_STYLE = `
 
 // ── useTweaks ───────────────────────────────────────────────────────────────
 // Single source of truth for tweak values. setTweak persists via the host
-// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
-function useTweaks(defaults) {
-  const [values, setValues] = React.useState(defaults);
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk) AND to
+// localStorage so the user's adjustments survive a page reload.
+
+// 永続化キー。ページごとにバケットを分け、同一オリジンの guruguru / talk /
+// camera が localStorage を共有しても衝突しないようにする。明示キーを渡せば優先。
+function tweaksStorageKey(explicit) {
+  if (explicit) return explicit;
+  const path = (typeof location !== 'undefined' && location.pathname) || '';
+  const page = path.split('/').pop() || 'index';
+  return `tomari-tweaks:${page}`;
+}
+
+// 保存値を defaults に上書きマージして返す。defaults に無いキーは捨て、
+// 読み取り不可（プライベートモード等）や壊れた JSON なら defaults を使う。
+function loadTweaks(key, defaults) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return defaults;
+    const saved = JSON.parse(raw);
+    if (!saved || typeof saved !== 'object') return defaults;
+    const merged = { ...defaults };
+    for (const k of Object.keys(defaults)) {
+      if (k in saved) merged[k] = saved[k];
+    }
+    return merged;
+  } catch {
+    return defaults;
+  }
+}
+
+function saveTweaks(key, values) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(values));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（アプリは継続動作） */
+  }
+}
+
+function useTweaks(defaults, storageKey) {
+  const key = React.useMemo(() => tweaksStorageKey(storageKey), [storageKey]);
+  // 初回レンダーで保存値を読み込む（関数初期化なので一度だけ実行される）。
+  const [values, setValues] = React.useState(() => loadTweaks(key, defaults));
+  // reset 用に最新の defaults を保持（通常はモジュール定数なので安定）。
+  const defaultsRef = React.useRef(defaults);
+  defaultsRef.current = defaults;
+
+  // values が変わるたびに保存する。初回マウント時にも書き込むため、コード側で
+  // defaults にキーが増えた場合は保存済みデータも自動で追従する。
+  React.useEffect(() => { saveTweaks(key, values); }, [key, values]);
+
   // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
   // useState-style call doesn't write a "[object Object]" key into the persisted
   // JSON block.
@@ -194,7 +241,16 @@ function useTweaks(defaults) {
     // can react — the parent message only reaches the host, not peers.
     window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
   }, []);
-  return [values, setTweak];
+
+  // すべての項目を defaults に戻す。保存は上の useEffect が拾い、host とも同期する。
+  const resetTweaks = React.useCallback(() => {
+    const next = { ...defaultsRef.current };
+    setValues(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: next }));
+  }, []);
+
+  return [values, setTweak, resetTweaks];
 }
 
 // ── TweaksPanel ─────────────────────────────────────────────────────────────
