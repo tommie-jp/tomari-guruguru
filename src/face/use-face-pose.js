@@ -7,6 +7,8 @@ import React from 'react';
 import { createFaceLandmarker } from './face-landmarker';
 import { startWebcam, stopWebcam } from './webcam';
 import { poseFromMatrix } from './head-pose';
+import { facePositionFromLandmarks } from './face-position';
+import { faceScaleFromLandmarks } from './face-scale';
 import { mouthOpenFromBlendshapes } from './mouth';
 import { eyesClosedFromBlendshapes } from './eyes';
 
@@ -15,13 +17,19 @@ const { useRef, useState, useEffect } = React;
 /**
  * @param {{ current: { x: number, y: number } }} targetRef 書き込み先（-1..1）
  * @param {{ enabled?: boolean, poseOptions?: object }} [opts]
- * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, mouthRef: { current: number }, eyesClosedRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
+ * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, rollRef: { current: number }, posRef: { current: { x: number, y: number } }, faceScaleRef: { current: number }, mouthRef: { current: number }, eyesClosedRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
  */
 export function useFacePose(targetRef, opts = {}) {
-  const { enabled = true, poseOptions } = opts;
+  const { enabled = true, poseOptions, positionOptions } = opts;
   const videoRef = useRef(null);
   // 最新の「生の」顔向き角(rad)。正面キャリブレーション用に外へ公開する。
   const poseRef = useRef({ yaw: 0, pitch: 0 });
+  // 最新の roll(首かしげ, rad)。アバターの傾き同調用に外へ公開する。
+  const rollRef = useRef(0);
+  // 最新の位置(-1..1)。左右・上下スライド追従用に外へ公開する。
+  const posRef = useRef({ x: 0, y: 0 });
+  // 最新の顔の見かけサイズ(0..1)。カメラ距離→ズーム率に使う。
+  const faceScaleRef = useRef(0);
   // 最新の口の開き量(0..1)。口パク描画用に外へ公開する。
   const mouthRef = useRef(0);
   // 最新の目の閉じ具合(0..1)。まばたき同調用に外へ公開する。
@@ -33,6 +41,8 @@ export function useFacePose(targetRef, opts = {}) {
   // ループ内で最新の poseOptions を参照するための ref（再購読を避ける）
   const poseOptionsRef = useRef(poseOptions);
   poseOptionsRef.current = poseOptions;
+  const positionOptionsRef = useRef(positionOptions);
+  positionOptionsRef.current = positionOptions;
 
   useEffect(() => {
     if (!enabled) {
@@ -66,12 +76,24 @@ export function useFacePose(targetRef, opts = {}) {
           targetRef.current.y = pose.y;
           poseRef.current.yaw = pose.yaw;
           poseRef.current.pitch = pose.pitch;
+          rollRef.current = pose.roll;
+          // 位置・サイズはランドマークから。向き(yaw/pitch)とは独立した信号。
+          const landmarks = result.faceLandmarks?.[0];
+          const pos = facePositionFromLandmarks(landmarks, positionOptionsRef.current);
+          posRef.current.x = pos.x;
+          posRef.current.y = pos.y;
+          faceScaleRef.current = faceScaleFromLandmarks(landmarks);
           const categories = result.faceBlendshapes?.[0]?.categories || [];
           mouthRef.current = mouthOpenFromBlendshapes(categories);
           eyesClosedRef.current = eyesClosedFromBlendshapes(categories);
           blendshapesRef.current = categories;
           markFace(true);
         } else {
+          // 顔ロスト時は中立へ戻す（傾き・スライド・ズームが固まらないように）
+          rollRef.current = 0;
+          posRef.current.x = 0;
+          posRef.current.y = 0;
+          faceScaleRef.current = 0;
           mouthRef.current = 0;
           eyesClosedRef.current = 0;
           blendshapesRef.current = [];
@@ -106,5 +128,5 @@ export function useFacePose(targetRef, opts = {}) {
     };
   }, [enabled, targetRef]);
 
-  return { videoRef, poseRef, mouthRef, eyesClosedRef, blendshapesRef, status };
+  return { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status };
 }

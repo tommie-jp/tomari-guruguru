@@ -20,6 +20,24 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "blinkSync": true,
   "blinkSensitivity": 1.0,
   "eyesOpenBias": 0,
+  "tiltEnabled": true,
+  "tiltGain": 1.0,
+  "tiltMax": 20,
+  "tiltPivotY": 72,
+  "invertTilt": false,
+  "slideEnabled": true,
+  "slideGain": 12,
+  "slideMax": 30,
+  "invertSlide": false,
+  "slideGainY": 8,
+  "slideMaxY": 25,
+  "invertSlideY": false,
+  "zoomEnabled": true,
+  "zoomGain": 1.0,
+  "zoomMin": 0.6,
+  "zoomMax": 1.8,
+  "zoomBaseline": 0,
+  "motionSmoothing": 0.2,
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "showDebug": false,
@@ -76,9 +94,16 @@ function App() {
   const [exprValues, setExprValues] = useState([]); // 表情係数パネル表示用
   const stageRef = useRef(null);
   const charRef = useRef(null);
+  const motionRef = useRef(null);           // 首かしげ・スライド(translate)を直書きするラッパー
+  const zoomRef = useRef(null);             // ズーム(scale)を直書きする外側ラッパー
   const target = useRef({ x: 0, y: 0 });   // -1..1（顔向きが書き込む）
   const current = useRef({ x: 0, y: 0 });
   const mouthEnv = useRef(0);               // 口の開きの平滑化エンベロープ
+  const rollCurrent = useRef(0);            // 首かしげ角(deg)の平滑化エンベロープ
+  const slideCurrent = useRef(0);           // 左右スライド量(vw)の平滑化エンベロープ
+  const slideYCurrent = useRef(0);          // 上下スライド量(vh)の平滑化エンベロープ
+  const zoomCurrent = useRef(1);            // ズーム率の平滑化エンベロープ（初期=等倍）
+  const zoomBaselineRef = useRef(0);        // 初回検出サイズの自動基準（手動較正が無いとき）
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
 
@@ -91,7 +116,9 @@ function App() {
     invertX: t.invertX,
     invertY: t.invertY,
   };
-  const { videoRef, poseRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions });
+  // 立ち位置（左右・上下）。invert は pose と同じく source 側(純関数)で適用する。
+  const positionOptions = { invertX: t.invertSlide, invertY: t.invertSlideY };
+  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions, positionOptions });
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -112,6 +139,18 @@ function App() {
   }
   function resetEyesOpen() {
     setTweak('eyesOpenBias', 0);
+  }
+
+  // いまのカメラとの距離（顔の見かけサイズ）を「等倍(ズーム1)」の基準にする。
+  // 以降はこのサイズとの比がズーム率になる（近づくと拡大・離れると縮小）。
+  function calibrateZoom() {
+    if (faceScaleRef.current > 0) {
+      setTweak('zoomBaseline', Math.round(faceScaleRef.current * 1000) / 1000);
+    }
+  }
+  function resetZoom() {
+    setTweak('zoomBaseline', 0);
+    zoomBaselineRef.current = 0; // 自動基準も捨てて次の検出で取り直す
   }
 
   // メインループ: 顔向き→グリッド + 口の開き→口パク段階 + まばたき同調
@@ -156,6 +195,35 @@ function App() {
       } else {
         lastBlinkSet = null; // 同調へ戻った時に最初のフレームで必ず反映させる
       }
+      // 首かしげ(roll)・左右上下スライド・ズーム → ラッパーに直書き（state を介さず再描画ゼロ）。
+      // 向き(グリッド)とは独立したレイヤーで、キャラ要素そのものを transform で動かす。
+      const tiltTarget = tw.tiltEnabled
+        ? clamp((rollRef.current / DEG) * tw.tiltGain * (tw.invertTilt ? -1 : 1), -tw.tiltMax, tw.tiltMax)
+        : 0;
+      const slideTarget = tw.slideEnabled
+        ? clamp(posRef.current.x * tw.slideGain, -tw.slideMax, tw.slideMax)
+        : 0;
+      const slideYTarget = tw.slideEnabled
+        ? clamp(posRef.current.y * tw.slideGainY, -tw.slideMaxY, tw.slideMaxY)
+        : 0;
+      // ズーム: 見かけサイズ ÷ 基準サイズ が距離比＝ズーム率。基準は手動較正(zoomBaseline)
+      // 優先、無ければ初回検出サイズを自動基準にする（起動時はほぼ等倍から始まる）。
+      let zoomTarget = 1;
+      const sz = faceScaleRef.current;
+      if (tw.zoomEnabled && sz > 0) {
+        let baseline = tw.zoomBaseline > 0 ? tw.zoomBaseline : zoomBaselineRef.current;
+        if (baseline <= 0) { zoomBaselineRef.current = sz; baseline = sz; }
+        const ratio = sz / baseline;
+        zoomTarget = clamp(1 + (ratio - 1) * tw.zoomGain, tw.zoomMin, tw.zoomMax);
+      }
+      rollCurrent.current += (tiltTarget - rollCurrent.current) * tw.motionSmoothing;
+      slideCurrent.current += (slideTarget - slideCurrent.current) * tw.motionSmoothing;
+      slideYCurrent.current += (slideYTarget - slideYCurrent.current) * tw.motionSmoothing;
+      zoomCurrent.current += (zoomTarget - zoomCurrent.current) * tw.motionSmoothing;
+      const mEl = motionRef.current;
+      if (mEl) mEl.style.transform = `translateX(${slideCurrent.current.toFixed(2)}vw) translateY(${slideYCurrent.current.toFixed(2)}vh) rotate(${rollCurrent.current.toFixed(2)}deg)`;
+      const zEl = zoomRef.current;
+      if (zEl) zEl.style.transform = `scale(${zoomCurrent.current.toFixed(3)})`;
       raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
@@ -265,34 +333,44 @@ function App() {
         }}
       ></video>
 
-      <div
-        ref={charRef}
-        onPointerDown={() => setPressed(true)}
-        onPointerUp={() => setPressed(false)}
-        onPointerLeave={() => setPressed(false)}
-        className="bob"
-        style={{
-          position: 'relative',
-          width: `${t.charSize * 4 / 3}vmin`, height: `${t.charSize * 4 / 3}vmin`,
-          maxWidth: 1200, maxHeight: 1200,
-          transform: pressed ? 'scale(0.94)' : 'scale(1)',
-          transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
-          userSelect: 'none', touchAction: 'none'
-        }}
-      >
-        {allFrames.map(({ s, r, c }) => (
-          <img
-            key={`${s}${r}${c}`}
-            src={SRC(s, r, c)}
-            alt=""
-            draggable="false"
-            style={{
-              position: 'absolute', inset: 0, width: '100%', height: '100%',
-              opacity: s === activeSheet && r === cell.r && c === cell.c ? 1 : 0,
-              pointerEvents: 'none'
-            }}
-          ></img>
-        ))}
+      {/* zoomRef: カメラ距離→ズーム(scale)を中央基準で当てる外側ラッパー。
+          motionRef: 首かしげ(rotate)・左右上下スライド(translate)を当てる内側ラッパー。
+          内側の charRef は既存の bob アニメ＋押下スケールを保持し、関心を分離する。
+          かしげは「首元」を支点にする → 回転原点を下部中央(横50%・縦 tiltPivotY%)に置く。
+          translate は transform-origin の影響を受けないのでスライドは不変。
+          ズームは別ラッパー(原点=中央)に分けることで、かしげの支点と干渉させない。 */}
+      <div ref={zoomRef} style={{ willChange: 'transform' }}>
+       <div ref={motionRef} style={{ willChange: 'transform', transformOrigin: `50% ${t.tiltPivotY}%` }}>
+        <div
+          ref={charRef}
+          onPointerDown={() => setPressed(true)}
+          onPointerUp={() => setPressed(false)}
+          onPointerLeave={() => setPressed(false)}
+          className="bob"
+          style={{
+            position: 'relative',
+            width: `${t.charSize * 4 / 3}vmin`, height: `${t.charSize * 4 / 3}vmin`,
+            maxWidth: 1200, maxHeight: 1200,
+            transform: pressed ? 'scale(0.94)' : 'scale(1)',
+            transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            userSelect: 'none', touchAction: 'none'
+          }}
+        >
+          {allFrames.map(({ s, r, c }) => (
+            <img
+              key={`${s}${r}${c}`}
+              src={SRC(s, r, c)}
+              alt=""
+              draggable="false"
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                opacity: s === activeSheet && r === cell.r && c === cell.c ? 1 : 0,
+                pointerEvents: 'none'
+              }}
+            ></img>
+          ))}
+        </div>
+       </div>
       </div>
 
       <div style={{
@@ -357,6 +435,8 @@ function App() {
           <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
           <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][mouth]}</div>
           <div>blink {blink ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
+          <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
+          <div>size {faceScaleRef.current.toFixed(3)} / zoom {zoomCurrent.current.toFixed(2)}x</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginTop: 6 }}>
             {frames.map(({ r, c }) => (
               <div key={`d${r}-${c}`} style={{
@@ -394,6 +474,44 @@ function App() {
           onChange={(v) => setTweak('invertY', v)}></TweakToggle>
         <TweakToggle label="カメラ映像を表示" value={t.preview}
           onChange={(v) => setTweak('preview', v)}></TweakToggle>
+        <TweakSection label="首かしげ・スライド"></TweakSection>
+        <TweakToggle label="首かしげ" value={t.tiltEnabled}
+          onChange={(v) => setTweak('tiltEnabled', v)}></TweakToggle>
+        <TweakSlider label="かしげ量" value={t.tiltGain} min={0} max={2.5} step={0.1}
+          onChange={(v) => setTweak('tiltGain', v)}></TweakSlider>
+        <TweakSlider label="かしげ上限" value={t.tiltMax} min={0} max={45} step={1} unit="°"
+          onChange={(v) => setTweak('tiltMax', v)}></TweakSlider>
+        <TweakSlider label="かしげ支点（高さ）" value={t.tiltPivotY} min={40} max={100} step={1} unit="%"
+          onChange={(v) => setTweak('tiltPivotY', v)}></TweakSlider>
+        <TweakToggle label="かしげ反転" value={t.invertTilt}
+          onChange={(v) => setTweak('invertTilt', v)}></TweakToggle>
+        <TweakToggle label="スライド追従（左右・上下）" value={t.slideEnabled}
+          onChange={(v) => setTweak('slideEnabled', v)}></TweakToggle>
+        <TweakSlider label="左右の量" value={t.slideGain} min={0} max={40} step={1} unit="vw"
+          onChange={(v) => setTweak('slideGain', v)}></TweakSlider>
+        <TweakSlider label="左右の上限" value={t.slideMax} min={0} max={50} step={1} unit="vw"
+          onChange={(v) => setTweak('slideMax', v)}></TweakSlider>
+        <TweakToggle label="左右反転" value={t.invertSlide}
+          onChange={(v) => setTweak('invertSlide', v)}></TweakToggle>
+        <TweakSlider label="上下の量" value={t.slideGainY} min={0} max={40} step={1} unit="vh"
+          onChange={(v) => setTweak('slideGainY', v)}></TweakSlider>
+        <TweakSlider label="上下の上限" value={t.slideMaxY} min={0} max={50} step={1} unit="vh"
+          onChange={(v) => setTweak('slideMaxY', v)}></TweakSlider>
+        <TweakToggle label="上下反転" value={t.invertSlideY}
+          onChange={(v) => setTweak('invertSlideY', v)}></TweakToggle>
+        <TweakSlider label="動きの滑らかさ" value={t.motionSmoothing} min={0.04} max={0.5} step={0.01}
+          onChange={(v) => setTweak('motionSmoothing', v)}></TweakSlider>
+        <TweakSection label="ズーム（カメラ距離）"></TweakSection>
+        <TweakToggle label="距離でズーム" value={t.zoomEnabled}
+          onChange={(v) => setTweak('zoomEnabled', v)}></TweakToggle>
+        <TweakSlider label="ズーム量" value={t.zoomGain} min={0} max={3} step={0.1}
+          onChange={(v) => setTweak('zoomGain', v)}></TweakSlider>
+        <TweakSlider label="ズーム下限" value={t.zoomMin} min={0.3} max={1} step={0.05}
+          onChange={(v) => setTweak('zoomMin', v)}></TweakSlider>
+        <TweakSlider label="ズーム上限" value={t.zoomMax} min={1} max={3} step={0.1}
+          onChange={(v) => setTweak('zoomMax', v)}></TweakSlider>
+        <TweakButton label="今の距離を基準にする" onClick={calibrateZoom}></TweakButton>
+        <TweakButton label="距離基準をリセット" secondary onClick={resetZoom}></TweakButton>
         <TweakSection label="口パク"></TweakSection>
         <TweakSlider label="口の感度" value={t.mouthGain} min={0.3} max={4} step={0.1}
           onChange={(v) => setTweak('mouthGain', v)}></TweakSlider>

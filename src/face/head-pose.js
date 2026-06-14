@@ -31,9 +31,11 @@ export const DEFAULT_POSE_OPTIONS = {
 /**
  * 4x4 変換行列(列優先16要素)から正規化済みの向き {x, y} を返す。
  * x: -1(左) .. +1(右) / y: -1(上) .. +1(下)  ← 既存グリッド(r:上→下, c:左→右)に合わせた符号
+ * roll は「首をかしげる」傾き(rad)。視線軸まわりの回転で、回転3x3の第1列
+ * (右ベクトル m0, m1) の atan2 から求める。正規化はアプリ側に委ねて生値で返す。
  * @param {ArrayLike<number>} data 16要素の行列データ
  * @param {Partial<typeof DEFAULT_POSE_OPTIONS>} [options]
- * @returns {{ x: number, y: number, yaw: number, pitch: number }}
+ * @returns {{ x: number, y: number, yaw: number, pitch: number, roll: number }}
  */
 export function poseFromMatrix(data, options = {}) {
   const { maxYaw, maxPitch, biasYaw, biasPitch, invertX, invertY } = {
@@ -60,10 +62,15 @@ export function poseFromMatrix(data, options = {}) {
   if (invertX) x = -x;
   if (invertY) y = -y;
 
+  // roll（首かしげ）: 視線軸まわりの回転。右ベクトル(第1列 m0,m1)の傾き。
+  // 正面では (1,0,0) なので 0。首を右に傾けると右ベクトルが回り符号が変わる。
+  const roll = Math.atan2(data[1], data[0]);
+
   return {
     x: clamp(x, -1, 1),
     y: clamp(y, -1, 1),
     yaw,
     pitch,
+    roll,
   };
 }
