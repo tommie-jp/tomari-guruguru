@@ -14,7 +14,7 @@ const { useRef, useState, useEffect } = React;
 /**
  * @param {{ current: { x: number, y: number } }} targetRef 書き込み先（-1..1）
  * @param {{ enabled?: boolean, poseOptions?: object }} [opts]
- * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, mouthRef: { current: number }, status: { phase: string, faceDetected: boolean, error: string|null } }}
+ * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, mouthRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
  */
 export function useFacePose(targetRef, opts = {}) {
   const { enabled = true, poseOptions } = opts;
@@ -23,6 +23,8 @@ export function useFacePose(targetRef, opts = {}) {
   const poseRef = useRef({ yaw: 0, pitch: 0 });
   // 最新の口の開き量(0..1)。口パク描画用に外へ公開する。
   const mouthRef = useRef(0);
+  // 最新の表情ブレンドシェイプ一覧（[{categoryName, score}]）。表示パネル用に公開。
+  const blendshapesRef = useRef([]);
   const [status, setStatus] = useState({ phase: 'idle', faceDetected: false, error: null });
 
   // ループ内で最新の poseOptions を参照するための ref（再購読を避ける）
@@ -61,10 +63,13 @@ export function useFacePose(targetRef, opts = {}) {
           targetRef.current.y = pose.y;
           poseRef.current.yaw = pose.yaw;
           poseRef.current.pitch = pose.pitch;
-          mouthRef.current = mouthOpenFromBlendshapes(result.faceBlendshapes?.[0]?.categories);
+          const categories = result.faceBlendshapes?.[0]?.categories || [];
+          mouthRef.current = mouthOpenFromBlendshapes(categories);
+          blendshapesRef.current = categories;
           markFace(true);
         } else {
           mouthRef.current = 0;
+          blendshapesRef.current = [];
           markFace(false);
         }
       }
@@ -96,5 +101,5 @@ export function useFacePose(targetRef, opts = {}) {
     };
   }, [enabled, targetRef]);
 
-  return { videoRef, poseRef, mouthRef, status };
+  return { videoRef, poseRef, mouthRef, blendshapesRef, status };
 }

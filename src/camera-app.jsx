@@ -19,8 +19,25 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "release": 0.25,
   "charSize": 64,
   "bgColor": "#FFF8EE",
-  "showDebug": false
+  "showDebug": false,
+  "showExpr": false
 }/*EDITMODE-END*/;
+
+// 表示する主な表情ブレンドシェイプ（MediaPipe FaceLandmarker のカテゴリ名）
+const MAIN_BLENDSHAPES = [
+  { key: 'jawOpen', label: '口の開き' },
+  { key: 'mouthSmileLeft', label: '笑み左' },
+  { key: 'mouthSmileRight', label: '笑み右' },
+  { key: 'mouthPucker', label: '口すぼめ' },
+  { key: 'browInnerUp', label: '眉内上げ' },
+  { key: 'browDownLeft', label: '眉下げ左' },
+  { key: 'browDownRight', label: '眉下げ右' },
+  { key: 'eyeBlinkLeft', label: 'まばたき左' },
+  { key: 'eyeBlinkRight', label: 'まばたき右' },
+  { key: 'eyeWideLeft', label: '目見開き左' },
+  { key: 'eyeWideRight', label: '目見開き右' },
+  { key: 'cheekPuff', label: '頬ふくらみ' },
+];
 
 const { rows: ROWS, cols: COLS } = charConfig;
 // シート: 目開け×口[とじ/中間/開け] = A/B/C, 目閉じ×口[とじ/中間/開け] = D/E/F
@@ -50,6 +67,7 @@ function App() {
   const [pressed, setPressed] = useState(false);
   const [blink, setBlink] = useState(false);
   const [mouth, setMouth] = useState(0);    // 0:とじ 1:中間 2:開け
+  const [exprValues, setExprValues] = useState([]); // 表情係数パネル表示用
   const stageRef = useRef(null);
   const charRef = useRef(null);
   const target = useRef({ x: 0, y: 0 });   // -1..1（顔向きが書き込む）
@@ -67,7 +85,7 @@ function App() {
     invertX: t.invertX,
     invertY: t.invertY,
   };
-  const { videoRef, poseRef, mouthRef, status } = useFacePose(target, { enabled: true, poseOptions });
+  const { videoRef, poseRef, mouthRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions });
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -148,6 +166,20 @@ function App() {
     schedule();
     return () => { alive = false; clearTimeout(timer); };
   }, []);
+
+  // 表情係数パネルの更新（表示ONのときだけ ~10fps で ref → state にコピー）。
+  // OFF時はインターバルを張らないので毎フレーム再描画のコストはゼロ。
+  useEffect(() => {
+    if (!t.showExpr) return undefined;
+    const id = setInterval(() => {
+      const cats = blendshapesRef.current || [];
+      const scoreByName = new Map(cats.map((c) => [c.categoryName, c.score]));
+      setExprValues(MAIN_BLENDSHAPES.map(({ key, label }) => ({
+        label, value: scoreByName.get(key) || 0,
+      })));
+    }, 100);
+    return () => clearInterval(id);
+  }, [t.showExpr, blendshapesRef]);
 
   const frames = useMemo(() => {
     const arr = [];
@@ -253,6 +285,34 @@ function App() {
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>QRコード</a>
 
+      {/* 主な表情係数（MediaPipe blendshapes）パネル。Tweaks のトグルで表示切替 */}
+      {t.showExpr ? (
+        <div style={{
+          position: 'absolute', top: 68, right: 12, width: 'min(220px, 52vw)',
+          background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
+          padding: '10px 12px', fontSize: 11, fontFamily: 'ui-monospace, monospace',
+          zIndex: 6, pointerEvents: 'none', lineHeight: 1.4,
+          maxHeight: 'calc(100vh - 84px)', overflow: 'hidden'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: '0.04em' }}>表情係数</div>
+          {exprValues.length === 0 ? (
+            <div style={{ opacity: 0.6 }}>顔を検出すると表示</div>
+          ) : exprValues.map(({ label, value }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+              <span style={{ width: '5.5em', flexShrink: 0, opacity: 0.85, whiteSpace: 'nowrap' }}>{label}</span>
+              <span style={{ position: 'relative', flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.18)' }}>
+                <span style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: `${Math.round(clamp(value, 0, 1) * 100)}%`, borderRadius: 3,
+                  background: value >= 0.5 ? '#E5A23D' : '#46C26A'
+                }}></span>
+              </span>
+              <span style={{ width: '2.4em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{value.toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {t.showDebug ? (
         <div style={{
           position: 'absolute', top: 16, left: t.preview ? 'calc(min(160px, 34vw) + 30px)' : 16,
@@ -311,6 +371,8 @@ function App() {
         <TweakSection label="デバッグ"></TweakSection>
         <TweakToggle label="グリッド表示" value={t.showDebug}
           onChange={(v) => setTweak('showDebug', v)}></TweakToggle>
+        <TweakToggle label="表情係数を表示" value={t.showExpr}
+          onChange={(v) => setTweak('showExpr', v)}></TweakToggle>
         <TweakSection label="リセット"></TweakSection>
         <TweakButton label="設定をデフォルトに戻す" secondary onClick={resetTweaks}></TweakButton>
       </TweaksPanel>
