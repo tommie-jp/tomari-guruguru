@@ -8,13 +8,14 @@ import { createFaceLandmarker } from './face-landmarker';
 import { startWebcam, stopWebcam } from './webcam';
 import { poseFromMatrix } from './head-pose';
 import { mouthOpenFromBlendshapes } from './mouth';
+import { eyesClosedFromBlendshapes } from './eyes';
 
 const { useRef, useState, useEffect } = React;
 
 /**
  * @param {{ current: { x: number, y: number } }} targetRef 書き込み先（-1..1）
  * @param {{ enabled?: boolean, poseOptions?: object }} [opts]
- * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, mouthRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
+ * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, mouthRef: { current: number }, eyesClosedRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
  */
 export function useFacePose(targetRef, opts = {}) {
   const { enabled = true, poseOptions } = opts;
@@ -23,6 +24,8 @@ export function useFacePose(targetRef, opts = {}) {
   const poseRef = useRef({ yaw: 0, pitch: 0 });
   // 最新の口の開き量(0..1)。口パク描画用に外へ公開する。
   const mouthRef = useRef(0);
+  // 最新の目の閉じ具合(0..1)。まばたき同調用に外へ公開する。
+  const eyesClosedRef = useRef(0);
   // 最新の表情ブレンドシェイプ一覧（[{categoryName, score}]）。表示パネル用に公開。
   const blendshapesRef = useRef([]);
   const [status, setStatus] = useState({ phase: 'idle', faceDetected: false, error: null });
@@ -65,10 +68,12 @@ export function useFacePose(targetRef, opts = {}) {
           poseRef.current.pitch = pose.pitch;
           const categories = result.faceBlendshapes?.[0]?.categories || [];
           mouthRef.current = mouthOpenFromBlendshapes(categories);
+          eyesClosedRef.current = eyesClosedFromBlendshapes(categories);
           blendshapesRef.current = categories;
           markFace(true);
         } else {
           mouthRef.current = 0;
+          eyesClosedRef.current = 0;
           blendshapesRef.current = [];
           markFace(false);
         }
@@ -101,5 +106,5 @@ export function useFacePose(targetRef, opts = {}) {
     };
   }, [enabled, targetRef]);
 
-  return { videoRef, poseRef, mouthRef, blendshapesRef, status };
+  return { videoRef, poseRef, mouthRef, eyesClosedRef, blendshapesRef, status };
 }

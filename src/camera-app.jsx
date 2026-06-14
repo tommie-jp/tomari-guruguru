@@ -17,6 +17,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "thHalf": 0.12,
   "thFull": 0.35,
   "release": 0.25,
+  "blinkSync": true,
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "showDebug": false,
@@ -88,7 +89,7 @@ function App() {
     invertX: t.invertX,
     invertY: t.invertY,
   };
-  const { videoRef, poseRef, mouthRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions });
+  const { videoRef, poseRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions });
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -101,12 +102,14 @@ function App() {
     setTweak('biasPitchDeg', 0);
   }
 
-  // メインループ: 顔向き→グリッド + 口の開き→口パク段階
+  // メインループ: 顔向き→グリッド + 口の開き→口パク段階 + まばたき同調
   useEffect(() => {
     let raf;
     let last = { r: 2, c: 2 };
     let lastMouth = 0;
     let lastSwitch = 0;
+    let blinkState = false;   // 同調時のヒステリシス状態
+    let lastBlinkSet = null;  // 自動↔同調の切替時に必ず反映させるため null 初期化
     function tick(now) {
       const tw = tweaksRef.current;
       // 向き（マウス版と同一ロジック）
@@ -127,14 +130,24 @@ function App() {
       if (m !== lastMouth && now - lastSwitch > 60) {
         lastMouth = m; lastSwitch = now; setMouth(m);
       }
+      // まばたき同調: eyeBlink(0..1) をヒステリシスで開閉判定。OFF時は自動まばたきに委譲。
+      if (tw.blinkSync) {
+        const closed = eyesClosedRef.current;
+        if (!blinkState && closed > 0.5) blinkState = true;
+        else if (blinkState && closed < 0.3) blinkState = false;
+        if (blinkState !== lastBlinkSet) { lastBlinkSet = blinkState; setBlink(blinkState); }
+      } else {
+        lastBlinkSet = null; // 同調へ戻った時に最初のフレームで必ず反映させる
+      }
       raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // 自動まばたき（app.jsx と同一）
+  // 自動まばたき（まばたき同調OFFのときだけ動作。ONのときはメインループが実眼に追従）
   useEffect(() => {
+    if (t.blinkSync) return undefined;
     let alive = true;
     let timer;
     const rand = (a, b) => a + Math.random() * (b - a);
@@ -168,7 +181,7 @@ function App() {
     }
     schedule();
     return () => { alive = false; clearTimeout(timer); };
-  }, []);
+  }, [t.blinkSync]);
 
   // 表情係数パネルの更新（表示ONのときだけ ~10fps で ref → state にコピー）。
   // OFF時はインターバルを張らないので毎フレーム再描画のコストはゼロ。
@@ -326,6 +339,7 @@ function App() {
           <div>row {cell.r} / col {cell.c}</div>
           <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
           <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][mouth]}</div>
+          <div>blink {blink ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginTop: 6 }}>
             {frames.map(({ r, c }) => (
               <div key={`d${r}-${c}`} style={{
@@ -343,6 +357,8 @@ function App() {
           onChange={(v) => setTweak('sensitivity', v)}></TweakSlider>
         <TweakSlider label="追従速度" value={t.smoothing} min={0.04} max={0.5} step={0.01}
           onChange={(v) => setTweak('smoothing', v)}></TweakSlider>
+        <TweakToggle label="まばたき同調" value={t.blinkSync}
+          onChange={(v) => setTweak('blinkSync', v)}></TweakToggle>
         <TweakSection label="正面バイアス"></TweakSection>
         <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
           onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
