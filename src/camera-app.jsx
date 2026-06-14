@@ -18,6 +18,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "thFull": 0.35,
   "release": 0.25,
   "blinkSync": true,
+  "blinkSensitivity": 1.0,
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "showDebug": false,
@@ -131,10 +132,13 @@ function App() {
         lastMouth = m; lastSwitch = now; setMouth(m);
       }
       // まばたき同調: eyeBlink(0..1) をヒステリシスで開閉判定。OFF時は自動まばたきに委譲。
+      // 感度が高いほど閉じ判定の閾値が下がり、わずかな閉眼でも瞬きと判定する。
       if (tw.blinkSync) {
         const closed = eyesClosedRef.current;
-        if (!blinkState && closed > 0.5) blinkState = true;
-        else if (blinkState && closed < 0.3) blinkState = false;
+        const closeTh = clamp(0.5 / tw.blinkSensitivity, 0.15, 0.9);
+        const openTh = closeTh * 0.6; // ヒステリシス（チラつき防止）
+        if (!blinkState && closed > closeTh) blinkState = true;
+        else if (blinkState && closed < openTh) blinkState = false;
         if (blinkState !== lastBlinkSet) { lastBlinkSet = blinkState; setBlink(blinkState); }
       } else {
         lastBlinkSet = null; // 同調へ戻った時に最初のフレームで必ず反映させる
@@ -359,6 +363,8 @@ function App() {
           onChange={(v) => setTweak('smoothing', v)}></TweakSlider>
         <TweakToggle label="まばたき同調" value={t.blinkSync}
           onChange={(v) => setTweak('blinkSync', v)}></TweakToggle>
+        <TweakSlider label="まばたき感度" value={t.blinkSensitivity} min={0.5} max={2.5} step={0.1}
+          onChange={(v) => setTweak('blinkSensitivity', v)}></TweakSlider>
         <TweakSection label="正面バイアス"></TweakSection>
         <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
           onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
