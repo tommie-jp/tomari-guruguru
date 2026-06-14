@@ -13,11 +13,13 @@ const { useRef, useState, useEffect } = React;
 /**
  * @param {{ current: { x: number, y: number } }} targetRef 書き込み先（-1..1）
  * @param {{ enabled?: boolean, poseOptions?: object }} [opts]
- * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, status: { phase: string, faceDetected: boolean, error: string|null } }}
+ * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, status: { phase: string, faceDetected: boolean, error: string|null } }}
  */
 export function useFacePose(targetRef, opts = {}) {
   const { enabled = true, poseOptions } = opts;
   const videoRef = useRef(null);
+  // 最新の「生の」顔向き角(rad)。正面キャリブレーション用に外へ公開する。
+  const poseRef = useRef({ yaw: 0, pitch: 0 });
   const [status, setStatus] = useState({ phase: 'idle', faceDetected: false, error: null });
 
   // ループ内で最新の poseOptions を参照するための ref（再購読を避ける）
@@ -54,6 +56,8 @@ export function useFacePose(targetRef, opts = {}) {
           const pose = poseFromMatrix(matrix, poseOptionsRef.current);
           targetRef.current.x = pose.x;
           targetRef.current.y = pose.y;
+          poseRef.current.yaw = pose.yaw;
+          poseRef.current.pitch = pose.pitch;
           markFace(true);
         } else {
           markFace(false);
@@ -87,5 +91,5 @@ export function useFacePose(targetRef, opts = {}) {
     };
   }, [enabled, targetRef]);
 
-  return { videoRef, status };
+  return { videoRef, poseRef, status };
 }

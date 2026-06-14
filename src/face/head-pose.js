@@ -17,9 +17,13 @@ function clamp(v, a, b) {
 
 // 既定の調整パラメータ。向きが逆なら invertX / invertY を反転、
 // 反応の強さは maxYaw / maxPitch（小さいほど少しの動きで端に届く=高感度）で調整。
+// biasYaw / biasPitch は「正面」とみなす中立オフセット（rad）。少し下や横を向いた
+// 自然な姿勢を正面(0)として扱いたいときに、その姿勢の生角度を入れる。
 export const DEFAULT_POSE_OPTIONS = {
   maxYaw: 0.5, // rad（約28度）で x=±1 に到達
   maxPitch: 0.4, // rad（約23度）で y=±1 に到達
+  biasYaw: 0, // rad: この左右角を正面(x=0)とみなす
+  biasPitch: 0, // rad: この上下角を正面(y=0)とみなす
   invertX: false, // 左右が逆に感じたら true
   invertY: false, // 上下が逆に感じたら true
 };
@@ -32,7 +36,10 @@ export const DEFAULT_POSE_OPTIONS = {
  * @returns {{ x: number, y: number, yaw: number, pitch: number }}
  */
 export function poseFromMatrix(data, options = {}) {
-  const { maxYaw, maxPitch, invertX, invertY } = { ...DEFAULT_POSE_OPTIONS, ...options };
+  const { maxYaw, maxPitch, biasYaw, biasPitch, invertX, invertY } = {
+    ...DEFAULT_POSE_OPTIONS,
+    ...options,
+  };
 
   // 前方ベクトル（回転3x3の第3列）
   const fwdX = data[8];
@@ -40,13 +47,15 @@ export function poseFromMatrix(data, options = {}) {
   const fwdZ = data[10];
   const depth = Math.abs(fwdZ) || 1e-6;
 
-  // 角度（rad）。atan2 で前方ベクトルを水平/垂直成分に分解する。
+  // 生の角度（rad）。atan2 で前方ベクトルを水平/垂直成分に分解する。
+  // yaw/pitch は「未補正の生値」として返す（キャリブレーション=正面設定に使う）。
   const yaw = Math.atan2(fwdX, depth); // 右を向くと符号が変わる
   const pitch = Math.atan2(fwdY, depth); // 上を向くと正（MediaPipe は y 上向き正）
 
-  let x = yaw / maxYaw;
+  // バイアスを引いて中立(正面)をずらしてから正規化する。
+  let x = (yaw - biasYaw) / maxYaw;
   // グリッドは r:0(上)→4(下) なので、上向き(pitch正)は y を負にする必要がある → 反転
-  let y = -pitch / maxPitch;
+  let y = -(pitch - biasPitch) / maxPitch;
 
   if (invertX) x = -x;
   if (invertY) y = -y;
