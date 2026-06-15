@@ -2,12 +2,17 @@
 // WASM とモデルはローカル(public/mediapipe/)に同梱したものを参照する
 // （オフライン動作・バージョン固定のため。配置は scripts/copy-mediapipe-assets.mjs）。
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { silenceMediaPipeLogs } from './silence-mediapipe-logs';
 
 /**
  * @param {{ wasmPath?: string, modelPath?: string }} [paths]
  * @returns {Promise<FaceLandmarker>}
  */
 export async function createFaceLandmarker(paths = {}) {
+  // WASM 初期化前に、MediaPipe が console.error に吐く glog 形式の
+  // info/warning ノイズを間引く（本物の error/fatal は残す）。
+  silenceMediaPipeLogs();
+
   // BASE_URL は本番(/tomari-guruguru/)と開発(/)で変わるため必ず経由する。
   const base = import.meta.env.BASE_URL;
   const wasmPath = paths.wasmPath ?? `${base}mediapipe/wasm`;
