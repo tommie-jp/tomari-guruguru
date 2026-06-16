@@ -35,7 +35,7 @@ iPhone で kick.com にライブ配信するとき、通常のカメラ映像の
 
 ### 3. 本プロジェクトはアバターだけを映像として抜き出せない
 
-リポジトリ調査（`tomari-guruguru/src/talk-app.jsx` / `tomari-guruguru/src/app.jsx`）:
+リポジトリ調査（`guruguru-avatar/src/talk-app.jsx` / `guruguru-avatar/src/app.jsx`）:
 
 - アバターは `<canvas>` ではなく DOM の `<img>` の不透明度切り替えで描画
   （25 方向 × 6 表情のプリレンダ WebP）。
