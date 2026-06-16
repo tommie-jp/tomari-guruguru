@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   mergeIntoDefaults,
+  effectiveDefaultsFrom,
   sanitizePresets,
   serializePresets,
   parsePresetsImport,
+  selectBuiltinPresets,
   PRESETS_EXPORT_VERSION,
 } from './use-tweaks.js';
 
@@ -29,6 +31,34 @@ describe('mergeIntoDefaults', () => {
     const out = mergeIntoDefaults({ a: 2 }, defaults);
     expect(defaults.a).toBe(1);
     expect(out).not.toBe(defaults);
+  });
+});
+
+describe('effectiveDefaultsFrom', () => {
+  it('ビルトインの最初のテーマを defaults にマージして返す', () => {
+    const builtins = { first: { a: 9 }, second: { a: 1 } };
+    expect(effectiveDefaultsFrom(builtins, { a: 0, b: 'x' })).toEqual({ a: 9, b: 'x' });
+  });
+
+  it('「最初」は挿入順で決まる（2件目は無視）', () => {
+    const builtins = { 'thema01-for-pc': { a: 1 }, なめらか: { a: 2 } };
+    expect(effectiveDefaultsFrom(builtins, { a: 0 })).toEqual({ a: 1 });
+  });
+
+  it('部分テーマの未指定キーは defaults で埋まる（前方互換）', () => {
+    expect(effectiveDefaultsFrom({ t: { a: 5 } }, { a: 0, b: 7 })).toEqual({ a: 5, b: 7 });
+  });
+
+  it('ビルトインが空なら defaults のコピー', () => {
+    const defaults = { a: 1 };
+    const out = effectiveDefaultsFrom({}, defaults);
+    expect(out).toEqual({ a: 1 });
+    expect(out).not.toBe(defaults);
+  });
+
+  it('ビルトインが不正でも defaults のコピー', () => {
+    expect(effectiveDefaultsFrom(null, { a: 1 })).toEqual({ a: 1 });
+    expect(effectiveDefaultsFrom('x', { a: 1 })).toEqual({ a: 1 });
   });
 });
 
@@ -88,5 +118,36 @@ describe('parsePresetsImport', () => {
   it('テーマが1件も無ければ例外', () => {
     expect(() => parsePresetsImport(JSON.stringify({ presets: {} }))).toThrow();
     expect(() => parsePresetsImport(JSON.stringify({ bad: 5 }))).toThrow();
+  });
+});
+
+describe('selectBuiltinPresets', () => {
+  it('page が一致するエンベロープから presets を取り出す', () => {
+    const data = { app: 'tomari-tweaks', page: 'tomari-tweaks:camera.html', presets: { 標準: { a: 1 } } };
+    expect(selectBuiltinPresets(data, 'tomari-tweaks:camera.html')).toEqual({ 標準: { a: 1 } });
+  });
+
+  it('page が現在キーと不一致なら {}（取り違え防止）', () => {
+    const data = { page: 'tomari-tweaks:talk.html', presets: { t: { a: 1 } } };
+    expect(selectBuiltinPresets(data, 'tomari-tweaks:camera.html')).toEqual({});
+  });
+
+  it('page が無ければガードせず取り出す', () => {
+    const data = { presets: { t: { a: 1 } } };
+    expect(selectBuiltinPresets(data, 'tomari-tweaks:camera.html')).toEqual({ t: { a: 1 } });
+  });
+
+  it('素のマップ（エンベロープ無し）も受け付ける', () => {
+    expect(selectBuiltinPresets({ t: { a: 1 } }, 'k')).toEqual({ t: { a: 1 } });
+  });
+
+  it('壊れた値は落とす', () => {
+    const data = { presets: { ok: { a: 1 }, bad: 5 } };
+    expect(selectBuiltinPresets(data, null)).toEqual({ ok: { a: 1 } });
+  });
+
+  it('オブジェクトでない入力には {}', () => {
+    expect(selectBuiltinPresets(null, 'k')).toEqual({});
+    expect(selectBuiltinPresets('x', 'k')).toEqual({});
   });
 });

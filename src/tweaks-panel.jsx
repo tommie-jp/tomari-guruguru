@@ -1,9 +1,10 @@
 import React from 'react';
 // fork: 永続化ヘルパーは独立モジュールへ分離（本家 scaffold には無い）
 import {
-  tweaksStorageKey, loadTweaks, saveTweaks,
+  tweaksStorageKey, tweaksPageName, loadTweaks, saveTweaks,
   presetsStorageKey, loadPresets, savePresets,
-  mergeIntoDefaults, serializePresets, parsePresetsImport,
+  mergeIntoDefaults, effectiveDefaultsFrom,
+  serializePresets, parsePresetsImport, fetchBuiltinPresets,
 } from './use-tweaks.js';
 
 // @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
@@ -223,10 +224,20 @@ function useTweaks(defaults, storageKey) {
   // ── fork:persist ↓ ── 永続化（ヘルパーは ./use-tweaks.js）
   const key = React.useMemo(() => tweaksStorageKey(storageKey), [storageKey]);
   const presetsKey = React.useMemo(() => presetsStorageKey(storageKey), [storageKey]);
+  // 初回起動（localStorage に未保存）かを記録する。ビルトイン読込後に「最初の
+  // テーマ」をデフォルトとして流し込むか判断するのに使う。初期化子は一度しか
+  // 走らないので、saveTweaks 副作用が書き込む前のこの時点で判定する。
+  const seedRef = React.useRef({ firstRun: false, seeded: false });
   // 初回レンダーで保存値を読み込む（関数初期化なので一度だけ実行される）。
-  const [values, setValues] = React.useState(() => loadTweaks(key, defaults));
-  // テーマ（名前付きプリセット）集も初回に読み込む。
+  const [values, setValues] = React.useState(() => {
+    try { seedRef.current.firstRun = window.localStorage.getItem(key) == null; } catch { /* private mode */ }
+    return loadTweaks(key, defaults);
+  });
+  // ユーザーが保存したテーマ（localStorage 永続化）。ビルトインとは別レイヤー。
   const [presets, setPresets] = React.useState(() => loadPresets(presetsKey));
+  // ビルトイン（配布デフォルト）テーマ。public/default-themes から毎回読むので
+  // 非永続。localStorage には混ぜない（混ぜると JSON 更新が届かなくなる）。
+  const [builtins, setBuiltins] = React.useState({});
   // reset 用に最新の defaults を保持（通常はモジュール定数なので安定）。
   const defaultsRef = React.useRef(defaults);
   defaultsRef.current = defaults;
@@ -235,11 +246,13 @@ function useTweaks(defaults, storageKey) {
   valuesRef.current = values;
   const presetsRef = React.useRef(presets);
   presetsRef.current = presets;
+  const builtinsRef = React.useRef(builtins);
+  builtinsRef.current = builtins;
 
   // values が変わるたびに保存する。初回マウント時にも書き込むため、コード側で
   // defaults にキーが増えた場合は保存済みデータも自動で追従する。
   React.useEffect(() => { saveTweaks(key, values); }, [key, values]);
-  // テーマ集も変更のたびに永続化する。
+  // ユーザーテーマだけ永続化する（ビルトインは含めない）。
   React.useEffect(() => { savePresets(presetsKey, presets); }, [presetsKey, presets]);
   // ── fork:persist ↑ ──
 
@@ -264,50 +277,83 @@ function useTweaks(defaults, storageKey) {
     window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
   }, []);
 
-  // ── fork:persist ↓ ── すべての項目を defaults に戻す（本家には無い）
+  // ── fork:persist ↓ ── すべての項目を「実効デフォルト」に戻す（本家には無い）
+  // 実効デフォルト = ビルトインの最初のテーマ（無ければ hardcoded defaults）。
   // 保存は上の useEffect が拾い、host とも同期する。
   const resetTweaks = React.useCallback(() => {
-    applyValues({ ...defaultsRef.current });
+    applyValues(effectiveDefaultsFrom(builtinsRef.current, defaultsRef.current));
   }, [applyValues]);
+  // ── fork:persist ↑ ──
+
+  // ── fork:default-theme ↓ ── ビルトインテーマを起動時に1回読む。
+  // 失敗は無害に {}（フォールバック）。初回起動（未保存）なら、読み込んだ
+  // 最初のテーマを実効デフォルトとして流し込む（既存ユーザーの値は上書きしない）。
+  React.useEffect(() => {
+    let alive = true;
+    fetchBuiltinPresets(import.meta.env.BASE_URL, tweaksPageName(), key)
+      .then((b) => {
+        if (!alive) return;
+        setBuiltins(b);
+        if (seedRef.current.firstRun && !seedRef.current.seeded && Object.keys(b).length) {
+          seedRef.current.seeded = true;
+          applyValues(effectiveDefaultsFrom(b, defaultsRef.current));
+        }
+      });
+    return () => { alive = false; };
+  }, [key, applyValues]);
+  // ── fork:default-theme ↑ ──
 
   // ── fork:presets ↓ ── テーマ（名前付きプリセット）コントローラ。
-  // メソッドは ref で最新値を読むので、依存は names を更新するための presets のみ。
-  const themes = React.useMemo(() => ({
-    names: Object.keys(presetsRef.current),
-    // 現在値のスナップショットを name で保存（既存名は上書き）。空名は no-op。
-    save(name) {
-      const n = String(name || '').trim();
-      if (!n) return false;
-      setPresets((prev) => ({ ...prev, [n]: { ...valuesRef.current } }));
-      return true;
-    },
-    // name のテーマを現在の defaults にマージして適用（前方互換）。
-    apply(name) {
-      const saved = presetsRef.current[name];
-      if (!saved) return false;
-      applyValues(mergeIntoDefaults(saved, defaultsRef.current));
-      return true;
-    },
-    remove(name) {
-      setPresets((prev) => {
-        if (!(name in prev)) return prev;
-        const next = { ...prev };
-        delete next[name];
-        return next;
-      });
-    },
-    // 全テーマをエクスポート用 JSON 文字列にする（ダウンロード用）。
-    exportJSON() {
-      return serializePresets(presetsRef.current, tweaksStorageKey(storageKey));
-    },
-    // JSON 文字列を取り込み既存にマージ（同名は取り込み側優先）。取り込めた
-    // 件数を返す。壊れていれば例外を投げる（呼び出し側で握る）。
-    importJSON(text) {
-      const incoming = parsePresetsImport(text);
-      setPresets((prev) => ({ ...prev, ...incoming }));
-      return Object.keys(incoming).length;
-    },
-  }), [presets, applyValues, storageKey]);
+  // 2層: ビルトイン（基底）にユーザーテーマを重ね、同名はユーザー優先で上書き。
+  // メソッドは ref で最新値を読むので、依存は list を更新する builtins/presets のみ。
+  const themes = React.useMemo(() => {
+    const merged = { ...builtins, ...presets };
+    // 表示用リスト。builtin=ユーザーが上書きしていない配布デフォルトのみ true。
+    const list = Object.keys(merged).map((name) => ({
+      name,
+      builtin: (name in builtins) && !(name in presets),
+    }));
+    return {
+      list,
+      // 現在値のスナップショットを name で保存（既存名は上書き）。空名は no-op。
+      // ビルトインと同名なら、ユーザー層に積んで上書きする形になる。
+      save(name) {
+        const n = String(name || '').trim();
+        if (!n) return false;
+        setPresets((prev) => ({ ...prev, [n]: { ...valuesRef.current } }));
+        return true;
+      },
+      // name のテーマ（ユーザー優先で解決）を defaults にマージして適用（前方互換）。
+      apply(name) {
+        const saved = { ...builtinsRef.current, ...presetsRef.current }[name];
+        if (!saved) return false;
+        applyValues(mergeIntoDefaults(saved, defaultsRef.current));
+        return true;
+      },
+      // ユーザー層からのみ削除。ビルトインは消えない（上書きを取り消すと元に戻る）。
+      remove(name) {
+        setPresets((prev) => {
+          if (!(name in prev)) return prev;
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
+      },
+      // 表示中の全テーマ（ビルトイン＋ユーザー）をエクスポート用 JSON にする。
+      // チューニング結果をそのまま default-themes.json として配布し直せる。
+      exportJSON() {
+        const all = { ...builtinsRef.current, ...presetsRef.current };
+        return serializePresets(all, tweaksStorageKey(storageKey));
+      },
+      // JSON 文字列を取り込みユーザー層にマージ（同名は取り込み側優先）。取り込めた
+      // 件数を返す。壊れていれば例外を投げる（呼び出し側で握る）。
+      importJSON(text) {
+        const incoming = parsePresetsImport(text);
+        setPresets((prev) => ({ ...prev, ...incoming }));
+        return Object.keys(incoming).length;
+      },
+    };
+  }, [builtins, presets, applyValues, storageKey]);
   // ── fork:presets ↑ ──
 
   // fork: 本家は [values, setTweak]。resetTweaks・themes を加えた4要素返し。
@@ -697,22 +743,24 @@ function TweakPresets({ themes }) {
   const [name, setName] = React.useState('');
   const [sel, setSel] = React.useState('');
   const fileRef = React.useRef(null);
-  const names = themes.names;
+  const list = themes.list;
+  // 選択中テーマがビルトイン（標準）なら削除させない（上書き取り消しは未対応）。
+  const selIsBuiltin = !!list.find((e) => e.name === sel)?.builtin;
 
-  // 選択中のテーマが削除されたら選択を解除する。
+  // 選択中のテーマが消えたら選択を解除する。
   React.useEffect(() => {
-    if (sel && !names.includes(sel)) setSel('');
-  }, [names, sel]);
+    if (sel && !list.some((e) => e.name === sel)) setSel('');
+  }, [list, sel]);
 
   const onSave = () => {
     const n = name.trim();
     if (!n) return;
-    if (names.includes(n) && !window.confirm(`「${n}」を上書きしますか？`)) return;
+    if (list.some((e) => e.name === n) && !window.confirm(`「${n}」を上書きしますか？`)) return;
     if (themes.save(n)) { setSel(n); setName(''); }
   };
   const onApply = () => { if (sel) themes.apply(sel); };
   const onDelete = () => {
-    if (sel && window.confirm(`「${sel}」を削除しますか？`)) themes.remove(sel);
+    if (sel && !selIsBuiltin && window.confirm(`「${sel}」を削除しますか？`)) themes.remove(sel);
   };
 
   const onExport = () => {
@@ -751,17 +799,21 @@ function TweakPresets({ themes }) {
           <button type="button" className="twk-btn" onClick={onSave}>保存</button>
         </div>
       </TweakRow>
-      {names.length > 0 ? (
+      {list.length > 0 ? (
         <TweakRow label="保存したテーマ">
           <div className="twk-presets-row">
             <select className="twk-field" value={sel}
                     onChange={(e) => setSel(e.target.value)}>
               <option value="">— 選択 —</option>
-              {names.map((n) => <option key={n} value={n}>{n}</option>)}
+              {list.map(({ name: n, builtin }) => (
+                <option key={n} value={n}>{builtin ? `${n}（標準）` : n}</option>
+              ))}
             </select>
             <button type="button" className="twk-btn" disabled={!sel}
                     onClick={onApply}>適用</button>
-            <button type="button" className="twk-btn secondary" disabled={!sel}
+            <button type="button" className="twk-btn secondary"
+                    disabled={!sel || selIsBuiltin}
+                    title={selIsBuiltin ? '標準テーマは削除できません' : undefined}
                     onClick={onDelete}>削除</button>
           </div>
         </TweakRow>

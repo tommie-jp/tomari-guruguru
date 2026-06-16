@@ -6,13 +6,18 @@
 //
 // tweaks-panel.jsx の useTweaks がこれらを import して使う。
 
+// 現在ページ名（例: camera.html）。ストレージキーと default-themes の
+// ファイル名の両方で使う。パスが取れなければ index にフォールバック。
+export function tweaksPageName() {
+  const path = (typeof location !== 'undefined' && location.pathname) || '';
+  return path.split('/').pop() || 'index';
+}
+
 // 永続化キー。ページごとにバケットを分け、同一オリジンの guruguru / talk /
 // camera が localStorage を共有しても衝突しないようにする。明示キーを渡せば優先。
 export function tweaksStorageKey(explicit) {
   if (explicit) return explicit;
-  const path = (typeof location !== 'undefined' && location.pathname) || '';
-  const page = path.split('/').pop() || 'index';
-  return `tomari-tweaks:${page}`;
+  return `tomari-tweaks:${tweaksPageName()}`;
 }
 
 // 配列・null を除いたプレーンなオブジェクトか。プリセット検証の土台。
@@ -31,6 +36,15 @@ export function mergeIntoDefaults(saved, defaults) {
     }
   }
   return merged;
+}
+
+// 「実効デフォルト」。ビルトインの最初のテーマを hardcoded defaults にマージ
+// したものを返す。ビルトインが空／不正なら defaults のコピー。初期化時の
+// シードと resetTweaks の両方で使う。部分テーマでも未指定キーは defaults で
+// 埋まる（前方互換）。オブジェクトのキー順＝挿入順なので「最初の項目」が効く。
+export function effectiveDefaultsFrom(builtins, defaults) {
+  const first = isPlainObject(builtins) ? Object.keys(builtins)[0] : undefined;
+  return first ? mergeIntoDefaults(builtins[first], defaults) : { ...defaults };
 }
 
 // 保存値を defaults に上書きマージして返す。defaults に無いキーは捨て、
@@ -103,6 +117,12 @@ export function serializePresets(presets, page) {
   }, null, 2);
 }
 
+// エンベロープ {app,version,presets} なら presets を、素のマップ {名前:値}
+// ならそれ自身を返す。インポートとビルトイン読込の両方で形を揃える。
+function unwrapPresetsEnvelope(data) {
+  return isPlainObject(data) && isPlainObject(data.presets) ? data.presets : data;
+}
+
 // インポート文字列を検証してプリセットマップを返す。エンベロープ形式
 // （{app,version,presets}）と素のマップ（{名前:値}）の両方を受ける。JSON
 // として読めない／有効なテーマが1件も無ければ例外を投げる（呼び出し側で握る）。
@@ -113,10 +133,37 @@ export function parsePresetsImport(text) {
   } catch {
     throw new Error('JSON として読み込めませんでした');
   }
-  const raw = isPlainObject(data) && isPlainObject(data.presets) ? data.presets : data;
-  const presets = sanitizePresets(raw);
+  const presets = sanitizePresets(unwrapPresetsEnvelope(data));
   if (Object.keys(presets).length === 0) {
     throw new Error('テーマが1件も見つかりませんでした');
   }
   return presets;
+}
+
+// ── ビルトイン（配布デフォルト）テーマ ───────────────────────────────────────
+// public/default-themes/<page>.json を「常に存在する基底レイヤー」として読む。
+// 非永続: 毎回ここから読むので JSON を更新すれば全ユーザーに反映される。
+// localStorage のユーザーテーマは上に重ね、同名はユーザー優先で上書きできる。
+
+// パース済み JSON からビルトインプリセットを取り出す純関数。ページガード付き:
+// エンベロープに page があり expectedKey と不一致なら取り違えとみなし {} を返す。
+// page が無い／expectedKey 未指定ならガードは効かせない。
+export function selectBuiltinPresets(data, expectedKey) {
+  if (isPlainObject(data) && data.page && expectedKey && data.page !== expectedKey) {
+    return {};
+  }
+  return sanitizePresets(unwrapPresetsEnvelope(data));
+}
+
+// public/default-themes/<page>.json を取得してビルトインプリセットを返す。
+// 404・ネットワーク不通・壊れた JSON・ページ不一致はすべて {}（無害に無効化）。
+export async function fetchBuiltinPresets(baseUrl, page, expectedKey) {
+  try {
+    const url = (baseUrl || '/') + 'default-themes/' + page + '.json';
+    const res = await fetch(url);
+    if (!res.ok) return {};
+    return selectBuiltinPresets(JSON.parse(await res.text()), expectedKey);
+  } catch {
+    return {};
+  }
 }
