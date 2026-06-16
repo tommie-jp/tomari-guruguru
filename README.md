@@ -8,6 +8,16 @@
 
 - [ ] 予定：GIF
 
+## 開発環境
+
+WSL2 + Ubuntu 24.04 で開発・テストしています。
+
+- `npm run dev` は WSL を自動判定して `0.0.0.0` でリッスンするため、Windows 側の Chrome から
+  起動ログに出る `Network:` の URL（または `http://localhost:5173/`）で開けます。
+- カメラは secure context が必要なので、`http://localhost:5173/camera.html` で開くのが確実です。
+- `.env.local` は通常不要です（WSL 自動判定で動きます）。ヘッドレスやリモート閲覧などで明示的に
+  上書きしたいときだけ `.env.local.example` をコピーして使ってください。
+
 ---
 
 以下はフォーク元の引用です。
