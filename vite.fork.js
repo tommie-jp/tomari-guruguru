@@ -20,6 +20,8 @@ export default function forkConfig({ mode }) {
     server: {
       port: 5173,
       strictPort: true,
+      // npm run dev で開く既定ページ（本家の /talk.html を上書き）
+      open: '/camera.html',
     },
     build: {
       rollupOptions: {
