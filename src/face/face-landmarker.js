@@ -16,7 +16,7 @@ export async function createFaceLandmarker(paths = {}) {
   // info/warning ノイズを間引く（本物の error/fatal は残す）。
   silenceMediaPipeLogs();
 
-  // BASE_URL は本番(/tomari-guruguru/)と開発(/)で変わるため必ず経由する。
+  // BASE_URL は本番(/guruguru-avatar/)と開発(/)で変わるため必ず経由する。
   const base = import.meta.env.BASE_URL;
   const wasmPath = paths.wasmPath ?? `${base}mediapipe/wasm`;
   const modelPath = paths.modelPath ?? `${base}mediapipe/face_landmarker.task`;

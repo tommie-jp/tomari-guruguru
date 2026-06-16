@@ -3,7 +3,7 @@
 import { FilesetResolver, GestureRecognizer, PoseLandmarker } from '@mediapipe/tasks-vision';
 
 function modelBase() {
-  return import.meta.env.BASE_URL; // 本番(/tomari-guruguru/) / 開発(/) を吸収
+  return import.meta.env.BASE_URL; // 本番(/guruguru-avatar/) / 開発(/) を吸収
 }
 
 async function fileset() {

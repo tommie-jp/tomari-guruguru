@@ -10,10 +10,10 @@
 #
 set -euo pipefail
 
-REPO="tommie-jp/tomari-guruguru"
+REPO="tommie-jp/guruguru-avatar"
 BRANCH="main"
 WORKFLOW="pages.yml"
-SITE_URL="https://tommie-jp.github.io/tomari-guruguru/"
+SITE_URL="https://tommie-jp.github.io/guruguru-avatar/"
 
 # スクリプトの場所（＝リポジトリ）へ移動。どこから実行しても git コマンドが効くように。
 cd "$(dirname "$0")"

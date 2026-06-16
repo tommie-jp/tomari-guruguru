@@ -65,7 +65,7 @@ obs64.exe --enable-media-stream --use-fake-ui-for-media-stream
 1. ソース → 追加 → 「ブラウザ」
 2. URL:
    - dev: `http://localhost:5173/camera.html?obs=1`
-   - 本番: `https://tommie-jp.github.io/tomari-guruguru/camera.html?obs=1`
+   - 本番: `https://tommie-jp.github.io/guruguru-avatar/camera.html?obs=1`
 3. 幅・高さ: 1280×720 か 1920×1080
 4. 「ソースが非アクティブのときシャットダウン」OFF（トラッキングを温存）
 5. ソースを右クリック →「対話」でカメラ許可の確認、`T` キーで Tweaks を出して較正

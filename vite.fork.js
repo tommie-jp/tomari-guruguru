@@ -10,13 +10,17 @@
 import { loadEnv } from 'vite';
 import { resolve } from 'path';
 
-export default function forkConfig({ mode }) {
+export default function forkConfig({ command, mode }) {
   // 個人環境向けの上書きは .env.local（git 管理外）で行う:
   //   VITE_HOST=1    … 0.0.0.0 でリッスン（WSL の Windows 側 Chrome から到達可）
   //   VITE_NO_OPEN=1 … 自動ブラウザオープンを無効化
   const env = loadEnv(mode, process.cwd(), '');
 
   const config = {
+    // fork: GitHub Pages のリポジトリ名（guruguru-avatar）に追従させる base。
+    // 本家 vite.config.js は upstream と字面一致を保ちたいので、リネームに伴う
+    // base 上書きはこの fork 側に集約する（mergeConfig で fork が勝つ）。
+    base: command === 'build' ? '/guruguru-avatar/' : '/',
     server: {
       port: 5173,
       strictPort: true,
@@ -24,8 +28,8 @@ export default function forkConfig({ mode }) {
       open: '/camera.html',
     },
     preview: {
-      // npm run preview では常にカメラ版を開く（base /tomari-guruguru/ 込みの絶対パス）
-      open: '/tomari-guruguru/camera.html',
+      // npm run preview では常にカメラ版を開く（base /guruguru-avatar/ 込みの絶対パス）
+      open: '/guruguru-avatar/camera.html',
     },
     build: {
       rollupOptions: {

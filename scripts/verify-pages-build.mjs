@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, posix } from 'node:path';
 
 const DIST = 'dist';
-const BASE = '/tomari-guruguru/';
+const BASE = '/guruguru-avatar/';
 const HTML_FILES = ['index.html', 'talk.html', 'guruguru.html', 'camera.html', 'tracking.html'];
 const SHEETS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
@@ -37,7 +37,7 @@ function assertBaseAssetReference(file, html) {
 }
 
 function assertReferencedBaseAssetsExist(file, html) {
-  const attrPattern = /\b(?:src|href)="(\/tomari-guruguru\/[^"]+)"/g;
+  const attrPattern = /\b(?:src|href)="(\/guruguru-avatar\/[^"]+)"/g;
   for (const match of html.matchAll(attrPattern)) {
     const urlPath = match[1];
     if (!urlPath.startsWith(BASE)) continue;

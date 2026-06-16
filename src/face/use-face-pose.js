@@ -125,7 +125,7 @@ export function useFacePose(targetRef, opts = {}) {
     async function init() {
       try {
         setStatus({ phase: 'loading', faceDetected: false, error: null, engine: null });
-        // BASE_URL は本番(/tomari-guruguru/)と開発(/)で変わる。Worker にも明示的に
+        // BASE_URL は本番(/guruguru-avatar/)と開発(/)で変わる。Worker にも明示的に
         // 絶対パスを渡せるよう、ここで解決してから detector を生成する。
         const base = import.meta.env.BASE_URL;
         detector = await createFaceDetector(

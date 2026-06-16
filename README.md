@@ -4,7 +4,7 @@
 
 - ライブ配信で使うことを想定しています。
 - デモで試してください。Webカメラが必要です。
-  - [ぐるぐるカメラデモ](https://tommie-jp.github.io/tomari-guruguru/camera.html)
+  - [ぐるぐるカメラデモ](https://tommie-jp.github.io/guruguru-avatar/camera.html)
 
 - [ ] 予定：GIF
 
@@ -63,18 +63,18 @@ npm run build
 npm run preview   # ビルド結果をローカル確認
 ```
 
-preview は GitHub Pages と同じ `/tomari-guruguru/` のベースパスで起動します。
+preview は GitHub Pages と同じ `/guruguru-avatar/` のベースパスで起動します。
 
 ```text
-http://127.0.0.1:4173/tomari-guruguru/talk.html
-http://127.0.0.1:4173/tomari-guruguru/guruguru.html
+http://127.0.0.1:4173/guruguru-avatar/talk.html
+http://127.0.0.1:4173/guruguru-avatar/guruguru.html
 ```
 
 ---
 
 ## ディレクトリ構成
 
-```
+```text
 .
 ├── index.html              # トマリトークへのリダイレクト
 ├── guruguru.html              # ぐるぐる版エントリ
@@ -123,7 +123,7 @@ http://127.0.0.1:4173/tomari-guruguru/guruguru.html
 ### 6状態
 
 | フォルダ | 目 | 口 |
-|---|---|---|
+| --- | --- | --- |
 | `A` | 開け | とじ |
 | `B` | 開け | 中間 |
 | `C` | 開け | 開け |
