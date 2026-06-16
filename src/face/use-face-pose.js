@@ -52,7 +52,8 @@ export function useFacePose(targetRef, opts = {}) {
 
     let landmarker = null;
     let stream = null;
-    let raf = 0;
+    let raf = 0; // requestAnimationFrame ハンドル（rVFC 非対応ブラウザのフォールバック）
+    let rvfc = 0; // requestVideoFrameCallback ハンドル
     let cancelled = false;
     let lastVideoTime = -1;
     let lastFaceDetected = null; // 変化時のみ setState して再描画を抑える
@@ -63,44 +64,62 @@ export function useFacePose(targetRef, opts = {}) {
       setStatus((s) => ({ ...s, faceDetected: detected }));
     }
 
-    function loop() {
+    // 1フレーム分の推論。新しい映像フレームのときだけ重い detectForVideo を回す。
+    function processFrame() {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+      lastVideoTime = video.currentTime;
+      const result = landmarker.detectForVideo(video, performance.now());
+      const matrix = result.facialTransformationMatrixes?.[0]?.data;
+      if (matrix) {
+        const pose = poseFromMatrix(matrix, poseOptionsRef.current);
+        targetRef.current.x = pose.x;
+        targetRef.current.y = pose.y;
+        poseRef.current.yaw = pose.yaw;
+        poseRef.current.pitch = pose.pitch;
+        rollRef.current = pose.roll;
+        // 位置・サイズはランドマークから。向き(yaw/pitch)とは独立した信号。
+        const landmarks = result.faceLandmarks?.[0];
+        const pos = facePositionFromLandmarks(landmarks, positionOptionsRef.current);
+        posRef.current.x = pos.x;
+        posRef.current.y = pos.y;
+        faceScaleRef.current = faceScaleFromLandmarks(landmarks);
+        const categories = result.faceBlendshapes?.[0]?.categories || [];
+        mouthRef.current = mouthOpenFromBlendshapes(categories);
+        eyesClosedRef.current = eyesClosedFromBlendshapes(categories);
+        blendshapesRef.current = categories;
+        markFace(true);
+      } else {
+        // 顔ロスト時は中立へ戻す（傾き・スライド・ズームが固まらないように）
+        rollRef.current = 0;
+        posRef.current.x = 0;
+        posRef.current.y = 0;
+        faceScaleRef.current = 0;
+        mouthRef.current = 0;
+        eyesClosedRef.current = 0;
+        blendshapesRef.current = [];
+        markFace(false);
+      }
+    }
+
+    // 推論ループ。requestVideoFrameCallback があれば「映像フレーム単位」で回し、
+    // 重い推論を requestAnimationFrame ハンドラの外で実行する（rAF ハンドラを
+    // ブロックしないので Chrome の [Violation] 'requestAnimationFrame' 警告が出ない）。
+    // 非対応ブラウザは requestAnimationFrame にフォールバックする。
+    function scheduleNext() {
       if (cancelled) return;
       const video = videoRef.current;
-      if (video && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-        const result = landmarker.detectForVideo(video, performance.now());
-        const matrix = result.facialTransformationMatrixes?.[0]?.data;
-        if (matrix) {
-          const pose = poseFromMatrix(matrix, poseOptionsRef.current);
-          targetRef.current.x = pose.x;
-          targetRef.current.y = pose.y;
-          poseRef.current.yaw = pose.yaw;
-          poseRef.current.pitch = pose.pitch;
-          rollRef.current = pose.roll;
-          // 位置・サイズはランドマークから。向き(yaw/pitch)とは独立した信号。
-          const landmarks = result.faceLandmarks?.[0];
-          const pos = facePositionFromLandmarks(landmarks, positionOptionsRef.current);
-          posRef.current.x = pos.x;
-          posRef.current.y = pos.y;
-          faceScaleRef.current = faceScaleFromLandmarks(landmarks);
-          const categories = result.faceBlendshapes?.[0]?.categories || [];
-          mouthRef.current = mouthOpenFromBlendshapes(categories);
-          eyesClosedRef.current = eyesClosedFromBlendshapes(categories);
-          blendshapesRef.current = categories;
-          markFace(true);
-        } else {
-          // 顔ロスト時は中立へ戻す（傾き・スライド・ズームが固まらないように）
-          rollRef.current = 0;
-          posRef.current.x = 0;
-          posRef.current.y = 0;
-          faceScaleRef.current = 0;
-          mouthRef.current = 0;
-          eyesClosedRef.current = 0;
-          blendshapesRef.current = [];
-          markFace(false);
-        }
+      if (video && typeof video.requestVideoFrameCallback === 'function') {
+        rvfc = video.requestVideoFrameCallback(() => {
+          processFrame();
+          scheduleNext();
+        });
+      } else {
+        raf = requestAnimationFrame(() => {
+          processFrame();
+          scheduleNext();
+        });
       }
-      raf = requestAnimationFrame(loop);
     }
 
     async function init() {
@@ -111,7 +130,7 @@ export function useFacePose(targetRef, opts = {}) {
         stream = await startWebcam(videoRef.current);
         if (cancelled) return;
         setStatus({ phase: 'running', faceDetected: false, error: null });
-        raf = requestAnimationFrame(loop);
+        scheduleNext();
       } catch (err) {
         if (cancelled) return;
         setStatus({ phase: 'error', faceDetected: false, error: err?.message || String(err) });
@@ -123,6 +142,10 @@ export function useFacePose(targetRef, opts = {}) {
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      const video = videoRef.current;
+      if (rvfc && typeof video?.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(rvfc);
+      }
       stopWebcam(stream);
       landmarker?.close?.();
     };
