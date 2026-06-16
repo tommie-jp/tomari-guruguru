@@ -7,6 +7,8 @@
 //       "W0615 08:32:29.6 ... face_landmarker_graph.cc:180] ..."
 //       "I0615 08:32:29.6 ... gl_context.cc:407] GL version: 3.0 ..."
 //   - 定型メッセージ "Graph successfully started running."
+//   - TFLite ランタイムの定型 info
+//       "INFO: Created TensorFlow Lite XNNPACK delegate for CPU."
 // 残す（通す）:
 //   - error(E)/fatal(F) 行などの本物の問題
 //   - アプリ自身のログ全般
@@ -14,8 +16,12 @@
 // glog 形式の info/warning 行（先頭が I か W）。E/F は意図的に対象外。
 const GLOG_INFO_WARN = /^[IW]\d{4}\s+\d{2}:\d{2}:\d{2}/;
 
-// glog 形式ではないが MediaPipe が必ず出す定型メッセージ。
-const NOISE_SUBSTRINGS = ['Graph successfully started running.'];
+// glog 形式ではないが MediaPipe / TFLite が必ず出す定型メッセージ。
+const NOISE_SUBSTRINGS = [
+  'Graph successfully started running.',
+  // TFLite XNNPACK の初期化 info（"... for CPU." 等、末尾は環境で変わるため前方一致）
+  'Created TensorFlow Lite XNNPACK delegate',
+];
 
 /**
  * console メソッドに渡された引数が MediaPipe のノイズログかを判定する。

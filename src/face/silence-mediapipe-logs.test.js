@@ -18,6 +18,12 @@ describe('isMediaPipeNoise', () => {
     expect(isMediaPipeNoise(['Graph successfully started running.'])).toBe(true);
   });
 
+  it('TFLite の "INFO: Created TensorFlow Lite XNNPACK delegate ..." を検出する', () => {
+    expect(
+      isMediaPipeNoise(['INFO: Created TensorFlow Lite XNNPACK delegate for CPU.']),
+    ).toBe(true);
+  });
+
   it('error(E)/fatal(F) 行は本物の問題なので残す', () => {
     expect(isMediaPipeNoise(['E0615 08:32:29.000000 2136208 foo.cc:1] real error'])).toBe(false);
     expect(isMediaPipeNoise(['F0615 08:32:29.000000 2136208 foo.cc:1] fatal'])).toBe(false);
