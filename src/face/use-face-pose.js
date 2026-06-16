@@ -1,16 +1,12 @@
 // useFacePose — Webカメラ＋FaceLandmarker を起動し、毎フレームの顔向きを
 // targetRef.current.{x,y}(-1..1) に書き込む React フック。
 //
-// 描画系(app側)はこの target を平滑化してグリッドに変換するだけ。
-// マウス版の pointermove ハンドラを、このフックに置き換えるイメージ。
+// 重い推論は detector（Web Worker 優先 / 非対応時はメインスレッド）に委譲する。
+// detect の結果 signals を各 ref に反映するだけで、描画系(app側)はこの target を
+// 平滑化してグリッドに変換する。マウス版の pointermove ハンドラを置き換えるイメージ。
 import React from 'react';
-import { createFaceLandmarker } from './face-landmarker';
 import { startWebcam, stopWebcam } from './webcam';
-import { poseFromMatrix } from './head-pose';
-import { facePositionFromLandmarks } from './face-position';
-import { faceScaleFromLandmarks } from './face-scale';
-import { mouthOpenFromBlendshapes } from './mouth';
-import { eyesClosedFromBlendshapes } from './eyes';
+import { createFaceDetector } from './create-detector';
 
 const { useRef, useState, useEffect } = React;
 
@@ -50,7 +46,7 @@ export function useFacePose(targetRef, opts = {}) {
       return undefined;
     }
 
-    let landmarker = null;
+    let detector = null;
     let stream = null;
     let raf = 0; // requestAnimationFrame ハンドル（rVFC 非対応ブラウザのフォールバック）
     let rvfc = 0; // requestVideoFrameCallback ハンドル
@@ -64,69 +60,80 @@ export function useFacePose(targetRef, opts = {}) {
       setStatus((s) => ({ ...s, faceDetected: detected }));
     }
 
-    // 1フレーム分の推論。新しい映像フレームのときだけ重い detectForVideo を回す。
-    function processFrame() {
+    // deriveFaceSignals の戻りを各 ref に反映する。
+    // 顔ロスト(faceDetected=false)時は向き(target/pose)を据え置き、
+    // 傾き・スライド・ズーム・口・目は中立(0/[])へ戻す（固まり防止）。
+    function applySignals(s) {
+      if (s.faceDetected) {
+        targetRef.current.x = s.x;
+        targetRef.current.y = s.y;
+        poseRef.current.yaw = s.yaw;
+        poseRef.current.pitch = s.pitch;
+      }
+      rollRef.current = s.roll;
+      posRef.current.x = s.posX;
+      posRef.current.y = s.posY;
+      faceScaleRef.current = s.faceScale;
+      mouthRef.current = s.mouth;
+      eyesClosedRef.current = s.eyesClosed;
+      blendshapesRef.current = s.blendshapes;
+      markFace(s.faceDetected);
+    }
+
+    function currentOptions() {
+      return {
+        poseOptions: poseOptionsRef.current,
+        positionOptions: positionOptionsRef.current,
+      };
+    }
+
+    // 1フレーム分の推論。新しい映像フレームのときだけ detect を回す。
+    // Worker 版の detect は Promise を返すので await し、解決後に次フレームを予約する
+    // （= 1フレームずつ処理する自然なバックプレッシャ。処理中に届いた分はスキップ）。
+    async function tick() {
+      if (cancelled) return;
       const video = videoRef.current;
       if (!video || video.readyState < 2 || video.currentTime === lastVideoTime) return;
       lastVideoTime = video.currentTime;
-      const result = landmarker.detectForVideo(video, performance.now());
-      const matrix = result.facialTransformationMatrixes?.[0]?.data;
-      if (matrix) {
-        const pose = poseFromMatrix(matrix, poseOptionsRef.current);
-        targetRef.current.x = pose.x;
-        targetRef.current.y = pose.y;
-        poseRef.current.yaw = pose.yaw;
-        poseRef.current.pitch = pose.pitch;
-        rollRef.current = pose.roll;
-        // 位置・サイズはランドマークから。向き(yaw/pitch)とは独立した信号。
-        const landmarks = result.faceLandmarks?.[0];
-        const pos = facePositionFromLandmarks(landmarks, positionOptionsRef.current);
-        posRef.current.x = pos.x;
-        posRef.current.y = pos.y;
-        faceScaleRef.current = faceScaleFromLandmarks(landmarks);
-        const categories = result.faceBlendshapes?.[0]?.categories || [];
-        mouthRef.current = mouthOpenFromBlendshapes(categories);
-        eyesClosedRef.current = eyesClosedFromBlendshapes(categories);
-        blendshapesRef.current = categories;
-        markFace(true);
-      } else {
-        // 顔ロスト時は中立へ戻す（傾き・スライド・ズームが固まらないように）
-        rollRef.current = 0;
-        posRef.current.x = 0;
-        posRef.current.y = 0;
-        faceScaleRef.current = 0;
-        mouthRef.current = 0;
-        eyesClosedRef.current = 0;
-        blendshapesRef.current = [];
-        markFace(false);
+      try {
+        const signals = await detector.detect(video, performance.now(), currentOptions());
+        if (!cancelled && signals) applySignals(signals);
+      } catch {
+        // 単発フレームの失敗は握りつぶしてループ継続（致命的なら init で検出済み）。
       }
     }
 
-    // 推論ループ。requestVideoFrameCallback があれば「映像フレーム単位」で回し、
-    // 重い推論を requestAnimationFrame ハンドラの外で実行する（rAF ハンドラを
-    // ブロックしないので Chrome の [Violation] 'requestAnimationFrame' 警告が出ない）。
-    // 非対応ブラウザは requestAnimationFrame にフォールバックする。
+    // requestVideoFrameCallback があれば映像フレーム単位で、無ければ rAF で回す。
+    // どちらも tick の完了後に次を予約するので、重い推論が rAF ハンドラを
+    // ブロックせず Chrome の [Violation] 'requestAnimationFrame' 警告も出ない。
     function scheduleNext() {
       if (cancelled) return;
       const video = videoRef.current;
+      const run = () => {
+        tick().finally(() => scheduleNext());
+      };
       if (video && typeof video.requestVideoFrameCallback === 'function') {
-        rvfc = video.requestVideoFrameCallback(() => {
-          processFrame();
-          scheduleNext();
-        });
+        rvfc = video.requestVideoFrameCallback(run);
       } else {
-        raf = requestAnimationFrame(() => {
-          processFrame();
-          scheduleNext();
-        });
+        raf = requestAnimationFrame(run);
       }
     }
 
     async function init() {
       try {
         setStatus({ phase: 'loading', faceDetected: false, error: null });
-        landmarker = await createFaceLandmarker();
-        if (cancelled) return;
+        // BASE_URL は本番(/tomari-guruguru/)と開発(/)で変わる。Worker にも明示的に
+        // 絶対パスを渡せるよう、ここで解決してから detector を生成する。
+        const base = import.meta.env.BASE_URL;
+        detector = await createFaceDetector({
+          wasmPath: `${base}mediapipe/wasm`,
+          modelPath: `${base}mediapipe/face_landmarker.task`,
+        });
+        if (cancelled) {
+          detector.close?.();
+          detector = null;
+          return;
+        }
         stream = await startWebcam(videoRef.current);
         if (cancelled) return;
         setStatus({ phase: 'running', faceDetected: false, error: null });
@@ -147,7 +154,7 @@ export function useFacePose(targetRef, opts = {}) {
         video.cancelVideoFrameCallback(rvfc);
       }
       stopWebcam(stream);
-      landmarker?.close?.();
+      detector?.close?.();
     };
   }, [enabled, targetRef]);
 
