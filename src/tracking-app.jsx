@@ -29,7 +29,7 @@ const GESTURE_JP = {
 const handedJP = (name) => (name === 'Left' ? '左手' : name === 'Right' ? '右手' : name);
 
 function App() {
-  const [t, setTweak, resetTweaks] = useTweaks(TWEAK_DEFAULTS);
+  const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
   const [labels, setLabels] = useState([]); // [{ handed, gesture, score }]
   const canvasRef = useRef(null);
   const tweaksRef = useRef(t);
@@ -175,6 +175,8 @@ function App() {
         <TweakSection label="見た目"></TweakSection>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+        <TweakSection label="テーマ"></TweakSection>
+        <TweakPresets themes={themes}></TweakPresets>
         <TweakSection label="リセット"></TweakSection>
         <TweakButton label="設定をデフォルトに戻す" secondary onClick={resetTweaks}></TweakButton>
       </TweaksPanel>

@@ -85,7 +85,7 @@ function makeAudioEngine() {
 }
 
 function App() {
-  const [t, setTweak, resetTweaks] = useTweaks(TALK_DEFAULTS);
+  const [t, setTweak, resetTweaks, themes] = useTweaks(TALK_DEFAULTS);
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [mouth, setMouth] = useState(0);        // 0:とじ 1:中間 2:開け
   const [blink, setBlink] = useState(false);
@@ -342,6 +342,8 @@ function App() {
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+        <TweakSection label="テーマ"></TweakSection>
+        <TweakPresets themes={themes}></TweakPresets>
         <TweakSection label="リセット"></TweakSection>
         <TweakButton label="設定をデフォルトに戻す" secondary onClick={resetTweaks}></TweakButton>
       </TweaksPanel>

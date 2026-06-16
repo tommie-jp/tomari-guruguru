@@ -87,7 +87,7 @@ const DEG = Math.PI / 180;
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
 function App() {
-  const [t, setTweak, resetTweaks] = useTweaks(TWEAK_DEFAULTS);
+  const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
   const [blink, setBlink] = useState(false);
@@ -555,6 +555,8 @@ function App() {
           onChange={(v) => setTweak('showDebug', v)}></TweakToggle>
         <TweakToggle label="表情係数を表示" value={t.showExpr}
           onChange={(v) => setTweak('showExpr', v)}></TweakToggle>
+        <TweakSection label="テーマ"></TweakSection>
+        <TweakPresets themes={themes}></TweakPresets>
         <TweakSection label="リセット"></TweakSection>
         <TweakButton label="設定をデフォルトに戻す" secondary onClick={resetTweaks}></TweakButton>
       </TweaksPanel>

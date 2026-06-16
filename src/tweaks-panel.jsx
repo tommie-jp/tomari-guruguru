@@ -1,6 +1,10 @@
 import React from 'react';
 // fork: 永続化ヘルパーは独立モジュールへ分離（本家 scaffold には無い）
-import { tweaksStorageKey, loadTweaks, saveTweaks } from './use-tweaks.js';
+import {
+  tweaksStorageKey, loadTweaks, saveTweaks,
+  presetsStorageKey, loadPresets, savePresets,
+  mergeIntoDefaults, serializePresets, parsePresetsImport,
+} from './use-tweaks.js';
 
 // @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
 
@@ -154,6 +158,13 @@ const __TWEAKS_STYLE = `
   .twk-btn:hover{background:rgba(0,0,0,.88)}
   .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
   .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+  .twk-btn:disabled{opacity:.4;pointer-events:none}
+
+  /* fork:presets — テーマ保存/適用/入出力の横並び行 */
+  .twk-presets-row{display:flex;gap:6px;align-items:center}
+  .twk-presets-row .twk-field{flex:1 1 auto}
+  .twk-presets-row .twk-btn{flex:0 0 auto}
+  .twk-presets-empty{font-size:11px;color:rgba(0,0,0,.45);padding:2px 0}
 
   .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
     border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
@@ -211,16 +222,34 @@ const __TWEAKS_STYLE = `
 function useTweaks(defaults, storageKey) {
   // ── fork:persist ↓ ── 永続化（ヘルパーは ./use-tweaks.js）
   const key = React.useMemo(() => tweaksStorageKey(storageKey), [storageKey]);
+  const presetsKey = React.useMemo(() => presetsStorageKey(storageKey), [storageKey]);
   // 初回レンダーで保存値を読み込む（関数初期化なので一度だけ実行される）。
   const [values, setValues] = React.useState(() => loadTweaks(key, defaults));
+  // テーマ（名前付きプリセット）集も初回に読み込む。
+  const [presets, setPresets] = React.useState(() => loadPresets(presetsKey));
   // reset 用に最新の defaults を保持（通常はモジュール定数なので安定）。
   const defaultsRef = React.useRef(defaults);
   defaultsRef.current = defaults;
+  // テーマ操作のコールバックを毎回作り直さずに最新値を読むための ref。
+  const valuesRef = React.useRef(values);
+  valuesRef.current = values;
+  const presetsRef = React.useRef(presets);
+  presetsRef.current = presets;
 
   // values が変わるたびに保存する。初回マウント時にも書き込むため、コード側で
   // defaults にキーが増えた場合は保存済みデータも自動で追従する。
   React.useEffect(() => { saveTweaks(key, values); }, [key, values]);
+  // テーマ集も変更のたびに永続化する。
+  React.useEffect(() => { savePresets(presetsKey, presets); }, [presetsKey, presets]);
   // ── fork:persist ↑ ──
+
+  // 値一式を反映し、host（__edit_mode_set_keys）と同一ページのリスナ
+  // （tweakchange）にも知らせる共通処理。reset とテーマ適用が共有する。
+  const applyValues = React.useCallback((next) => {
+    setValues(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: next }));
+  }, []);
 
   // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
   // useState-style call doesn't write a "[object Object]" key into the persisted
@@ -238,14 +267,51 @@ function useTweaks(defaults, storageKey) {
   // ── fork:persist ↓ ── すべての項目を defaults に戻す（本家には無い）
   // 保存は上の useEffect が拾い、host とも同期する。
   const resetTweaks = React.useCallback(() => {
-    const next = { ...defaultsRef.current };
-    setValues(next);
-    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
-    window.dispatchEvent(new CustomEvent('tweakchange', { detail: next }));
-  }, []);
+    applyValues({ ...defaultsRef.current });
+  }, [applyValues]);
 
-  // fork: 本家は [values, setTweak]。resetTweaks を加えた3要素返し。
-  return [values, setTweak, resetTweaks];
+  // ── fork:presets ↓ ── テーマ（名前付きプリセット）コントローラ。
+  // メソッドは ref で最新値を読むので、依存は names を更新するための presets のみ。
+  const themes = React.useMemo(() => ({
+    names: Object.keys(presetsRef.current),
+    // 現在値のスナップショットを name で保存（既存名は上書き）。空名は no-op。
+    save(name) {
+      const n = String(name || '').trim();
+      if (!n) return false;
+      setPresets((prev) => ({ ...prev, [n]: { ...valuesRef.current } }));
+      return true;
+    },
+    // name のテーマを現在の defaults にマージして適用（前方互換）。
+    apply(name) {
+      const saved = presetsRef.current[name];
+      if (!saved) return false;
+      applyValues(mergeIntoDefaults(saved, defaultsRef.current));
+      return true;
+    },
+    remove(name) {
+      setPresets((prev) => {
+        if (!(name in prev)) return prev;
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    },
+    // 全テーマをエクスポート用 JSON 文字列にする（ダウンロード用）。
+    exportJSON() {
+      return serializePresets(presetsRef.current, tweaksStorageKey(storageKey));
+    },
+    // JSON 文字列を取り込み既存にマージ（同名は取り込み側優先）。取り込めた
+    // 件数を返す。壊れていれば例外を投げる（呼び出し側で握る）。
+    importJSON(text) {
+      const incoming = parsePresetsImport(text);
+      setPresets((prev) => ({ ...prev, ...incoming }));
+      return Object.keys(incoming).length;
+    },
+  }), [presets, applyValues, storageKey]);
+  // ── fork:presets ↑ ──
+
+  // fork: 本家は [values, setTweak]。resetTweaks・themes を加えた4要素返し。
+  return [values, setTweak, resetTweaks, themes];
   // ── fork:persist ↑ ──
 }
 
@@ -623,8 +689,101 @@ function TweakButton({ label, onClick, secondary = false }) {
   );
 }
 
+// ── fork:presets ─────────────────────────────────────────────────────────────
+// TweakPresets — useTweaks の 4 番目の返り値 themes を受け取り、現在設定を
+// 名前付きテーマとして保存／適用／削除し、JSON でエクスポート／インポートする
+// UI。ファイル入出力は Blob ダウンロードと <input type=file> で行う。
+function TweakPresets({ themes }) {
+  const [name, setName] = React.useState('');
+  const [sel, setSel] = React.useState('');
+  const fileRef = React.useRef(null);
+  const names = themes.names;
+
+  // 選択中のテーマが削除されたら選択を解除する。
+  React.useEffect(() => {
+    if (sel && !names.includes(sel)) setSel('');
+  }, [names, sel]);
+
+  const onSave = () => {
+    const n = name.trim();
+    if (!n) return;
+    if (names.includes(n) && !window.confirm(`「${n}」を上書きしますか？`)) return;
+    if (themes.save(n)) { setSel(n); setName(''); }
+  };
+  const onApply = () => { if (sel) themes.apply(sel); };
+  const onDelete = () => {
+    if (sel && window.confirm(`「${sel}」を削除しますか？`)) themes.remove(sel);
+  };
+
+  const onExport = () => {
+    const blob = new Blob([themes.exportJSON()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'tomari-tweaks-themes.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const onImportPick = () => fileRef.current?.click();
+  const onImportFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // 同じファイルを連続で選び直せるようリセット
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const count = themes.importJSON(String(reader.result));
+        window.alert(`${count} 件のテーマを読み込みました`);
+      } catch (err) {
+        window.alert(`読み込めませんでした: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <>
+      <TweakRow label="名前を付けて保存">
+        <div className="twk-presets-row">
+          <input className="twk-field" type="text" value={name} placeholder="テーマ名"
+                 onChange={(e) => setName(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }} />
+          <button type="button" className="twk-btn" onClick={onSave}>保存</button>
+        </div>
+      </TweakRow>
+      {names.length > 0 ? (
+        <TweakRow label="保存したテーマ">
+          <div className="twk-presets-row">
+            <select className="twk-field" value={sel}
+                    onChange={(e) => setSel(e.target.value)}>
+              <option value="">— 選択 —</option>
+              {names.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <button type="button" className="twk-btn" disabled={!sel}
+                    onClick={onApply}>適用</button>
+            <button type="button" className="twk-btn secondary" disabled={!sel}
+                    onClick={onDelete}>削除</button>
+          </div>
+        </TweakRow>
+      ) : (
+        <div className="twk-presets-empty">保存したテーマはまだありません</div>
+      )}
+      <div className="twk-presets-row">
+        <button type="button" className="twk-btn secondary" onClick={onExport}>
+          エクスポート
+        </button>
+        <button type="button" className="twk-btn secondary" onClick={onImportPick}>
+          インポート
+        </button>
+        <input ref={fileRef} type="file" accept="application/json,.json"
+               style={{ display: 'none' }} onChange={onImportFile} />
+      </div>
+    </>
+  );
+}
+
 Object.assign(window, {
   useTweaks, TweaksPanel, TweakSection, TweakRow,
   TweakSlider, TweakToggle, TweakRadio, TweakSelect,
-  TweakText, TweakNumber, TweakColor, TweakButton,
+  TweakText, TweakNumber, TweakColor, TweakButton, TweakPresets,
 });
