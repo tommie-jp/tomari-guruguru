@@ -1,4 +1,6 @@
 import React from 'react';
+// fork: 永続化ヘルパーは独立モジュールへ分離（本家 scaffold には無い）
+import { tweaksStorageKey, loadTweaks, saveTweaks } from './use-tweaks.js';
 
 // @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
 
@@ -202,42 +204,12 @@ const __TWEAKS_STYLE = `
 // (__edit_mode_set_keys → host rewrites the EDITMODE block on disk) AND to
 // localStorage so the user's adjustments survive a page reload.
 
-// 永続化キー。ページごとにバケットを分け、同一オリジンの guruguru / talk /
-// camera が localStorage を共有しても衝突しないようにする。明示キーを渡せば優先。
-function tweaksStorageKey(explicit) {
-  if (explicit) return explicit;
-  const path = (typeof location !== 'undefined' && location.pathname) || '';
-  const page = path.split('/').pop() || 'index';
-  return `tomari-tweaks:${page}`;
-}
+// fork: 永続化ヘルパー（tweaksStorageKey / loadTweaks / saveTweaks）は
+// ./use-tweaks.js に分離。本家に無い純粋な追加なので、衝突しないファイルへ退避した。
 
-// 保存値を defaults に上書きマージして返す。defaults に無いキーは捨て、
-// 読み取り不可（プライベートモード等）や壊れた JSON なら defaults を使う。
-function loadTweaks(key, defaults) {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return defaults;
-    const saved = JSON.parse(raw);
-    if (!saved || typeof saved !== 'object') return defaults;
-    const merged = { ...defaults };
-    for (const k of Object.keys(defaults)) {
-      if (k in saved) merged[k] = saved[k];
-    }
-    return merged;
-  } catch {
-    return defaults;
-  }
-}
-
-function saveTweaks(key, values) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(values));
-  } catch {
-    /* 容量超過やプライベートモードでは黙って諦める（アプリは継続動作） */
-  }
-}
-
+// fork: 本家 useTweaks に localStorage 永続化と resetTweaks を追加（番兵で明示）。
 function useTweaks(defaults, storageKey) {
+  // ── fork:persist ↓ ── 永続化（ヘルパーは ./use-tweaks.js）
   const key = React.useMemo(() => tweaksStorageKey(storageKey), [storageKey]);
   // 初回レンダーで保存値を読み込む（関数初期化なので一度だけ実行される）。
   const [values, setValues] = React.useState(() => loadTweaks(key, defaults));
@@ -248,6 +220,7 @@ function useTweaks(defaults, storageKey) {
   // values が変わるたびに保存する。初回マウント時にも書き込むため、コード側で
   // defaults にキーが増えた場合は保存済みデータも自動で追従する。
   React.useEffect(() => { saveTweaks(key, values); }, [key, values]);
+  // ── fork:persist ↑ ──
 
   // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
   // useState-style call doesn't write a "[object Object]" key into the persisted
@@ -262,7 +235,8 @@ function useTweaks(defaults, storageKey) {
     window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
   }, []);
 
-  // すべての項目を defaults に戻す。保存は上の useEffect が拾い、host とも同期する。
+  // ── fork:persist ↓ ── すべての項目を defaults に戻す（本家には無い）
+  // 保存は上の useEffect が拾い、host とも同期する。
   const resetTweaks = React.useCallback(() => {
     const next = { ...defaultsRef.current };
     setValues(next);
@@ -270,7 +244,9 @@ function useTweaks(defaults, storageKey) {
     window.dispatchEvent(new CustomEvent('tweakchange', { detail: next }));
   }, []);
 
+  // fork: 本家は [values, setTweak]。resetTweaks を加えた3要素返し。
   return [values, setTweak, resetTweaks];
+  // ── fork:persist ↑ ──
 }
 
 // ── TweaksPanel ─────────────────────────────────────────────────────────────
@@ -323,6 +299,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     return () => window.removeEventListener('message', onMsg);
   }, []);
 
+  // ── fork:outside-close ↓ ── 本家 scaffold に無い「外側クリックで閉じる」
   // 範囲外のクリック/タップでパネルを閉じる（pointerdown でマウス・タッチ両対応）。
   // capture フェーズで拾い、パネル内（dragRef）のタップは無視する。開いた瞬間の
   // クリックは open=false 時にはリスナ未登録なので即閉じは起きない。
@@ -338,6 +315,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     document.addEventListener('pointerdown', onOutsidePointer, true);
     return () => document.removeEventListener('pointerdown', onOutsidePointer, true);
   }, [open]);
+  // ── fork:outside-close ↑ ──
 
   const dismiss = () => {
     setOpen(false);
