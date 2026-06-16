@@ -5,7 +5,10 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { silenceMediaPipeLogs } from './silence-mediapipe-logs';
 
 /**
- * @param {{ wasmPath?: string, modelPath?: string }} [paths]
+ * @param {{ wasmPath?: string, modelPath?: string, moduleWasm?: boolean }} [paths]
+ *   moduleWasm=true でモジュールワーカー用 ESM ローダ(vision_wasm_module_internal.js)
+ *   を使う。クラシック版(vision_wasm_internal.js)は importScripts 用で、module worker
+ *   から import() すると "ModuleFactory not set" になるため。
  * @returns {Promise<FaceLandmarker>}
  */
 export async function createFaceLandmarker(paths = {}) {
@@ -18,7 +21,15 @@ export async function createFaceLandmarker(paths = {}) {
   const wasmPath = paths.wasmPath ?? `${base}mediapipe/wasm`;
   const modelPath = paths.modelPath ?? `${base}mediapipe/face_landmarker.task`;
 
-  const fileset = await FilesetResolver.forVisionTasks(wasmPath);
+  // module worker(import() でローダを読む)では ESM 版ローダを手動指定する。
+  // それ以外（メインスレッド=script タグ / クラシックワーカー=importScripts）は
+  // forVisionTasks に任せる（SIMD 有無を自動判定してクラシック版を選ぶ）。
+  const fileset = paths.moduleWasm
+    ? {
+        wasmLoaderPath: `${wasmPath}/vision_wasm_module_internal.js`,
+        wasmBinaryPath: `${wasmPath}/vision_wasm_module_internal.wasm`,
+      }
+    : await FilesetResolver.forVisionTasks(wasmPath);
   return FaceLandmarker.createFromOptions(fileset, {
     baseOptions: {
       modelAssetPath: modelPath,

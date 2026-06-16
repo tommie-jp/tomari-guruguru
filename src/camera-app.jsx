@@ -41,7 +41,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "showDebug": false,
-  "showExpr": false
+  "showExpr": false,
+  "useWorker": true
 }/*EDITMODE-END*/;
 
 // 表示する主な表情ブレンドシェイプ（MediaPipe FaceLandmarker のカテゴリ名）
@@ -118,7 +119,7 @@ function App() {
   };
   // 立ち位置（左右・上下）。invert は pose と同じく source 側(純関数)で適用する。
   const positionOptions = { invertX: t.invertSlide, invertY: t.invertSlideY };
-  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions, positionOptions });
+  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions, positionOptions, preferWorker: t.useWorker });
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -308,6 +309,12 @@ function App() {
     : status.phase === 'running' && status.faceDetected ? '#46C26A'
     : '#E5A23D';
 
+  // 実際の推論先（worker を希望しても dev・非対応・フォールバック時は main）。
+  const engineLabel = status.engine === 'worker' ? 'Web Worker'
+    : status.engine === 'main' ? 'メインスレッド' : '—';
+  const engineNote = t.useWorker && status.engine === 'main' ? '（フォールバック）' : '';
+  const onWorker = status.engine === 'worker';
+
   return (
     <div
       ref={stageRef}
@@ -383,6 +390,13 @@ function App() {
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, display: 'inline-block' }}></span>
           {statusText}
         </div>
+        {/* 実際にどのエンジンで推論しているか（Worker / メインスレッド）を常時表示 */}
+        <div style={{ marginTop: 4 }}>
+          <span style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: onWorker ? '#46C26A' : 'rgba(120,120,120,0.55)', display: 'inline-block' }}></span>
+            推論: {engineLabel}{engineNote}
+          </span>
+        </div>
       </div>
 
       <a href="talk.html" style={{
@@ -442,6 +456,7 @@ function App() {
           <div>blink {blink ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
           <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
           <div>size {faceScaleRef.current.toFixed(3)} / zoom {zoomCurrent.current.toFixed(2)}x</div>
+          <div>engine {status.engine || '—'}{engineNote}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginTop: 6 }}>
             {frames.map(({ r, c }) => (
               <div key={`d${r}-${c}`} style={{
@@ -531,6 +546,10 @@ function App() {
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+        <TweakSection label="推論エンジン"></TweakSection>
+        <TweakToggle label="Web Worker を使う" value={t.useWorker}
+          onChange={(v) => setTweak('useWorker', v)}></TweakToggle>
+        <TweakRow label="実行先" value={`${engineLabel}${engineNote}`}></TweakRow>
         <TweakSection label="デバッグ"></TweakSection>
         <TweakToggle label="グリッド表示" value={t.showDebug}
           onChange={(v) => setTweak('showDebug', v)}></TweakToggle>

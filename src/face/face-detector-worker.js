@@ -57,9 +57,15 @@ export function createWorkerDetector(paths = {}) {
     else dropPending();
   };
 
-  worker.postMessage({ type: 'init', wasmPath: paths.wasmPath, modelPath: paths.modelPath });
+  worker.postMessage({
+    type: 'init',
+    wasmPath: paths.wasmPath,
+    modelPath: paths.modelPath,
+    moduleWasm: paths.moduleWasm,
+  });
 
   return {
+    engine: 'worker',
     ready,
     async detect(source, timestamp, options) {
       const bitmap = await createImageBitmap(source);

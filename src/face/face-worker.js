@@ -1,6 +1,6 @@
 // 顔推論 Web Worker。重い detectForVideo をメインスレッドから分離する。
 // メイン側ドライバは face-detector-worker.js。やり取りするメッセージ:
-//   ← { type: 'init', wasmPath, modelPath }       初期化要求
+//   ← { type: 'init', wasmPath, modelPath, moduleWasm } 初期化要求
 //   → { type: 'ready' }                            初期化完了
 //   ← { type: 'frame', bitmap, timestamp, options } 1フレーム推論（bitmap は transfer）
 //   → { type: 'signals', signals }                 推論結果（deriveFaceSignals の戻り）
@@ -21,6 +21,7 @@ self.onmessage = async (e) => {
       landmarker = await createFaceLandmarker({
         wasmPath: msg.wasmPath,
         modelPath: msg.modelPath,
+        moduleWasm: msg.moduleWasm,
       });
       self.postMessage({ type: 'ready' });
     } catch (err) {

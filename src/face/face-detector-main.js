@@ -21,6 +21,7 @@ export function createMainDetector(paths = {}) {
   });
 
   return {
+    engine: 'main',
     ready,
     detect(source, timestamp, options) {
       if (!landmarker) return null;

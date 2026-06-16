@@ -16,7 +16,7 @@ const { useRef, useState, useEffect } = React;
  * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, rollRef: { current: number }, posRef: { current: { x: number, y: number } }, faceScaleRef: { current: number }, mouthRef: { current: number }, eyesClosedRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
  */
 export function useFacePose(targetRef, opts = {}) {
-  const { enabled = true, poseOptions, positionOptions } = opts;
+  const { enabled = true, poseOptions, positionOptions, preferWorker = true } = opts;
   const videoRef = useRef(null);
   // 最新の「生の」顔向き角(rad)。正面キャリブレーション用に外へ公開する。
   const poseRef = useRef({ yaw: 0, pitch: 0 });
@@ -32,7 +32,9 @@ export function useFacePose(targetRef, opts = {}) {
   const eyesClosedRef = useRef(0);
   // 最新の表情ブレンドシェイプ一覧（[{categoryName, score}]）。表示パネル用に公開。
   const blendshapesRef = useRef([]);
-  const [status, setStatus] = useState({ phase: 'idle', faceDetected: false, error: null });
+  // engine: 実際に動いている推論先（'worker' | 'main' | null）。worker 希望でも
+  // 非対応・dev・フォールバック時は 'main' になる。表示用に status へ載せる。
+  const [status, setStatus] = useState({ phase: 'idle', faceDetected: false, error: null, engine: null });
 
   // ループ内で最新の poseOptions を参照するための ref（再購読を避ける）
   const poseOptionsRef = useRef(poseOptions);
@@ -42,7 +44,7 @@ export function useFacePose(targetRef, opts = {}) {
 
   useEffect(() => {
     if (!enabled) {
-      setStatus({ phase: 'idle', faceDetected: false, error: null });
+      setStatus({ phase: 'idle', faceDetected: false, error: null, engine: null });
       return undefined;
     }
 
@@ -121,14 +123,17 @@ export function useFacePose(targetRef, opts = {}) {
 
     async function init() {
       try {
-        setStatus({ phase: 'loading', faceDetected: false, error: null });
+        setStatus({ phase: 'loading', faceDetected: false, error: null, engine: null });
         // BASE_URL は本番(/tomari-guruguru/)と開発(/)で変わる。Worker にも明示的に
         // 絶対パスを渡せるよう、ここで解決してから detector を生成する。
         const base = import.meta.env.BASE_URL;
-        detector = await createFaceDetector({
-          wasmPath: `${base}mediapipe/wasm`,
-          modelPath: `${base}mediapipe/face_landmarker.task`,
-        });
+        detector = await createFaceDetector(
+          {
+            wasmPath: `${base}mediapipe/wasm`,
+            modelPath: `${base}mediapipe/face_landmarker.task`,
+          },
+          { preferWorker },
+        );
         if (cancelled) {
           detector.close?.();
           detector = null;
@@ -136,11 +141,11 @@ export function useFacePose(targetRef, opts = {}) {
         }
         stream = await startWebcam(videoRef.current);
         if (cancelled) return;
-        setStatus({ phase: 'running', faceDetected: false, error: null });
+        setStatus({ phase: 'running', faceDetected: false, error: null, engine: detector.engine });
         scheduleNext();
       } catch (err) {
         if (cancelled) return;
-        setStatus({ phase: 'error', faceDetected: false, error: err?.message || String(err) });
+        setStatus({ phase: 'error', faceDetected: false, error: err?.message || String(err), engine: null });
       }
     }
 
@@ -156,7 +161,8 @@ export function useFacePose(targetRef, opts = {}) {
       stopWebcam(stream);
       detector?.close?.();
     };
-  }, [enabled, targetRef]);
+    // preferWorker が変わったら detector を作り直す（エンジン切替＝カメラ再取得）。
+  }, [enabled, targetRef, preferWorker]);
 
   return { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status };
 }
