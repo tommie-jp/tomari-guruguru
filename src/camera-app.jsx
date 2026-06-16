@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { useFacePose } from './face/use-face-pose';
+import { parseObsParams } from './obs-mode';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -88,6 +89,15 @@ function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
 function App() {
   const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
+  // OBS ブラウザソース用ステージモード（?obs=1 で背景透過＋UI 非表示）。
+  // URL は起動時に固定なので一度だけ解析する。
+  const stage = useMemo(
+    () => parseObsParams(typeof window !== 'undefined' ? window.location.search : ''),
+    [],
+  );
+  const obsMode = stage.obs;
+  const [panelOpen, setPanelOpen] = useState(false); // obsMode 中に T キーで Tweaks を開閉
+  const showPreview = t.preview && !obsMode;          // 配信にカメラ枠を出さない
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
   const [blink, setBlink] = useState(false);
@@ -119,7 +129,7 @@ function App() {
   };
   // 立ち位置（左右・上下）。invert は pose と同じく source 側(純関数)で適用する。
   const positionOptions = { invertX: t.invertSlide, invertY: t.invertSlideY };
-  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions, positionOptions, preferWorker: t.useWorker });
+  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status, retry } = useFacePose(target, { enabled: true, poseOptions, positionOptions, preferWorker: t.useWorker });
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -283,6 +293,19 @@ function App() {
     return () => clearInterval(id);
   }, [t.showExpr, blendshapesRef]);
 
+  // ステージモード中だけ T キーで Tweaks パネルを開閉できる（OBS の「対話」で較正する用）。
+  // 通常モードでは常時パネルがあるのでフックを張らない。
+  useEffect(() => {
+    if (!obsMode) return undefined;
+    const onKey = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // 入力中は無視
+      if (e.key === 't' || e.key === 'T') setPanelOpen((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [obsMode]);
+
   const frames = useMemo(() => {
     const arr = [];
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ r, c });
@@ -319,7 +342,7 @@ function App() {
     <div
       ref={stageRef}
       style={{
-        position: 'fixed', inset: 0, background: t.bgColor,
+        position: 'fixed', inset: 0, background: obsMode ? 'transparent' : t.bgColor,
         overflow: 'hidden', transition: 'background 0.4s ease',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexDirection: 'column',
@@ -331,7 +354,7 @@ function App() {
         ref={videoRef}
         playsInline
         muted
-        style={t.preview ? {
+        style={showPreview ? {
           position: 'absolute', top: 16, left: 16, width: 'min(160px, 34vw)', borderRadius: 12,
           transform: 'scaleX(-1)', // 鏡像（自撮り表示）
           boxShadow: '0 4px 16px rgba(0,0,0,0.2)', zIndex: 5, background: '#000'
@@ -360,6 +383,8 @@ function App() {
             maxWidth: 1200, maxHeight: 1200,
             transform: pressed ? 'scale(0.94)' : 'scale(1)',
             transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            // ?shadow=1 のときだけ、透過背景上でアバターの輪郭を立たせる影を付ける。
+            filter: stage.shadow ? 'drop-shadow(0 6px 18px rgba(0,0,0,0.35))' : undefined,
             userSelect: 'none', touchAction: 'none'
           }}
         >
@@ -380,6 +405,7 @@ function App() {
        </div>
       </div>
 
+      {!obsMode && (
       <div style={{
         position: 'absolute', bottom: '4.5vh', left: 0, right: 0,
         textAlign: 'center', pointerEvents: 'none'
@@ -398,25 +424,62 @@ function App() {
           </span>
         </div>
       </div>
+      )}
 
+      {!obsMode && (
       <a href="talk.html" style={{
         position: 'absolute', top: 18, right: 18, fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>口パク版 →</a>
+      )}
 
+      {!obsMode && (
       <a href="tracking.html" style={{
         position: 'absolute', top: 40, right: 18, fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>手・ポーズ →</a>
+      )}
 
       {/* このページURLのQRコード画像へのリンク（スマホで開いてもらう用） */}
+      {!obsMode && (
       <a href="camera-qr.svg" target="_blank" rel="noopener" style={{
         position: 'absolute', top: 62, right: 18, fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>QRコード</a>
+      )}
+
+      {/* カメラ起動エラーの詳細。原因切り分け用に obsMode でも常に表示する
+          （OBS ブラウザソース内で ?obs=1 のまま読めるように）。 */}
+      {status.phase === 'error' ? (
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          maxWidth: 'min(92vw, 560px)', maxHeight: '80vh', overflow: 'auto',
+          background: 'rgba(20,16,14,0.92)', color: '#fff', borderRadius: 12,
+          padding: '14px 16px', fontFamily: 'ui-monospace, monospace', fontSize: 12,
+          lineHeight: 1.65, zIndex: 20, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          border: '1px solid rgba(229,72,77,0.6)', boxShadow: '0 8px 28px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{ fontWeight: 700, color: '#E5484D', marginBottom: 6, letterSpacing: '0.04em' }}>カメラエラー詳細</div>
+          {(status.errorDetail && status.errorDetail.length ? status.errorDetail : [status.error || 'unknown']).map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+          {/* クリック（ユーザー操作）起点で getUserMedia を呼び直す。OBS など、操作なしでは
+              カメラ許可ダイアログが出ない環境向け。許可後は OBS が記憶し自動起動で通る。 */}
+          <button
+            type="button"
+            onClick={retry}
+            style={{
+              display: 'block', marginTop: 12, padding: '9px 18px', fontSize: 13, fontWeight: 700,
+              color: '#fff', background: '#E5484D', border: 'none', borderRadius: 8,
+              cursor: 'pointer', pointerEvents: 'auto',
+              fontFamily: "'Zen Maru Gothic', sans-serif", letterSpacing: '0.04em'
+            }}
+          >クリックしてカメラを開始（許可）</button>
+        </div>
+      ) : null}
 
       {/* 主な表情係数（MediaPipe blendshapes）パネル。Tweaks のトグルで表示切替 */}
-      {t.showExpr ? (
+      {!obsMode && t.showExpr ? (
         <div style={{
           position: 'absolute', top: 68, right: 12, width: 'min(220px, 52vw)',
           background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
@@ -443,9 +506,9 @@ function App() {
         </div>
       ) : null}
 
-      {t.showDebug ? (
+      {!obsMode && t.showDebug ? (
         <div style={{
-          position: 'absolute', top: 16, left: t.preview ? 'calc(min(160px, 34vw) + 30px)' : 16,
+          position: 'absolute', top: 16, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16,
           background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
           padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
           pointerEvents: 'none', lineHeight: 1.5
@@ -468,6 +531,7 @@ function App() {
         </div>
       ) : null}
 
+      {(!obsMode || panelOpen) && (
       <TweaksPanel>
         <TweakSection label="顔追従"></TweakSection>
         <TweakSlider label="感度" value={t.sensitivity} min={0.4} max={2.5} step={0.1}
@@ -560,6 +624,7 @@ function App() {
         <TweakSection label="リセット"></TweakSection>
         <TweakButton label="設定をデフォルトに戻す" secondary onClick={resetTweaks}></TweakButton>
       </TweaksPanel>
+      )}
     </div>
   );
 }

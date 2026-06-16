@@ -7,6 +7,7 @@
 import React from 'react';
 import { startWebcam, stopWebcam } from './webcam';
 import { createFaceDetector } from './create-detector';
+import { collectCameraDiagnostics } from './camera-diagnostics';
 
 const { useRef, useState, useEffect } = React;
 
@@ -35,6 +36,12 @@ export function useFacePose(targetRef, opts = {}) {
   // engine: 実際に動いている推論先（'worker' | 'main' | null）。worker 希望でも
   // 非対応・dev・フォールバック時は 'main' になる。表示用に status へ載せる。
   const [status, setStatus] = useState({ phase: 'idle', faceDetected: false, error: null, engine: null });
+
+  // カメラ再起動トークン。retry() で増やすと下の effect が再実行され、カメラを取り直す。
+  // OBS など「ユーザー操作きっかけでないと getUserMedia の許可ダイアログが出ない」環境で、
+  // クリック起点に getUserMedia を呼ぶための仕掛け（一度許可すれば OBS が記憶する）。
+  const [reloadToken, setReloadToken] = useState(0);
+  const retry = () => setReloadToken((n) => n + 1);
 
   // ループ内で最新の poseOptions を参照するための ref（再購読を避ける）
   const poseOptionsRef = useRef(poseOptions);
@@ -145,7 +152,13 @@ export function useFacePose(targetRef, opts = {}) {
         scheduleNext();
       } catch (err) {
         if (cancelled) return;
-        setStatus({ phase: 'error', faceDetected: false, error: err?.message || String(err), engine: null });
+        // 原因切り分け用に詳細（エラー名・secure context・カメラ台数・UA 等）を集めて載せる。
+        const detail = await collectCameraDiagnostics(err);
+        if (cancelled) return;
+        setStatus({
+          phase: 'error', faceDetected: false,
+          error: err?.message || String(err), errorDetail: detail.lines, engine: null,
+        });
       }
     }
 
@@ -162,7 +175,8 @@ export function useFacePose(targetRef, opts = {}) {
       detector?.close?.();
     };
     // preferWorker が変わったら detector を作り直す（エンジン切替＝カメラ再取得）。
-  }, [enabled, targetRef, preferWorker]);
+    // reloadToken が増えたら（retry）カメラ・推論を初期化し直す。
+  }, [enabled, targetRef, preferWorker, reloadToken]);
 
-  return { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status };
+  return { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status, retry };
 }
