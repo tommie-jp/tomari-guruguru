@@ -17,10 +17,10 @@
 `camera.html` は URL パラメータで配信用の見た目に切り替わる（通常表示は無変更）。
 
 - `?obs=1` … 背景透過＋UI 非表示（アバターのみのオーバーレイ）
-- `?shadow=1` … アバターに drop-shadow を付ける（賑やかな背景で輪郭が立つ）
+- `?shadow=n` … アバターに影を付ける（`n` は 0~3。大きいほど濃い。0=無し、値なしは 2）
 - ステージモード中だけ **`T` キー**で Tweaks パネルを開閉できる（OBS の「対話」で較正する用）
 
-例: `http://localhost:5173/camera.html?obs=1&shadow=1`
+例: `http://localhost:5173/camera.html?obs=1&shadow=2`
 
 ## 必須: OBS を `--enable-media-stream` 付きで起動する
 

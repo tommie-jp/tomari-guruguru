@@ -80,6 +80,15 @@ const SRC = (s, r, c) => charConfig.src(s, r, c);
 
 const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
 
+// 影レベル(0~3, ?shadow=n)→ CSS filter。大きいほど濃く広がる。0 は影なし。
+// 高レベルでは「広いぼかし影＋細い輪郭影」を重ねて、透過背景でもはっきり立たせる。
+const SHADOW_FILTERS = [
+  undefined,
+  'drop-shadow(0 2px 6px rgba(0,0,0,0.35))',
+  'drop-shadow(0 5px 13px rgba(0,0,0,0.45)) drop-shadow(0 0 2px rgba(0,0,0,0.4))',
+  'drop-shadow(0 10px 24px rgba(0,0,0,0.62)) drop-shadow(0 0 5px rgba(0,0,0,0.55))',
+];
+
 // 感度を頭の振り角(rad)に変換。感度が高いほど少ない首振りで端まで届く。
 const BASE_MAX_YAW = 0.5;
 const BASE_MAX_PITCH = 0.4;
@@ -129,7 +138,7 @@ function App() {
   };
   // 立ち位置（左右・上下）。invert は pose と同じく source 側(純関数)で適用する。
   const positionOptions = { invertX: t.invertSlide, invertY: t.invertSlideY };
-  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status, retry } = useFacePose(target, { enabled: true, poseOptions, positionOptions, preferWorker: t.useWorker });
+  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions, positionOptions, preferWorker: t.useWorker });
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -383,8 +392,8 @@ function App() {
             maxWidth: 1200, maxHeight: 1200,
             transform: pressed ? 'scale(0.94)' : 'scale(1)',
             transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            // ?shadow=1 のときだけ、透過背景上でアバターの輪郭を立たせる影を付ける。
-            filter: stage.shadow ? 'drop-shadow(0 6px 18px rgba(0,0,0,0.35))' : undefined,
+            // ?shadow=n (0~3)。大きいほど濃い影で透過背景上の輪郭を立たせる（0 は無し）。
+            filter: SHADOW_FILTERS[stage.shadow],
             userSelect: 'none', touchAction: 'none'
           }}
         >
@@ -459,22 +468,28 @@ function App() {
           lineHeight: 1.65, zIndex: 20, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
           border: '1px solid rgba(229,72,77,0.6)', boxShadow: '0 8px 28px rgba(0,0,0,0.4)'
         }}>
-          <div style={{ fontWeight: 700, color: '#E5484D', marginBottom: 6, letterSpacing: '0.04em' }}>カメラエラー詳細</div>
-          {(status.errorDetail && status.errorDetail.length ? status.errorDetail : [status.error || 'unknown']).map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-          {/* クリック（ユーザー操作）起点で getUserMedia を呼び直す。OBS など、操作なしでは
-              カメラ許可ダイアログが出ない環境向け。許可後は OBS が記憶し自動起動で通る。 */}
-          <button
-            type="button"
-            onClick={retry}
-            style={{
-              display: 'block', marginTop: 12, padding: '9px 18px', fontSize: 13, fontWeight: 700,
-              color: '#fff', background: '#E5484D', border: 'none', borderRadius: 8,
-              cursor: 'pointer', pointerEvents: 'auto',
-              fontFamily: "'Zen Maru Gothic', sans-serif", letterSpacing: '0.04em'
-            }}
-          >クリックしてカメラを開始（許可）</button>
+          <div style={{ fontWeight: 700, color: '#E5484D', marginBottom: 8, letterSpacing: '0.04em' }}>カメラエラー詳細</div>
+          {/* 解決策（OBS の起動方法）を最初に表示する。OBS のブラウザソースは
+              --enable-media-stream 付きで起動しないとカメラを使えない
+              （詳細は docs-camera/04-OBSでライブ配信.md）。 */}
+          <div style={{
+            padding: '10px 12px', borderRadius: 8,
+            background: 'rgba(229,162,61,0.14)', border: '1px solid rgba(229,162,61,0.5)',
+            color: '#FFE0B0'
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>OBS で使うには</div>
+            <div>OBS を <span style={{ color: '#FFD27A' }}>--enable-media-stream</span> 付きで起動：</div>
+            <div style={{ marginTop: 2 }}>obs64.exe --enable-media-stream</div>
+            <div style={{ marginTop: 4, opacity: 0.85 }}>
+              ショートカットの「リンク先」末尾にフラグを追加（作業フォルダーは変更しない）。
+            </div>
+          </div>
+          {/* 原因切り分け用の診断詳細はその下に表示する。 */}
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+            {(status.errorDetail && status.errorDetail.length ? status.errorDetail : [status.error || 'unknown']).map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
         </div>
       ) : null}
 

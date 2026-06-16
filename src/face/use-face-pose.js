@@ -37,12 +37,6 @@ export function useFacePose(targetRef, opts = {}) {
   // 非対応・dev・フォールバック時は 'main' になる。表示用に status へ載せる。
   const [status, setStatus] = useState({ phase: 'idle', faceDetected: false, error: null, engine: null });
 
-  // カメラ再起動トークン。retry() で増やすと下の effect が再実行され、カメラを取り直す。
-  // OBS など「ユーザー操作きっかけでないと getUserMedia の許可ダイアログが出ない」環境で、
-  // クリック起点に getUserMedia を呼ぶための仕掛け（一度許可すれば OBS が記憶する）。
-  const [reloadToken, setReloadToken] = useState(0);
-  const retry = () => setReloadToken((n) => n + 1);
-
   // ループ内で最新の poseOptions を参照するための ref（再購読を避ける）
   const poseOptionsRef = useRef(poseOptions);
   poseOptionsRef.current = poseOptions;
@@ -175,8 +169,7 @@ export function useFacePose(targetRef, opts = {}) {
       detector?.close?.();
     };
     // preferWorker が変わったら detector を作り直す（エンジン切替＝カメラ再取得）。
-    // reloadToken が増えたら（retry）カメラ・推論を初期化し直す。
-  }, [enabled, targetRef, preferWorker, reloadToken]);
+  }, [enabled, targetRef, preferWorker]);
 
-  return { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status, retry };
+  return { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status };
 }
