@@ -1,8 +1,15 @@
-// detector を環境に応じて選ぶ。Web Worker が使えれば Worker 版（推論をメイン
-// スレッドから分離）、使えなければメインスレッド版にフォールバックする。
-// Worker の初期化に失敗した場合もメインスレッドへ自動フォールバックする。
+// detector を環境に応じて選ぶ。
+//
+// Web Worker 版は「本番ビルドのときだけ」有効化する。Vite dev では worker が
+// module worker として配信され、MediaPipe が /public 配下の wasm ローダを
+// import() で読もうとして弾かれる（public ファイルはモジュールとして取り込めない）。
+// 本番ビルドでは worker がクラシック(iife)としてバンドルされ、wasm も静的配信
+// （Vite の変換を通らない）なので問題なく読める。
+//
+// dev はメインスレッド版で動かす（requestVideoFrameCallback 化済みなので
+// [Violation] も出ない）。worker モジュールは動的 import で本番branchからのみ
+// 参照し、dev では Vite に一切バンドルさせない（オーバーレイの発生源を断つ）。
 import { createMainDetector } from './face-detector-main';
-import { createWorkerDetector } from './face-detector-worker';
 
 // Worker 版に必要な API が揃っているか。OffscreenCanvas は Worker 内 GPU(WebGL)に必須。
 export function supportsWorkerDetector() {
@@ -18,13 +25,14 @@ export function supportsWorkerDetector() {
  * @param {{ wasmPath?: string, modelPath?: string }} [paths]
  */
 export async function createFaceDetector(paths = {}) {
-  if (supportsWorkerDetector()) {
-    const worker = createWorkerDetector(paths);
+  if (import.meta.env.PROD && supportsWorkerDetector()) {
     try {
+      const { createWorkerDetector } = await import('./face-detector-worker.js');
+      const worker = createWorkerDetector(paths);
       await worker.ready;
       return worker;
     } catch (err) {
-      worker.close();
+      // Worker 初期化失敗 → メインスレッドにフォールバック。
       // eslint-disable-next-line no-console
       console.warn(
         '[useFacePose] Web Worker の初期化に失敗。メインスレッドにフォールバックします:',

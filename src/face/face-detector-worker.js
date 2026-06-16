@@ -1,13 +1,19 @@
 // Web Worker 版 detector。重い推論を face-worker.js に投げ、結果(signals)だけ受け取る。
 // フレームは createImageBitmap で取り出し transfer で渡す（コピーせず所有権移動）。
 // 同時に投げるフレームは常に1つ（呼び出し側が detect を await してから次を出す前提）。
+//
+// Vite の ?worker でバンドル済みの「クラシックワーカー」として生成する。module
+// worker だと MediaPipe が wasm ローダ(/public 配下)を import() で読み、Vite dev に
+// 弾かれる。クラシックワーカーなら MediaPipe は importScripts で直接 fetch するため
+// dev/本番とも自前ホストの wasm を読み込める。
+import FaceWorker from './face-worker.js?worker';
 
 /**
  * @param {{ wasmPath?: string, modelPath?: string }} [paths]
  * @returns {{ ready: Promise<void>, detect: (source: CanvasImageSource, timestamp: number, options?: object) => Promise<object|null>, close: () => void }}
  */
 export function createWorkerDetector(paths = {}) {
-  const worker = new Worker(new URL('./face-worker.js', import.meta.url), { type: 'module' });
+  const worker = new FaceWorker();
 
   let pending = null; // 処理中フレームの resolve（在席は最大1）
   let resolveReady;
