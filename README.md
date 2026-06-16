@@ -1,10 +1,10 @@
-# ぐるぐるカメラ
+# ぐるぐるアバター
 
 フォーク元のトリマぐるぐるをwebカメラで動くようにしました。
 
 - ライブ配信で使うことを想定しています。
 - デモで試してください。Webカメラが必要です。
-  - [ぐるぐるカメラデモ](https://tommie-jp.github.io/guruguru-avatar/camera.html)
+  - [ぐるぐるアバターデモ](https://tommie-jp.github.io/guruguru-avatar/camera.html)
 
 - [ ] 予定：GIF
 
