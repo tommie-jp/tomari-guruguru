@@ -23,6 +23,10 @@ export default function forkConfig({ mode }) {
       // npm run dev で開く既定ページ（本家の /talk.html を上書き）
       open: '/camera.html',
     },
+    preview: {
+      // npm run preview では常にカメラ版を開く（base /tomari-guruguru/ 込みの絶対パス）
+      open: '/tomari-guruguru/camera.html',
+    },
     build: {
       rollupOptions: {
         input: {
