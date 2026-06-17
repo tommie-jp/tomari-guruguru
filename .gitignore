@@ -21,3 +21,8 @@ Thumbs.db
 # ローカル環境変数（個人設定の上書き）
 .env.local
 .env.*.local
+
+# TLS 証明書・秘密鍵（mkcert / tailscale cert で生成。絶対にコミットしない）
+*.crt
+*.key
+*.pem
