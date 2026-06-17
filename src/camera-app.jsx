@@ -684,7 +684,7 @@ function App() {
           onChange={(v) => setTweak('zoomMin', v)}></TweakSlider>
         <TweakSlider label="ズーム上限" value={t.zoomMax} min={1} max={3} step={0.1}
           onChange={(v) => setTweak('zoomMax', v)}></TweakSlider>
-        <TweakSlider label="下向き補正" value={t.zoomPitchComp} min={0} max={1} step={0.05}
+        <TweakSlider label="下向き補正" value={t.zoomPitchComp} min={0} max={2} step={0.05}
           onChange={(v) => setTweak('zoomPitchComp', v)}></TweakSlider>
         <TweakButton label="今の距離を基準にする" onClick={calibrateZoom}></TweakButton>
         <TweakButton label="距離基準をリセット" secondary onClick={resetZoom}></TweakButton>

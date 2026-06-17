@@ -39,6 +39,17 @@ describe('compensateScaleForPitch', () => {
     expect(half).toBeLessThan(full);
   });
 
+  it('comp>1 は過補正（ブースト）になり、完全補正(comp=1)より大きく拡大する', () => {
+    // スライダー範囲を 0..2 に広げた意図の記録。下向きで「正面より少し拡大」できる。
+    const raw = 0.4;
+    const pitch = 0.5;
+    const full = compensateScaleForPitch(raw, pitch, 1);
+    const boosted = compensateScaleForPitch(raw, pitch, 2);
+    expect(boosted).toBeGreaterThan(full);
+    // 既定の maxFactor(1.8) には当たらない範囲（comp=2・pitch=0.5 で約1.28倍）
+    expect(boosted).toBeCloseTo(raw * (1 + 2 * (1 / Math.cos(pitch) - 1)), 5);
+  });
+
   it('|pitch| は maxPitchRad でクランプ（暴発防止）', () => {
     const clampedAt = compensateScaleForPitch(0.4, 0.7, 1);
     const beyond = compensateScaleForPitch(0.4, 1.5, 1); // 0.7 にクランプされる
