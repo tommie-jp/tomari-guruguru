@@ -1,136 +1,92 @@
-# ぐるぐるアバター
+<div align="center">
 
-フォーク元のトリマぐるぐるをwebカメラで動くようにしました。
+# ぐるぐるアバター 🌀
 
-- ライブ配信で使うことを想定しています。
-- デモで試してください。Webカメラが必要です。
-  - [ぐるぐるアバターデモ](https://tommie-jp.github.io/guruguru-avatar/camera.html)
+Webカメラで顔の向き・口の動きに同調する、配信向けブラウザアバター
 
-- [ ] 予定：GIF
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![MediaPipe](https://img.shields.io/badge/MediaPipe-Tasks_Vision-0097A7?logo=google&logoColor=white)](https://ai.google.dev/edge/mediapipe)
+[![Deploy](https://github.com/tommie-jp/guruguru-avatar/actions/workflows/pages.yml/badge.svg)](https://github.com/tommie-jp/guruguru-avatar/actions/workflows/pages.yml)
 
-## 開発環境
+[![ぐるぐるアバター](public/ogp.png)](https://tommie-jp.github.io/guruguru-avatar/camera.html)
 
-WSL2 + Ubuntu 24.04 で開発・テストしています。
+## [🎥 ライブデモを開く（要Webカメラ）](https://tommie-jp.github.io/guruguru-avatar/camera.html)
 
-- `npm run dev` は WSL を自動判定して `0.0.0.0` でリッスンするため、Windows 側の Chrome から
-  起動ログに出る `Network:` の URL（または `http://localhost:5173/`）で開けます。
-- カメラは secure context が必要なので、`http://localhost:5173/camera.html` で開くのが確実です。
-- `.env.local` は通常不要です（WSL 自動判定で動きます）。ヘッドレスやリモート閲覧などで明示的に
-  上書きしたいときだけ `.env.local.example` をコピーして使ってください。
+</div>
 
 ---
 
-以下はフォーク元の引用です。
+## ✨ 特徴
 
-## トマリぐるぐる / トマリトーク
+- 🎥 **カメラ顔追従** — MediaPipe FaceLandmarker で顔の向きを推定し、**25方向**のフレームに同調
+- 👄 **口パク** — 口の開きに合わせて 3 段階（とじ / はんびらき / ぜんかい）で切り替え
+- 😉 **まばたき** — 目を閉じたタイミングや自動まばたきに連動
+- 📺 **OBS 透過オーバーレイ** — `?obs=1` で背景透過・UI 非表示。配信にそのまま重ねられる
+- 🗣 **複数モード同梱** — マイク音量で動くトーク版、マウス追従のぐるぐる版、手・ポーズ可視化のトラッキング版
 
-マウスに追従して25方向に振り向き、音声に合わせて口パク・まばたきする、トマリ用のブラウザアバターです。
-
-- **トマリぐるぐる**: マウス追従でキャラクターがこっちを見るシンプル版
-- **トマリトーク**: マイク入力または音声ファイルに合わせて口パクするトーク版
-
-![トマリぐるぐる / トマリトークの動作デモ](guruguru.gif)
+> フォーク元の [rotejin/tomari-guruguru](https://github.com/rotejin/tomari-guruguru)（マウス追従＋口パク）を、
+> Webカメラで顔に同調するように拡張したものです。
 
 ---
 
-## セットアップ
+## 🚀 クイックスタート
 
-必要環境:
-
-- Node.js 22 LTS 推奨
-- Vite 8 の要件: Node.js 20.19+ または 22.12+
+必要環境: **Node.js 22 LTS 推奨**（Vite 8 の要件は Node.js 20.19+ または 22.12+）。
 
 ```bash
+git clone https://github.com/tommie-jp/guruguru-avatar.git
+cd guruguru-avatar
 npm install
-```
-
-## ローカル起動
-
-Windowsなら `start.bat` をダブルクリックすると、ローカルサーバーを起動してブラウザで開きます。
-
-手動で起動する場合は:
-
-```bash
 npm run dev
 ```
 
-トマリトークが自動で開きます。手動でアクセスする場合は:
-
-```text
-http://127.0.0.1:5173/talk.html
-http://127.0.0.1:5173/guruguru.html
-```
-
-注意:
-
-- マイク入力は `localhost` または HTTPS でのみ利用できます。
-- Google Fonts はCDNから読み込むため、初回表示にはネット接続が必要です。
-
-## ビルド
-
-```bash
-npm run build
-npm run preview   # ビルド結果をローカル確認
-```
-
-preview は GitHub Pages と同じ `/guruguru-avatar/` のベースパスで起動します。
-
-```text
-http://127.0.0.1:4173/guruguru-avatar/talk.html
-http://127.0.0.1:4173/guruguru-avatar/guruguru.html
-```
+- `npm run dev` で `camera.html` が自動で開きます（MediaPipe アセットのコピーも自動実行）。
+- カメラは secure context が必要です。`http://localhost:5173/camera.html` または `127.0.0.1` で開いてください。
+- WSL は自動判定で `0.0.0.0` にバインドします。Windows 側の Chrome からは起動ログの `Network:` の URL で開けます。
+- `.env.local` は通常不要です（ヘッドレスやリモート閲覧で明示上書きしたいときだけ `.env.local.example` を利用）。
 
 ---
 
-## ディレクトリ構成
+## 🕹 モードとエントリ
 
-```text
-.
-├── index.html              # トマリトークへのリダイレクト
-├── guruguru.html              # ぐるぐる版エントリ
-├── talk.html                 # トーク版エントリ
-├── vite.config.js          # Vite 8 ビルド設定
-├── package.json
-├── start.bat               # Windows用起動バッチ
-├── src/
-│   ├── app.jsx             # ぐるぐる版アプリ本体
-│   ├── talk-app.jsx        # トーク版アプリ本体
-│   ├── tweaks-panel.jsx    # 画面右下の調整パネル
-│   └── character-config.js # キャラ画像の参照先を一元管理
-├── public/
-│   └── slices2/            # スライス済みキャラ画像 (Git追跡)
-├── docs/                   # 画像生成・差し替え手順の資料
-│   ├── 01_画像指示例.png
-│   ├── 01_画像生成用テンプレ.png
-│   ├── 01_画像生成用プロンプト.txt
-│   ├── 再生用トマリセリフ.wav
-│   └── 新キャラ差し替え手順.md
-├── tools/
-│   └── slice_character_sheets.py
-├── sheets/                 # 元シート画像 (Git非追跡)
-├── uploads/                # 元アップロード画像 (Git非追跡)
-├── 新キャラ資料/            # 新キャラ素材 (Git非追跡)
-├── LICENSE
-├── ASSET_LICENSE.md
-└── README.md
-```
+| モード | エントリ | 内容 |
+| --- | --- | --- |
+| **カメラ版**（主役） | `camera.html` | Webカメラで顔の向き・口に同調。配信向け |
+| トーク版 | `talk.html` | マイク入力／音声ファイルに合わせて口パク |
+| ぐるぐる版 | `guruguru.html` | マウス追従で25方向に振り向く |
+| トラッキング | `tracking.html` | 手・体のポーズを推定して可視化するデモ |
+| トップ | `index.html` | `camera.html` へ自動転送 |
 
 ---
 
-## フレーム画像の仕組み
+## 📺 OBS・配信で使う
 
-このアプリは、キャラクターの向きと表情に応じて `public/slices2/` 内の画像を1枚ずつ切り替えています。
+カメラ版はそのまま OBS のブラウザソースに重ねられます。
 
-### 25方向
+- `camera.html?obs=1` … **ステージモード**（背景透過＋UI 非表示。アバターだけを表示）
+- `?shadow=N` … 影の強さを指定（任意）
+- ステージモード中は **`T` キー**で Tweaks パネルを開閉
+- 手順の詳細は [docs-camera/04-OBSでライブ配信.md](docs-camera/04-OBSでライブ配信.md)
 
-5列 × 5行の向き差分です。
+OBS で使う場合は、Tweaks の背景色をクロマキーしやすい色に調整するのも有効です。
 
-- 列: 左向き → 正面 → 右向き
-  - `c0`: 左向き / `c1`: 左斜め / `c2`: 正面 / `c3`: 右斜め / `c4`: 右向き
-- 行: 上向き → 水平 → 下向き
-  - `r0`: 強く上を見る / `r1`: 少し上 / `r2`: 水平 / `r3`: 少し下 / `r4`: 強く下
+---
 
-### 6状態
+## ⚙️ 仕組み（フレーム画像）
+
+向きと表情に応じて `public/slices2/<状態>/r<行>c<列>.webp` を1枚ずつ切り替えています。
+
+<details>
+<summary><b>25方向 × 6状態のマッピングを見る</b></summary>
+
+### 25方向（5列 × 5行）
+
+- 列 `c0`〜`c4`: 左向き → 左斜め → **正面** → 右斜め → 右向き
+- 行 `r0`〜`r4`: 強く上 → 少し上 → **水平** → 少し下 → 強く下
+
+### 6状態（目 × 口）
 
 | フォルダ | 目 | 口 |
 | --- | --- | --- |
@@ -141,60 +97,19 @@ http://127.0.0.1:4173/guruguru-avatar/guruguru.html
 | `E` | 閉じ | 中間 |
 | `F` | 閉じ | 開け |
 
-画像パス例: `slices2/A/r2c2.webp`
+画像パス例: `slices2/A/r2c2.webp`（正面・目開け・口とじ）。
+参照先は [src/character-config.js](src/character-config.js) の `basePath` / `ext` で切り替えできます。
 
-`src/character-config.js` の `basePath` と `ext` で切り替え可能です。
-
----
-
-## 使い方
-
-### トマリぐるぐる
-
-1. `guruguru.html` を開く
-2. マウスを動かす
-3. キャラクターがマウス方向に合わせて25方向で振り向きます
-4. 自動まばたきも入ります
-
-### トマリトーク
-
-1. `talk.html` を開く
-2. **マイク開始** を押す、または音声ファイルを読み込む
-3. 音量に応じて口が切り替わります（とじ / はんびらき / ぜんかい）
-4. まばたき時は `D/E/F` の目閉じ画像に切り替わります
+</details>
 
 ---
 
-## Tweaks 調整パネル
+## 🎨 自分のキャラで作る
 
-画面右下の **Tweaks** ボタンから調整できます。
+<details>
+<summary><b>5×5角度シート 6枚から差し替える手順</b></summary>
 
-主な項目:
-
-- マイク感度 / 口パクのしきい値 / 口を閉じる速さ / 自動まばたき
-- 追従範囲 / 追従速度 / キャラサイズ / 背景色
-
-OBSなどで使う場合は、背景色をクロマキーしやすい色に調整してください。
-
----
-
-## 公開URL
-
-GitHub Pagesで公開しています。
-
-```text
-https://rotejin.github.io/tomari-guruguru/
-```
-
-トップページは `talk.html` に自動転送されます。
-
----
-
-## 自分のキャラで作るには
-
-このアプリで動かすには最終的に **5×5角度シートを6枚** 作る必要があります。
-
-必要な6枚:
+最終的に **5×5角度シートを6枚**（`A`〜`F` = 目の開閉 × 口の開き）用意します。
 
 ```text
 A_目開け_口とじ.png
@@ -208,33 +123,110 @@ F_目閉じ_口開け.png
 おすすめの流れ:
 
 1. 自分のキャラクター参照画像を用意する
-2. `docs/01_画像生成用テンプレ.png` と合わせてChatGPT Images 2.0に添付する
-3. `docs/01_画像生成用プロンプト.txt` の指示を使って6枚のシートを作る
-4. 6枚のPNGを `新キャラ資料/` フォルダに入れる
-5. `tools/slice_character_sheets.py` でスライス画像を生成
+2. `docs/01_画像生成用テンプレ.png` と合わせて画像生成 AI に添付する
+3. `docs/01_画像生成用プロンプト.txt` の指示で6枚のシートを作る
+4. 6枚の PNG を `新キャラ資料/` フォルダに入れる
+5. `tools/slice_character_sheets.py` でスライス画像を生成する
 
-詳しい注意点や検証方法は `docs/新キャラ差し替え手順.md` を参照してください。
+詳しい注意点や検証方法は [docs/新キャラ差し替え手順.md](docs/新キャラ差し替え手順.md) を参照してください。
 
----
-
-## ライセンス
-
-このリポジトリは、**プログラム部分** と **キャラクター素材・音声** でライセンスを分けています。
-
-### プログラム部分
-
-プログラムコードは MIT License で公開しています。詳細は `LICENSE` を参照してください。
-
-### キャラクター画像・音声・生成素材
-
-キャラクター画像、スライス済みフレーム、サムネイル、音声ファイルは MIT License の対象外です。
-非商用の範囲でのSNS投稿はOKですが、商用利用や他プロジェクトへの流用は禁止です。
-詳細は `ASSET_LICENSE.md` を参照してください。
+</details>
 
 ---
 
-## 技術スタック
+## 🛠 開発
 
-- **Vite 8** — ビルド・開発サーバー
-- **React 18** — UI フレームワーク
-- **@vitejs/plugin-react 6** — JSX トランスフォーム
+```bash
+npm run dev       # 開発サーバー（127.0.0.1:5173、camera.html が自動で開く）
+npm test          # Vitest（ユニットテスト）
+npm run build     # 本番ビルド（dist/ 出力）
+npm run preview   # ビルド結果を確認（/guruguru-avatar/ ベースで起動）
+```
+
+`preview` は GitHub Pages と同じ `/guruguru-avatar/` のベースパスで動きます。
+
+```text
+http://127.0.0.1:4173/guruguru-avatar/camera.html
+```
+
+---
+
+## 🧩 技術スタック
+
+- **Vite 8** — ビルド・開発サーバー（マルチエントリ）
+- **React 18** — UI
+- **@mediapipe/tasks-vision** — 顔・手・ポーズの推論（FaceLandmarker ほか）
+- **Vitest** — ユニットテスト
+
+---
+
+## 📁 構成
+
+```text
+.
+├── camera.html             # カメラ版エントリ（主役）
+├── talk.html               # トーク版エントリ
+├── guruguru.html           # ぐるぐる版エントリ
+├── tracking.html           # トラッキング版エントリ
+├── index.html              # camera.html へのリダイレクト
+├── vite.config.js          # 本家と字面一致を保つ素の設定
+├── vite.fork.js            # フォーク固有の設定（エントリ／WSL／base）
+├── src/
+│   ├── camera-app.jsx      # カメラ版本体
+│   ├── talk-app.jsx        # トーク版本体
+│   ├── app.jsx             # ぐるぐる版本体
+│   ├── tracking-app.jsx    # トラッキング版本体
+│   ├── face/               # 顔ランドマーク推論
+│   ├── tracking/           # 手・ポーズ推論
+│   ├── obs-mode.js         # ?obs=1 などの URL パラメータ解釈
+│   ├── tweaks-panel.jsx    # 画面右下の調整パネル
+│   ├── use-tweaks.js       # Tweaks の状態管理
+│   └── character-config.js # キャラ画像の参照先を一元管理
+├── scripts/                # MediaPipe アセット配置／Pages 検証
+├── public/
+│   ├── slices2/            # スライス済みキャラ画像（Git 追跡）
+│   ├── mediapipe/          # MediaPipe モデル（npm script で配置）
+│   └── ogp.png             # OGP / ヒーロー画像
+├── docs/                   # 画像生成・キャラ差し替え資料
+├── docs-camera/            # カメラ版・OBS 配信などの手順
+├── tools/slice_character_sheets.py
+├── LICENSE                 # プログラム（MIT）
+├── ASSET_LICENSE.md        # 画像・音声（非商用）
+└── README.md
+```
+
+---
+
+## 🚢 デプロイ
+
+GitHub Pages で公開しています（base = `/guruguru-avatar/`）。push では自動デプロイされないため、
+`workflow_dispatch` を手動トリガーします。リポジトリ直下の `doDeploy.sh` が起動から完了監視・反映確認までを行います。
+
+```bash
+git push origin main
+./doDeploy.sh
+```
+
+公開URL: [https://tommie-jp.github.io/guruguru-avatar/](https://tommie-jp.github.io/guruguru-avatar/)
+（トップは `camera.html` へ自動転送）
+
+---
+
+## 📜 ライセンス
+
+**プログラム** と **キャラクター素材・音声** でライセンスを分けています。
+
+- **プログラム部分**: [MIT License](LICENSE)
+- **キャラクター画像・キャラクターシート・スライス済みフレーム・音声・生成素材**:
+  これらは **フォーク元 [rotejin](https://github.com/rotejin/tomari-guruguru) 氏（原作者）の著作物**であり、
+  MIT License の **対象外**です。権利はすべて rotejin 氏に帰属します。本フォークは許諾の範囲で同梱しているだけで、
+  これらの素材に対する著作権を主張しません。
+  非商用の範囲での SNS 投稿などは可能ですが、商用利用・他プロジェクトへの流用・再配布・改変・AI 学習などは禁止です。
+  詳細な条件は [ASSET_LICENSE.md](ASSET_LICENSE.md) を参照してください。
+
+---
+
+## 🙏 クレジット
+
+フォーク元: [rotejin/tomari-guruguru](https://github.com/rotejin/tomari-guruguru)（トマリぐるぐる／トマリトーク）。
+向きと表情のフレーム切り替えという発想と、トーク／ぐるぐる版のベースはフォーク元によるものです。
