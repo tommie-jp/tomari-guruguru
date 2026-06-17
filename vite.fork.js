@@ -96,5 +96,18 @@ export default function forkConfig({ command, mode }) {
   if (env.VITE_HOST === '1') config.server.host = true;
   if (env.VITE_NO_OPEN === '1') config.server.open = false;
 
+  // iPhone Safari は secure context でないとカメラ(getUserMedia)が動かない。LAN の別端末
+  // から開く tx モード用に、mkcert / `tailscale cert` の鍵を渡せば dev/preview を HTTPS 配信する:
+  //   VITE_TLS_CERT=cert.pem VITE_TLS_KEY=key.pem npm run dev
+  // 鍵未指定なら従来どおり http のまま（同一マシンの localhost 利用に影響しない）。
+  if (env.VITE_TLS_CERT && env.VITE_TLS_KEY) {
+    const https = {
+      cert: readFileSync(env.VITE_TLS_CERT),
+      key: readFileSync(env.VITE_TLS_KEY),
+    };
+    config.server.https = https;
+    config.preview = { ...config.preview, https };
+  }
+
   return config;
 }

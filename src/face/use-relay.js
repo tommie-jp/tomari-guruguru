@@ -1,0 +1,71 @@
+// createRelayClient を React のライフサイクルに載せるフック。
+//
+// tx: producer として接続。need-config 要求が来たら現在の設定で応答し、peer 通知で
+//     CEF の接続台数を state に反映（iPhone 画面の「CEF 接続中」表示用）。
+// rx: consumer として接続。状態フレーム/コンフィグの受信は onState/onConfig に流す。
+// local: 何もしない（送受信なし）。
+//
+// コールバックや getConfig は毎レンダーで変わる closure なので ref 経由で参照し、
+// mode / relayUrl が変わったときだけ再接続する（フレーム毎の再購読を避ける）。
+import React from 'react';
+import { createRelayClient } from './relay-client';
+
+const { useRef, useState, useEffect } = React;
+
+/**
+ * @param {'local'|'tx'|'rx'} mode
+ * @param {Object} o
+ * @param {string} o.relayUrl
+ * @param {()=>object} [o.getConfig]          tx: need-config への応答に使う現在の tweaks
+ * @param {(frame:Array<number>)=>void} [o.onState]  rx: 状態フレーム受信
+ * @param {(tweaks:object)=>void} [o.onConfig]       rx: config 受信
+ * @returns {{ sendState:(f:Array<number>)=>void, sendConfig:(t:object)=>void,
+ *            peer:{connected:boolean,count:number}, linkUp:boolean }}
+ */
+export function useRelay(mode, { relayUrl, getConfig, onState, onConfig } = {}) {
+  const clientRef = useRef(null);
+  // CEF（consumer）の接続状態。tx の画面表示用。
+  const [peer, setPeer] = useState({ connected: false, count: 0 });
+  // 自分自身の WS 接続状態。
+  const [linkUp, setLinkUp] = useState(false);
+
+  // 最新の closure を ref に保持（再接続を起こさずに中身だけ差し替える）。
+  const cbRef = useRef({});
+  cbRef.current = { getConfig, onState, onConfig };
+
+  useEffect(() => {
+    if (mode === 'local') {
+      setLinkUp(false);
+      setPeer({ connected: false, count: 0 });
+      return undefined;
+    }
+    const client = createRelayClient({
+      url: relayUrl,
+      role: mode,
+      onState: mode === 'rx' ? (f) => cbRef.current.onState?.(f) : undefined,
+      onConfig: mode === 'rx' ? (t) => cbRef.current.onConfig?.(t) : undefined,
+      onNeedConfig: mode === 'tx'
+        ? () => {
+            const cfg = cbRef.current.getConfig?.();
+            if (cfg) client.sendConfig(cfg);
+          }
+        : undefined,
+      onPeer: mode === 'tx'
+        ? (m) => setPeer({ connected: (m.count || 0) > 0, count: m.count || 0 })
+        : undefined,
+      onStatus: (s) => setLinkUp(s.connected),
+    });
+    clientRef.current = client;
+    return () => {
+      client.close();
+      clientRef.current = null;
+    };
+  }, [mode, relayUrl]);
+
+  return {
+    sendState(frame) { clientRef.current?.sendState(frame); },
+    sendConfig(tweaks) { clientRef.current?.sendConfig(tweaks); },
+    peer,
+    linkUp,
+  };
+}

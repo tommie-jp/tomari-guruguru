@@ -2,9 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { useFacePose } from './face/use-face-pose';
-import { compensateScaleForPitch } from './face/pitch-compensated-scale';
-import { compensatePos } from './face/pitch-compensated-pos';
 import { parseObsParams } from './obs-mode';
+import { parseRelayMode } from './relay-mode';
+import { computeStateFrame, createExprState } from './face/avatar-state';
+import { applyState, createSmoothState } from './face/apply-state';
+import { encodeStateFrame, decodeStateFrame } from './face/state-codec';
+import { useRelay } from './face/use-relay';
 import { DraggablePanel } from './draggable-panel.jsx';
 
 const { useState, useEffect, useRef, useMemo } = React;
@@ -91,7 +94,6 @@ const SHEETS = [
   charConfig.sheets.eyesClosed.half,  // E
   charConfig.sheets.eyesClosed.open,  // F
 ];
-const sheetFor = (eyesClosed, mouth) => SHEETS[(eyesClosed ? 3 : 0) + mouth];
 const SRC = (s, r, c) => charConfig.src(s, r, c);
 
 const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
@@ -121,27 +123,42 @@ function App() {
     [],
   );
   const obsMode = stage.obs;
+  // WS 中継の役割（local / tx=送信側 / rx=受信側）。URL は起動時固定なので一度だけ解析。
+  const relay = useMemo(
+    () => parseRelayMode(
+      typeof window !== 'undefined' ? window.location.search : '',
+      typeof window !== 'undefined' ? window.location : {},
+    ),
+    [],
+  );
+  const mode = relay.mode;
+  const isRx = mode === 'rx';
   const [panelOpen, setPanelOpen] = useState(false); // obsMode 中に T キーで Tweaks を開閉
-  const showPreview = t.preview && !obsMode;          // 配信にカメラ枠を出さない
+  // rx は受信した設定で描画し、それ以外はローカルの tweaks を使う。
+  const [rxConfig, setRxConfig] = useState(TWEAK_DEFAULTS);
+  const view = isRx ? rxConfig : t;
+  // rx はカメラを持たないのでプレビュー無し。
+  const showPreview = view.preview && !obsMode && !isRx; // 配信にカメラ枠を出さない
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
-  const [blink, setBlink] = useState(false);
-  const [mouth, setMouth] = useState(0);    // 0:とじ 1:中間 2:開け
+  const [sheet, setSheet] = useState(0);    // 表示シート(0..5 = A..F)。apply-state が決める
   const [exprValues, setExprValues] = useState([]); // 表情係数パネル表示用
   const stageRef = useRef(null);
   const charRef = useRef(null);
   const motionRef = useRef(null);           // 首かしげ・スライド(translate)を直書きするラッパー
   const zoomRef = useRef(null);             // ズーム(scale)を直書きする外側ラッパー
   const target = useRef({ x: 0, y: 0 });   // -1..1（顔向きが書き込む）
-  const current = useRef({ x: 0, y: 0 });
-  const mouthEnv = useRef(0);               // 口の開きの平滑化エンベロープ
-  const rollCurrent = useRef(0);            // 首かしげ角(deg)の平滑化エンベロープ
-  const slideCurrent = useRef(0);           // 左右スライド量(vw)の平滑化エンベロープ
-  const slideYCurrent = useRef(0);          // 上下スライド量(vh)の平滑化エンベロープ
-  const zoomCurrent = useRef(1);            // ズーム率の平滑化エンベロープ（初期=等倍）
-  const zoomBaselineRef = useRef(0);        // 初回検出サイズの自動基準（手動較正が無いとき）
+  // 時間方向の状態（口エンベロープ・まばたきヒステリシス・ズーム自動基準）→ avatar-state が更新。
+  const exprStateRef = useRef(createExprState());
+  // 平滑化エンベロープ（向き・かしげ・スライド・ズーム）→ apply-state が更新。
+  const smoothStateRef = useRef(createSmoothState());
+  const autoBlinkRef = useRef(false);       // blinkSync OFF 時の自動まばたき状態（computeStateFrame に渡す）
+  const latestFrameRef = useRef(null);      // rx: 最後に受信した状態フレーム
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
+  // 描画ループが参照する「実効 tweaks」。rx は受信した config、それ以外はローカル t。
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   // 顔向き → target への注入（マウス版の pointermove ハンドラの代わり）
   const poseOptions = {
@@ -154,7 +171,39 @@ function App() {
   };
   // 立ち位置（左右・上下）。invert は pose と同じく source 側(純関数)で適用する。
   const positionOptions = { invertX: t.invertSlide, invertY: t.invertSlideY };
-  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: true, poseOptions, positionOptions, preferWorker: t.useWorker });
+  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: !isRx, poseOptions, positionOptions, preferWorker: t.useWorker });
+
+  // useFacePose が各 ref に書いた最新値を「signals」へまとめる（avatar-state の入力）。
+  function readSignals() {
+    return {
+      x: target.current.x,
+      y: target.current.y,
+      yaw: poseRef.current.yaw,
+      pitch: poseRef.current.pitch,
+      roll: rollRef.current,
+      posX: posRef.current.x,
+      posY: posRef.current.y,
+      faceScale: faceScaleRef.current,
+      mouth: mouthRef.current,
+      eyesClosed: eyesClosedRef.current,
+    };
+  }
+
+  // WS 中継。tx は config 要求に応答し CEF 接続を表示、rx は state/config を受信。
+  const relayApi = useRelay(mode, {
+    relayUrl: relay.relayUrl,
+    getConfig: () => tweaksRef.current,
+    onState: (arr) => { latestFrameRef.current = decodeStateFrame(arr); },
+    onConfig: (cfg) => setRxConfig((prev) => ({ ...prev, ...cfg })),
+  });
+
+  // tx: 設定が変わったら CEF へ config を送る（数秒ごとの再送はしない＝変更時のみ）。
+  useEffect(() => {
+    if (mode !== 'tx') return;
+    relayApi.sendConfig(t);
+    // relayApi.sendConfig は clientRef を見るので、依存は mode と t だけでよい。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, t]);
 
   // いまの顔向き（生角度）を「正面」として記録する。少し下や横を向いた
   // 自然な姿勢を中立にしたいとき用。
@@ -186,107 +235,73 @@ function App() {
   }
   function resetZoom() {
     setTweak('zoomBaseline', 0);
-    zoomBaselineRef.current = 0; // 自動基準も捨てて次の検出で取り直す
+    exprStateRef.current.autoBaseline = 0; // 自動基準も捨てて次の検出で取り直す
   }
 
-  // メインループ: 顔向き→グリッド + 口の開き→口パク段階 + まばたき同調
+  // メインループ。3モード共通で「状態フレーム → 平滑化 → 描画」を回す。
+  //   local/tx: signals から computeStateFrame（口/まばたき/補正を確定）→ applyState。
+  //             tx はさらに状態フレームを ~30Hz 上限で送信。
+  //   rx:       受信済みの状態フレームを applyState（平滑化＝ジッタ吸収）。カメラ無し。
   useEffect(() => {
     let raf;
-    let last = { r: 2, c: 2 };
-    let lastMouth = 0;
-    let lastSwitch = 0;
-    let blinkState = false;   // 同調時のヒステリシス状態
-    let lastBlinkSet = null;  // 自動↔同調の切替時に必ず反映させるため null 初期化
-    function tick(now) {
-      const tw = tweaksRef.current;
-      // 向き（マウス版と同一ロジック）
-      current.current.x += (target.current.x - current.current.x) * tw.smoothing;
-      current.current.y += (target.current.y - current.current.y) * tw.smoothing;
-      const c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
-      const r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
-      if (r !== last.r || c !== last.c) {
-        last = { r, c };
-        setCell(last);
+    let lastCell = { r: 2, c: 2 };
+    let lastSheet = -1;
+    let lastSent = 0;
+    const SEND_INTERVAL_MS = 33; // 送信レート上限（~30Hz）
+
+    // apply-state の結果を画面へ反映（セル/シートは変化時のみ setState、transform は直書き）。
+    function commit(out) {
+      if (out.cell.r !== lastCell.r || out.cell.c !== lastCell.c) {
+        lastCell = out.cell;
+        setCell(lastCell);
       }
-      // 口パク: jawOpen(0..1) を envelope（開きは速く・閉じは release で）→ しきい値で3段階に
-      const raw = mouthRef.current * tw.mouthGain;
-      if (raw > mouthEnv.current) mouthEnv.current += (raw - mouthEnv.current) * 0.6;
-      else mouthEnv.current += (raw - mouthEnv.current) * tw.release;
-      const lv = mouthEnv.current;
-      const m = lv >= tw.thFull ? 2 : lv >= tw.thHalf ? 1 : 0;
-      if (m !== lastMouth && now - lastSwitch > 60) {
-        lastMouth = m; lastSwitch = now; setMouth(m);
+      if (out.sheet !== lastSheet) {
+        lastSheet = out.sheet;
+        setSheet(out.sheet);
       }
-      // まばたき同調: eyeBlink(0..1) をヒステリシスで開閉判定。OFF時は自動まばたきに委譲。
-      // 感度が高いほど閉じ判定の閾値が下がり、わずかな閉眼でも瞬きと判定する。
-      if (tw.blinkSync) {
-        // 開眼基準(eyesOpenBias)を差し引いて 0..1 に再正規化（開=0, 完全閉=1）
-        const denom = Math.max(0.05, 1 - tw.eyesOpenBias);
-        const closed = clamp((eyesClosedRef.current - tw.eyesOpenBias) / denom, 0, 1);
-        const closeTh = clamp(0.5 / tw.blinkSensitivity, 0.15, 0.9);
-        const openTh = closeTh * 0.6; // ヒステリシス（チラつき防止）
-        if (!blinkState && closed > closeTh) blinkState = true;
-        else if (blinkState && closed < openTh) blinkState = false;
-        if (blinkState !== lastBlinkSet) { lastBlinkSet = blinkState; setBlink(blinkState); }
-      } else {
-        lastBlinkSet = null; // 同調へ戻った時に最初のフレームで必ず反映させる
-      }
-      // 首かしげ(roll)・左右上下スライド・ズーム → ラッパーに直書き（state を介さず再描画ゼロ）。
-      // 向き(グリッド)とは独立したレイヤーで、キャラ要素そのものを transform で動かす。
-      const tiltTarget = tw.tiltEnabled
-        ? clamp((rollRef.current / DEG) * tw.tiltGain * (tw.invertTilt ? -1 : 1), -tw.tiltMax, tw.tiltMax)
-        : 0;
-      // 頭の回転(yaw/pitch)が鼻先位置に混入してスライドがズレる分を打ち消す。
-      // 顔ロスト中(faceScale=0)は posRef が中立(0)・pose は保持なので補正を掛けない。
-      const facePresent = faceScaleRef.current > 0;
-      const posX = facePresent
-        ? compensatePos(posRef.current.x, poseRef.current.yaw, tw.slidePoseComp, { invert: tw.invertSlide })
-        : posRef.current.x;
-      const posY = facePresent
-        ? compensatePos(posRef.current.y, -poseRef.current.pitch, tw.slidePoseComp, { invert: tw.invertSlideY })
-        : posRef.current.y;
-      const slideTarget = tw.slideEnabled
-        ? clamp(posX * tw.slideGain, -tw.slideMax, tw.slideMax)
-        : 0;
-      const slideYTarget = tw.slideEnabled
-        ? clamp(posY * tw.slideGainY, -tw.slideMaxY, tw.slideMaxY)
-        : 0;
-      // ズーム: 見かけサイズ ÷ 基準サイズ が距離比＝ズーム率。基準は手動較正(zoomBaseline)
-      // 優先、無ければ初回検出サイズを自動基準にする（起動時はほぼ等倍から始まる）。
-      let zoomTarget = 1;
-      // 下/上向きで顔の縦が縮む分(foreshortening)を補正し、正面と同じズーム率にする。
-      const sz = compensateScaleForPitch(faceScaleRef.current, poseRef.current.pitch, tw.zoomPitchComp);
-      if (tw.zoomEnabled && sz > 0) {
-        let baseline = tw.zoomBaseline > 0 ? tw.zoomBaseline : zoomBaselineRef.current;
-        if (baseline <= 0) { zoomBaselineRef.current = sz; baseline = sz; }
-        const ratio = sz / baseline;
-        zoomTarget = clamp(1 + (ratio - 1) * tw.zoomGain, tw.zoomMin, tw.zoomMax);
-      }
-      rollCurrent.current += (tiltTarget - rollCurrent.current) * tw.motionSmoothing;
-      slideCurrent.current += (slideTarget - slideCurrent.current) * tw.motionSmoothing;
-      slideYCurrent.current += (slideYTarget - slideYCurrent.current) * tw.motionSmoothing;
-      zoomCurrent.current += (zoomTarget - zoomCurrent.current) * tw.motionSmoothing;
       const mEl = motionRef.current;
-      if (mEl) mEl.style.transform = `translateX(${slideCurrent.current.toFixed(2)}vw) translateY(${slideYCurrent.current.toFixed(2)}vh) rotate(${rollCurrent.current.toFixed(2)}deg)`;
+      if (mEl) mEl.style.transform = out.motionTransform;
       const zEl = zoomRef.current;
-      if (zEl) zEl.style.transform = `scale(${zoomCurrent.current.toFixed(3)})`;
+      if (zEl) zEl.style.transform = out.zoomTransform;
+    }
+
+    function tick(now) {
+      if (mode === 'rx') {
+        const frame = latestFrameRef.current;
+        if (frame) commit(applyState(frame, viewRef.current, smoothStateRef.current));
+      } else {
+        const tw = tweaksRef.current;
+        const frame = computeStateFrame(
+          readSignals(), tw, exprStateRef.current, now,
+          { blinkOverride: autoBlinkRef.current },
+        );
+        if (mode === 'tx' && now - lastSent >= SEND_INTERVAL_MS) {
+          lastSent = now;
+          relayApi.sendState(encodeStateFrame(frame));
+        }
+        commit(applyState(frame, tw, smoothStateRef.current));
+      }
       raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+    // mode が変われば張り直す。relayApi.sendState は clientRef 参照なので依存に含めない。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
-  // 自動まばたき（まばたき同調OFFのときだけ動作。ONのときはメインループが実眼に追従）
+  // 自動まばたき（まばたき同調OFFのときだけ動作。ONのときは computeStateFrame が実眼に追従）。
+  // 結果は autoBlinkRef に書き、メインループが blinkOverride として computeStateFrame に渡す。
+  // rx は sheet を受信するので自動まばたきは動かさない。
   useEffect(() => {
-    if (t.blinkSync) return undefined;
+    if (isRx || t.blinkSync) return undefined;
     let alive = true;
     let timer;
     const rand = (a, b) => a + Math.random() * (b - a);
     function blinkOnce(dur, after) {
-      setBlink(true);
+      autoBlinkRef.current = true;
       timer = setTimeout(() => {
         if (!alive) return;
-        setBlink(false);
+        autoBlinkRef.current = false;
         timer = setTimeout(after, rand(120, 220));
       }, dur);
     }
@@ -312,7 +327,7 @@ function App() {
     }
     schedule();
     return () => { alive = false; clearTimeout(timer); };
-  }, [t.blinkSync]);
+  }, [t.blinkSync, isRx]);
 
   // 表情係数パネルの更新（表示ONのときだけ ~10fps で ref → state にコピー）。
   // OFF時はインターバルを張らないので毎フレーム再描画のコストはゼロ。
@@ -352,20 +367,25 @@ function App() {
     for (const s of SHEETS) for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ s, r, c });
     return arr;
   }, []);
-  const activeSheet = sheetFor(blink, mouth);
+  const activeSheet = SHEETS[sheet];
 
-  const dark = t.bgColor === '#2B2926';
+  const dark = view.bgColor === '#2B2926';
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
   const subColor = dark ? 'rgba(255,248,238,0.45)' : 'rgba(60,48,38,0.45)';
 
-  const statusText = {
-    idle: 'カメラ停止中',
-    loading: 'カメラ起動中…',
-    error: `エラー: ${status.error || ''}`,
-  }[status.phase] || (status.faceDetected ? '顔を検出中' : '顔が見つかりません');
-  const statusColor = status.phase === 'error' ? '#E5484D'
-    : status.phase === 'running' && status.faceDetected ? '#46C26A'
-    : '#E5A23D';
+  // rx はカメラを持たないので、状態表示は中継リンクの接続有無にする。
+  const statusText = isRx
+    ? (relayApi.linkUp ? '中継に接続中（受信）' : '中継に未接続')
+    : ({
+        idle: 'カメラ停止中',
+        loading: 'カメラ起動中…',
+        error: `エラー: ${status.error || ''}`,
+      }[status.phase] || (status.faceDetected ? '顔を検出中' : '顔が見つかりません'));
+  const statusColor = isRx
+    ? (relayApi.linkUp ? '#46C26A' : '#E5A23D')
+    : (status.phase === 'error' ? '#E5484D'
+      : status.phase === 'running' && status.faceDetected ? '#46C26A'
+      : '#E5A23D');
 
   // 実際の推論先（worker を希望しても dev・非対応・フォールバック時は main）。
   const engineLabel = status.engine === 'worker' ? 'Web Worker'
@@ -377,7 +397,7 @@ function App() {
     <div
       ref={stageRef}
       style={{
-        position: 'fixed', inset: 0, background: obsMode ? 'transparent' : t.bgColor,
+        position: 'fixed', inset: 0, background: obsMode ? 'transparent' : view.bgColor,
         overflow: 'hidden', transition: 'background 0.4s ease',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexDirection: 'column',
@@ -421,7 +441,7 @@ function App() {
           translate は transform-origin の影響を受けないのでスライドは不変。
           ズームは別ラッパー(原点=中央)に分けることで、かしげの支点と干渉させない。 */}
       <div ref={zoomRef} style={{ willChange: 'transform' }}>
-       <div ref={motionRef} style={{ willChange: 'transform', transformOrigin: `50% ${t.tiltPivotY}%` }}>
+       <div ref={motionRef} style={{ willChange: 'transform', transformOrigin: `50% ${view.tiltPivotY}%` }}>
         <div
           ref={charRef}
           onPointerDown={() => setPressed(true)}
@@ -430,7 +450,7 @@ function App() {
           className="bob"
           style={{
             position: 'relative',
-            width: `${t.charSize * 4 / 3}vmin`, height: `${t.charSize * 4 / 3}vmin`,
+            width: `${view.charSize * 4 / 3}vmin`, height: `${view.charSize * 4 / 3}vmin`,
             maxWidth: 1200, maxHeight: 1200,
             transform: pressed ? 'scale(0.94)' : 'scale(1)',
             transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
@@ -467,13 +487,26 @@ function App() {
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, display: 'inline-block' }}></span>
           {statusText}
         </div>
-        {/* 実際にどのエンジンで推論しているか（Worker / メインスレッド）を常時表示 */}
+        {/* 実際にどのエンジンで推論しているか（Worker / メインスレッド）を常時表示。rx は推論なし。 */}
+        {!isRx && (
         <div style={{ marginTop: 4 }}>
           <span style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: onWorker ? '#46C26A' : 'rgba(120,120,120,0.55)', display: 'inline-block' }}></span>
             推論: {engineLabel}{engineNote}
           </span>
         </div>
+        )}
+        {/* tx（iPhone）: 中継リンクと CEF（受信側）の接続状況を表示する。 */}
+        {mode === 'tx' && (
+        <div style={{ marginTop: 4 }}>
+          <span style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: relayApi.peer.connected ? '#46C26A' : 'rgba(120,120,120,0.55)', display: 'inline-block' }}></span>
+            {relayApi.linkUp
+              ? (relayApi.peer.connected ? `CEF 接続中（${relayApi.peer.count}）` : 'CEF 未接続')
+              : '中継に未接続'}
+          </span>
+        </div>
+        )}
       </div>
       )}
 
@@ -603,10 +636,10 @@ function App() {
         >
           <div style={{ paddingRight: 18 }}>row {cell.r} / col {cell.c}</div>
           <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
-          <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][mouth]}</div>
-          <div>blink {blink ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
+          <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
+          <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
           <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
-          <div>size {faceScaleRef.current.toFixed(3)} / zoom {zoomCurrent.current.toFixed(2)}x</div>
+          <div>size {faceScaleRef.current.toFixed(3)} / zoom {smoothStateRef.current.zoom.toFixed(2)}x</div>
           <div>engine {status.engine || '—'}{engineNote}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginTop: 6 }}>
             {frames.map(({ r, c }) => (
@@ -619,7 +652,7 @@ function App() {
         </DraggablePanel>
       ) : null}
 
-      {(!obsMode || panelOpen) && (
+      {!isRx && (!obsMode || panelOpen) && (
       <TweaksPanel>
         <TweakSection label="顔追従"></TweakSection>
         <TweakSlider label="感度" value={t.sensitivity} min={0.4} max={2.5} step={0.1}
