@@ -468,6 +468,14 @@ function App() {
       }}>QRコード</a>
       )}
 
+      {/* GitHub リポジトリへのリンク（外部・別タブ）。配信には映さない。 */}
+      {!obsMode && (
+      <a href="https://github.com/tommie-jp/guruguru-avatar" target="_blank" rel="noopener noreferrer" style={{
+        position: 'absolute', top: 84, right: 18, fontSize: 13, fontWeight: 700,
+        color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
+      }}>GitHub ↗</a>
+      )}
+
       {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。 */}
       {!obsMode && (
       <div style={{
