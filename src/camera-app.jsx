@@ -540,6 +540,26 @@ function App() {
       }}>GitHub ↗</a>
       )}
 
+      {/* WS 中継の役割切替リンク。相対パスなので開いているホスト（localhost / Tailscale 等）を
+          そのまま引き継ぐ。現在のモードを太字＋色で強調する。配信には映さない。 */}
+      {!obsMode && (
+      <a href="camera.html?tx" style={{
+        position: 'absolute', top: 106, right: 18, fontSize: 13,
+        fontWeight: mode === 'tx' ? 900 : 700,
+        color: mode === 'tx' ? inkColor : subColor,
+        textDecoration: 'none', letterSpacing: '0.06em'
+      }}>送信側(tx) →</a>
+      )}
+
+      {!obsMode && (
+      <a href="camera.html?rx" style={{
+        position: 'absolute', top: 128, right: 18, fontSize: 13,
+        fontWeight: mode === 'rx' ? 900 : 700,
+        color: mode === 'rx' ? inkColor : subColor,
+        textDecoration: 'none', letterSpacing: '0.06em'
+      }}>受信側(rx) →</a>
+      )}
+
       {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。 */}
       {!obsMode && (
       <div style={{
