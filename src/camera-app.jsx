@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { useFacePose } from './face/use-face-pose';
+import { compensateScaleForPitch } from './face/pitch-compensated-scale';
 import { parseObsParams } from './obs-mode';
 
 const { useState, useEffect, useRef, useMemo } = React;
@@ -48,6 +49,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "zoomGain": 1.0,
   "zoomMin": 0.6,
   "zoomMax": 1.8,
+  "zoomPitchComp": 1.0,
   "zoomBaseline": 0,
   "motionSmoothing": 0.2,
   "charSize": 64,
@@ -240,7 +242,8 @@ function App() {
       // ズーム: 見かけサイズ ÷ 基準サイズ が距離比＝ズーム率。基準は手動較正(zoomBaseline)
       // 優先、無ければ初回検出サイズを自動基準にする（起動時はほぼ等倍から始まる）。
       let zoomTarget = 1;
-      const sz = faceScaleRef.current;
+      // 下/上向きで顔の縦が縮む分(foreshortening)を補正し、正面と同じズーム率にする。
+      const sz = compensateScaleForPitch(faceScaleRef.current, poseRef.current.pitch, tw.zoomPitchComp);
       if (tw.zoomEnabled && sz > 0) {
         let baseline = tw.zoomBaseline > 0 ? tw.zoomBaseline : zoomBaselineRef.current;
         if (baseline <= 0) { zoomBaselineRef.current = sz; baseline = sz; }
@@ -637,6 +640,8 @@ function App() {
           onChange={(v) => setTweak('zoomMin', v)}></TweakSlider>
         <TweakSlider label="ズーム上限" value={t.zoomMax} min={1} max={3} step={0.1}
           onChange={(v) => setTweak('zoomMax', v)}></TweakSlider>
+        <TweakSlider label="下向き補正" value={t.zoomPitchComp} min={0} max={1} step={0.05}
+          onChange={(v) => setTweak('zoomPitchComp', v)}></TweakSlider>
         <TweakButton label="今の距離を基準にする" onClick={calibrateZoom}></TweakButton>
         <TweakButton label="距離基準をリセット" secondary onClick={resetZoom}></TweakButton>
         <TweakSection label="口パク"></TweakSection>
