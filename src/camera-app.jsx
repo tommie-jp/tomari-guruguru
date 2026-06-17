@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { useFacePose } from './face/use-face-pose';
 import { compensateScaleForPitch } from './face/pitch-compensated-scale';
+import { compensatePos } from './face/pitch-compensated-pos';
 import { parseObsParams } from './obs-mode';
 
 const { useState, useEffect, useRef, useMemo } = React;
@@ -45,6 +46,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "slideGainY": 8,
   "slideMaxY": 25,
   "invertSlideY": false,
+  "slidePoseComp": 0.6,
   "zoomEnabled": true,
   "zoomGain": 1.0,
   "zoomMin": 0.6,
@@ -233,11 +235,20 @@ function App() {
       const tiltTarget = tw.tiltEnabled
         ? clamp((rollRef.current / DEG) * tw.tiltGain * (tw.invertTilt ? -1 : 1), -tw.tiltMax, tw.tiltMax)
         : 0;
+      // 頭の回転(yaw/pitch)が鼻先位置に混入してスライドがズレる分を打ち消す。
+      // 顔ロスト中(faceScale=0)は posRef が中立(0)・pose は保持なので補正を掛けない。
+      const facePresent = faceScaleRef.current > 0;
+      const posX = facePresent
+        ? compensatePos(posRef.current.x, poseRef.current.yaw, tw.slidePoseComp, { invert: tw.invertSlide })
+        : posRef.current.x;
+      const posY = facePresent
+        ? compensatePos(posRef.current.y, -poseRef.current.pitch, tw.slidePoseComp, { invert: tw.invertSlideY })
+        : posRef.current.y;
       const slideTarget = tw.slideEnabled
-        ? clamp(posRef.current.x * tw.slideGain, -tw.slideMax, tw.slideMax)
+        ? clamp(posX * tw.slideGain, -tw.slideMax, tw.slideMax)
         : 0;
       const slideYTarget = tw.slideEnabled
-        ? clamp(posRef.current.y * tw.slideGainY, -tw.slideMaxY, tw.slideMaxY)
+        ? clamp(posY * tw.slideGainY, -tw.slideMaxY, tw.slideMaxY)
         : 0;
       // ズーム: 見かけサイズ ÷ 基準サイズ が距離比＝ズーム率。基準は手動較正(zoomBaseline)
       // 優先、無ければ初回検出サイズを自動基準にする（起動時はほぼ等倍から始まる）。
@@ -629,6 +640,8 @@ function App() {
           onChange={(v) => setTweak('slideMaxY', v)}></TweakSlider>
         <TweakToggle label="上下反転" value={t.invertSlideY}
           onChange={(v) => setTweak('invertSlideY', v)}></TweakToggle>
+        <TweakSlider label="向き補正" value={t.slidePoseComp} min={0} max={2} step={0.05}
+          onChange={(v) => setTweak('slidePoseComp', v)}></TweakSlider>
         <TweakSlider label="動きの滑らかさ" value={t.motionSmoothing} min={0.04} max={0.5} step={0.01}
           onChange={(v) => setTweak('motionSmoothing', v)}></TweakSlider>
         <TweakSection label="ズーム（カメラ距離）"></TweakSection>
