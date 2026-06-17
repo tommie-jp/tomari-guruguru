@@ -5,6 +5,7 @@ import { useFacePose } from './face/use-face-pose';
 import { compensateScaleForPitch } from './face/pitch-compensated-scale';
 import { compensatePos } from './face/pitch-compensated-pos';
 import { parseObsParams } from './obs-mode';
+import { DraggablePanel } from './draggable-panel.jsx';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -383,19 +384,35 @@ function App() {
         fontFamily: "'Zen Maru Gothic', sans-serif"
       }}
     >
-      {/* 顔向き推定の入力。プレビューOFFでも検出のため要素自体は残し、画面外に逃がす。 */}
-      <video
-        ref={videoRef}
-        playsInline
-        muted
+      {/* 顔向き推定の入力。プレビューOFFでも検出のため要素自体は残し、画面外に逃がす。
+          プレビュー時は DraggablePanel で掴んで移動でき、✕で隠せる（= preview を OFF）。
+          disabled の間も <video> は同一要素のままなのでカメラ映像は貼り直されない。 */}
+      <DraggablePanel
+        id="preview"
+        disabled={!showPreview}
+        onClose={() => setTweak('preview', false)}
+        closeLabel="カメラ映像を隠す"
+        defaultStyle={{ top: 16, left: 16 }}
         style={showPreview ? {
-          position: 'absolute', top: 16, left: 16, width: 'min(160px, 34vw)', borderRadius: 12,
-          transform: 'scaleX(-1)', // 鏡像（自撮り表示）
-          boxShadow: '0 4px 16px rgba(0,0,0,0.2)', zIndex: 5, background: '#000'
+          zIndex: 5, borderRadius: 12, overflow: 'hidden', background: '#000',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
         } : {
-          position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none'
+          position: 'absolute', width: 1, height: 1, opacity: 0,
+          pointerEvents: 'none', overflow: 'hidden',
         }}
-      ></video>
+      >
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          style={showPreview ? {
+            display: 'block', width: 'min(160px, 34vw)', height: 'auto',
+            transform: 'scaleX(-1)', // 鏡像（自撮り表示）
+          } : {
+            width: '100%', height: '100%',
+          }}
+        ></video>
+      </DraggablePanel>
 
       {/* zoomRef: カメラ距離→ズーム(scale)を中央基準で当てる外側ラッパー。
           motionRef: 首かしげ(rotate)・左右上下スライド(translate)を当てる内側ラッパー。
@@ -535,16 +552,23 @@ function App() {
         </div>
       ) : null}
 
-      {/* 主な表情係数（MediaPipe blendshapes）パネル。Tweaks のトグルで表示切替 */}
+      {/* 主な表情係数（MediaPipe blendshapes）パネル。Tweaks のトグルで表示切替。
+          DraggablePanel で掴んで移動でき、✕で隠せる（= showExpr を OFF）。 */}
       {!obsMode && t.showExpr ? (
-        <div style={{
-          position: 'absolute', top: 68, right: 12, width: 'min(220px, 52vw)',
-          background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
-          padding: '10px 12px', fontSize: 11, fontFamily: 'ui-monospace, monospace',
-          zIndex: 6, pointerEvents: 'none', lineHeight: 1.4,
-          maxHeight: 'calc(100vh - 84px)', overflow: 'hidden'
-        }}>
-          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: '0.04em' }}>表情係数</div>
+        <DraggablePanel
+          id="expr"
+          onClose={() => setTweak('showExpr', false)}
+          closeLabel="表情係数パネルを隠す"
+          defaultStyle={{ top: 68, right: 12 }}
+          style={{
+            width: 'min(220px, 52vw)',
+            background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
+            padding: '10px 12px', fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            zIndex: 6, lineHeight: 1.4,
+            maxHeight: 'calc(100vh - 84px)', overflow: 'hidden',
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: '0.04em', paddingRight: 18 }}>表情係数</div>
           {exprValues.length === 0 ? (
             <div style={{ opacity: 0.6 }}>顔を検出すると表示</div>
           ) : exprValues.map(({ label, value }) => (
@@ -560,17 +584,24 @@ function App() {
               <span style={{ width: '2.4em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{value.toFixed(2)}</span>
             </div>
           ))}
-        </div>
+        </DraggablePanel>
       ) : null}
 
+      {/* デバッグHUD（向き/口/まばたき/姿勢などの生値とグリッド）。Tweaks で表示切替。
+          DraggablePanel で掴んで移動でき、✕で隠せる（= showDebug を OFF）。 */}
       {!obsMode && t.showDebug ? (
-        <div style={{
-          position: 'absolute', top: 16, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16,
-          background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
-          padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
-          pointerEvents: 'none', lineHeight: 1.5
-        }}>
-          <div>row {cell.r} / col {cell.c}</div>
+        <DraggablePanel
+          id="debug"
+          onClose={() => setTweak('showDebug', false)}
+          closeLabel="デバッグ表示を隠す"
+          defaultStyle={{ top: 16, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
+            padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ paddingRight: 18 }}>row {cell.r} / col {cell.c}</div>
           <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
           <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][mouth]}</div>
           <div>blink {blink ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
@@ -585,7 +616,7 @@ function App() {
               }}></div>
             ))}
           </div>
-        </div>
+        </DraggablePanel>
       ) : null}
 
       {(!obsMode || panelOpen) && (

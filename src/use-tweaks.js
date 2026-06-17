@@ -167,3 +167,59 @@ export async function fetchBuiltinPresets(baseUrl, page, expectedKey) {
     return {};
   }
 }
+
+// ── パネル位置（ドラッグ移動）の永続化 ───────────────────────────────────────
+// DraggablePanel が掴んで動かした HUD パネルの位置を覚えておくためのレイヤー。
+// Tweaks 値とは別キーにし、ページ（camera/talk/...）× パネル id 単位で保存する。
+// 形は {left, top}（px, 画面左上基準）。読み書き不可（プライベートモード等）や
+// 壊れた値は黙って無視し、既定位置にフォールバックする（アプリは継続動作）。
+
+export function panelPosStorageKey(id, explicit) {
+  return tweaksStorageKey(explicit) + ':panelpos:' + id;
+}
+
+// 保存値を {left, top} で返す。未保存・壊れ・読取不可は null（＝既定位置を使う合図）。
+export function loadPanelPos(id, explicit) {
+  try {
+    const raw = window.localStorage.getItem(panelPosStorageKey(id, explicit));
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (isPlainObject(o) && Number.isFinite(o.left) && Number.isFinite(o.top)) {
+      return { left: o.left, top: o.top };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePanelPos(id, pos, explicit) {
+  try {
+    window.localStorage.setItem(
+      panelPosStorageKey(id, explicit),
+      JSON.stringify({ left: pos.left, top: pos.top }),
+    );
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める */
+  }
+}
+
+export function clearPanelPos(id, explicit) {
+  try {
+    window.localStorage.removeItem(panelPosStorageKey(id, explicit));
+  } catch {
+    /* 読み書き不可でも無視（既定位置に戻るだけ） */
+  }
+}
+
+// パネルが画面外へ出ないよう {left, top} を内側へ収める純関数（DOM 非依存・テスト容易）。
+// 四辺に pad の余白を残す。パネルが画面より大きい場合も左上は pad に留め（負へ行かない）、
+// 少なくとも左上隅が掴める状態を保証する。
+export function clampPanelPos(pos, viewport, size, pad = 8) {
+  const maxLeft = Math.max(pad, viewport.width - size.width - pad);
+  const maxTop = Math.max(pad, viewport.height - size.height - pad);
+  return {
+    left: Math.min(maxLeft, Math.max(pad, pos.left)),
+    top: Math.min(maxTop, Math.max(pad, pos.top)),
+  };
+}

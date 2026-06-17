@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   mergeIntoDefaults,
   effectiveDefaultsFrom,
@@ -7,6 +7,11 @@ import {
   parsePresetsImport,
   selectBuiltinPresets,
   PRESETS_EXPORT_VERSION,
+  panelPosStorageKey,
+  loadPanelPos,
+  savePanelPos,
+  clearPanelPos,
+  clampPanelPos,
 } from './use-tweaks.js';
 
 describe('mergeIntoDefaults', () => {
@@ -149,5 +154,93 @@ describe('selectBuiltinPresets', () => {
   it('オブジェクトでない入力には {}', () => {
     expect(selectBuiltinPresets(null, 'k')).toEqual({});
     expect(selectBuiltinPresets('x', 'k')).toEqual({});
+  });
+});
+
+describe('clampPanelPos', () => {
+  const VP = { width: 1000, height: 800 };
+  const SZ = { width: 200, height: 100 };
+
+  it('画面内の位置はそのまま返す', () => {
+    expect(clampPanelPos({ left: 300, top: 200 }, VP, SZ, 8))
+      .toEqual({ left: 300, top: 200 });
+  });
+
+  it('左上の余白(pad)より手前へは出さない', () => {
+    expect(clampPanelPos({ left: -50, top: -50 }, VP, SZ, 8))
+      .toEqual({ left: 8, top: 8 });
+  });
+
+  it('右下はパネルがはみ出さない位置まで戻す', () => {
+    // maxLeft = 1000-200-8 = 792, maxTop = 800-100-8 = 692
+    expect(clampPanelPos({ left: 9999, top: 9999 }, VP, SZ, 8))
+      .toEqual({ left: 792, top: 692 });
+  });
+
+  it('パネルが画面より大きくても左上は pad に留める（掴める状態を保証）', () => {
+    const big = { width: 2000, height: 2000 };
+    expect(clampPanelPos({ left: 500, top: 500 }, VP, big, 8))
+      .toEqual({ left: 8, top: 8 });
+  });
+
+  it('pad は既定 8', () => {
+    expect(clampPanelPos({ left: -50, top: -50 }, VP, SZ))
+      .toEqual({ left: 8, top: 8 });
+  });
+});
+
+// localStorage を使うヘルパー群。node 環境（jsdom 無し）なので最小の
+// window.localStorage を注入してテストする。
+describe('パネル位置の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('panelPosStorageKey は id ごとにキーを分ける', () => {
+    expect(panelPosStorageKey('preview', 'tomari-tweaks:camera'))
+      .toBe('tomari-tweaks:camera:panelpos:preview');
+    expect(panelPosStorageKey('expr', 'tomari-tweaks:camera'))
+      .toBe('tomari-tweaks:camera:panelpos:expr');
+  });
+
+  it('save した位置を load で取り戻せる', () => {
+    savePanelPos('preview', { left: 120, top: 64 }, 'k');
+    expect(loadPanelPos('preview', 'k')).toEqual({ left: 120, top: 64 });
+  });
+
+  it('save は left/top だけを保存する（余分なキーは捨てる）', () => {
+    savePanelPos('preview', { left: 1, top: 2, junk: 9 }, 'k');
+    expect(loadPanelPos('preview', 'k')).toEqual({ left: 1, top: 2 });
+  });
+
+  it('未保存なら null', () => {
+    expect(loadPanelPos('nope', 'k')).toBeNull();
+  });
+
+  it('壊れた JSON は null', () => {
+    store.set(panelPosStorageKey('preview', 'k'), '{ broken');
+    expect(loadPanelPos('preview', 'k')).toBeNull();
+  });
+
+  it('数値でない left/top は null（不正値は既定位置へ）', () => {
+    store.set(panelPosStorageKey('p', 'k'), JSON.stringify({ left: 'x', top: 1 }));
+    expect(loadPanelPos('p', 'k')).toBeNull();
+  });
+
+  it('clear で消すと load は null に戻る', () => {
+    savePanelPos('preview', { left: 5, top: 6 }, 'k');
+    clearPanelPos('preview', 'k');
+    expect(loadPanelPos('preview', 'k')).toBeNull();
   });
 });
