@@ -30,6 +30,9 @@ function clamp(v, a, b) {
  * @property {number} slideY 上下スライド(vh, 確定後・平滑化前)
  * @property {number} zoom ズーム率(scale, 確定後・平滑化前)
  * @property {number} sheet シート番号(0..5 = A..F: 目開閉×口3段)
+ * @property {number} userX ユーザー操作の左右移動(vw, ドラッグ分・平滑化前)
+ * @property {number} userY ユーザー操作の上下移動(vh, ドラッグ分・平滑化前)
+ * @property {number} userZoom ユーザー操作のズーム率(scale, ホイール/ピンチ分・平滑化前)
  */
 
 /**
@@ -52,7 +55,9 @@ export function createExprState() {
  * @param {Object} t tweaks（mouthGain/thHalf/... 一式）
  * @param {ReturnType<typeof createExprState>} expr 時間状態（この関数が更新する）
  * @param {number} now performance.now() 相当(ms)
- * @param {{ blinkOverride?: boolean }} [opts] blinkSync OFF 時の自動まばたき状態
+ * @param {{ blinkOverride?: boolean, user?: { x: number, y: number, zoom: number } }} [opts]
+ *   blinkOverride: blinkSync OFF 時の自動まばたき状態。
+ *   user: ユーザーがドラッグ移動・ズームした表示調整（vw/vh + 倍率）。省略時は無操作。
  * @returns {StateFrame}
  */
 export function computeStateFrame(signals, t, expr, now, opts = {}) {
@@ -116,6 +121,10 @@ export function computeStateFrame(signals, t, expr, now, opts = {}) {
     zoom = clamp(1 + (ratio - 1) * t.zoomGain, t.zoomMin, t.zoomMax);
   }
 
+  // ユーザー操作（ドラッグ移動・ホイール/ピンチズーム）。tx はここに live 値を入れて
+  // 送信し、rx 側は受信値で同じ位置・倍率に同調する。省略時は無操作（0,0,1）。
+  const user = opts.user || { x: 0, y: 0, zoom: 1 };
+
   return {
     faceDetected: facePresent,
     colX: signals.x,
@@ -125,5 +134,8 @@ export function computeStateFrame(signals, t, expr, now, opts = {}) {
     slideY,
     zoom,
     sheet,
+    userX: user.x,
+    userY: user.y,
+    userZoom: user.zoom,
   };
 }

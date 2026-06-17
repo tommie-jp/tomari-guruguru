@@ -96,4 +96,18 @@ describe('computeStateFrame', () => {
     const f = computeStateFrame(signals({ faceScale: 0.45 }), tweaks({ zoomEnabled: false }), createExprState(), 0);
     expect(f.zoom).toBe(1);
   });
+
+  it('opts.user をユーザー操作(userX/userY/userZoom)として透過する', () => {
+    const f = computeStateFrame(signals(), tweaks(), createExprState(), 0, { user: { x: 12, y: -3, zoom: 1.6 } });
+    expect(f.userX).toBe(12);
+    expect(f.userY).toBe(-3);
+    expect(f.userZoom).toBe(1.6);
+  });
+
+  it('opts.user 省略時は移動0・ズーム1', () => {
+    const f = computeStateFrame(signals(), tweaks(), createExprState(), 0);
+    expect(f.userX).toBe(0);
+    expect(f.userY).toBe(0);
+    expect(f.userZoom).toBe(1);
+  });
 });

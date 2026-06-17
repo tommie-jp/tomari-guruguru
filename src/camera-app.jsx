@@ -114,6 +114,22 @@ const DEG = Math.PI / 180;
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
+// アバターのユーザー操作（ドラッグ移動・ホイール/ピンチでズーム）の範囲と感度。
+// 顔追従とは独立した「表示上の」調整なので relay には送らずローカルのみで完結する。
+const USER_ZOOM_MIN = 0.3;
+const USER_ZOOM_MAX = 4;
+const WHEEL_ZOOM_SENS = 0.0015;     // ホイール deltaY → ズーム倍率（exp で滑らかに）
+const DRAG_SQUISH_CANCEL_PX = 4;    // この距離以上動いたら押下スケールを解除しドラッグ扱い
+
+// ユーザー操作2層（shared+local）→ userRef へ書く transform 文字列。
+// 移動は加算(vw/vh)、ズームは乗算(倍率)。effect とボタンの両方から使う（式の一元化）。
+function composeUserTransform(u) {
+  const x = (u.shared.x + u.local.x).toFixed(2);
+  const y = (u.shared.y + u.local.y).toFixed(2);
+  const z = (u.shared.zoom * u.local.zoom).toFixed(3);
+  return `translate(${x}vw, ${y}vh) scale(${z})`;
+}
+
 function App() {
   const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
   // OBS ブラウザソース用ステージモード（?obs=1 で背景透過＋UI 非表示）。
@@ -141,12 +157,24 @@ function App() {
   const showPreview = view.preview && !obsMode && !isRx; // 配信にカメラ枠を出さない
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
+  // スマホ用「反映先」トグル。ON のとき操作は local 層（この端末だけ・CEF へ送らない）。
+  // PC は Shift キーでも同じ層に切り替わる（layerFor が OR で見る）。ref は effect から参照。
+  const [localMode, setLocalMode] = useState(false);
+  const localModeRef = useRef(false);
+  localModeRef.current = localMode;
   const [sheet, setSheet] = useState(0);    // 表示シート(0..5 = A..F)。apply-state が決める
   const [exprValues, setExprValues] = useState([]); // 表情係数パネル表示用
   const stageRef = useRef(null);
   const charRef = useRef(null);
   const motionRef = useRef(null);           // 首かしげ・スライド(translate)を直書きするラッパー
   const zoomRef = useRef(null);             // ズーム(scale)を直書きする外側ラッパー
+  const userRef = useRef(null);             // ユーザー操作(ドラッグ移動・ズーム)を直書きする最外ラッパー
+  // ユーザー操作は2層。shared は CEF(rx) へ送って同調させる分、local は Shift 併用で
+  // 「この端末の見え方」だけ変える分（送らない）。表示は両者の合成（移動=加算/ズーム=乗算）。
+  const userTransform = useRef({
+    shared: { x: 0, y: 0, zoom: 1 }, // CEF へ送る（vw/vh + 倍率）
+    local: { x: 0, y: 0, zoom: 1 },  // この端末だけ（送らない）
+  });
   const target = useRef({ x: 0, y: 0 });   // -1..1（顔向きが書き込む）
   // 時間方向の状態（口エンベロープ・まばたきヒステリシス・ズーム自動基準）→ avatar-state が更新。
   const exprStateRef = useRef(createExprState());
@@ -238,6 +266,19 @@ function App() {
     exprStateRef.current.autoBaseline = 0; // 自動基準も捨てて次の検出で取り直す
   }
 
+  // ユーザー操作（移動・ズーム）2層の現在値を userRef に反映。操作 effect とボタンの共通経路。
+  function applyUserTransform() {
+    const el = userRef.current;
+    if (el) el.style.transform = composeUserTransform(userTransform.current);
+  }
+  // 移動・ズームを両層とも初期化（位置中央・等倍）。リセットボタン/ダブルクリック用。
+  function resetUserTransform() {
+    const u = userTransform.current;
+    u.shared.x = 0; u.shared.y = 0; u.shared.zoom = 1;
+    u.local.x = 0; u.local.y = 0; u.local.zoom = 1;
+    applyUserTransform();
+  }
+
   // メインループ。3モード共通で「状態フレーム → 平滑化 → 描画」を回す。
   //   local/tx: signals から computeStateFrame（口/まばたき/補正を確定）→ applyState。
   //             tx はさらに状態フレームを ~30Hz 上限で送信。
@@ -263,6 +304,12 @@ function App() {
       if (mEl) mEl.style.transform = out.motionTransform;
       const zEl = zoomRef.current;
       if (zEl) zEl.style.transform = out.zoomTransform;
+      // rx（CEF）はユーザー操作も受信値に同調させる。tx/local は userRef をローカル操作が
+      // 直接握るので、ここでは触らない（commit が毎フレーム上書きするのを避ける）。
+      if (mode === 'rx') {
+        const uEl = userRef.current;
+        if (uEl) uEl.style.transform = out.userTransform;
+      }
     }
 
     function tick(now) {
@@ -273,7 +320,7 @@ function App() {
         const tw = tweaksRef.current;
         const frame = computeStateFrame(
           readSignals(), tw, exprStateRef.current, now,
-          { blinkOverride: autoBlinkRef.current },
+          { blinkOverride: autoBlinkRef.current, user: userTransform.current.shared },
         );
         if (mode === 'tx' && now - lastSent >= SEND_INTERVAL_MS) {
           lastSent = now;
@@ -288,6 +335,109 @@ function App() {
     // mode が変われば張り直す。relayApi.sendState は clientRef 参照なので依存に含めない。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // アバターをドラッグで移動、ホイール/ピンチでズーム（ユーザー操作分）。
+  // 顔追従(motionRef/zoomRef)とは別の最外ラッパー(userRef)へ直書きするので互いに干渉しない。
+  // 操作は2層: 通常は shared（CEF へ送り rx も同調）、Shift 併用は local（この端末だけ・送らない）。
+  // 表示は両者の合成（移動=加算 vw/vh / ズーム=乗算）。rx 自身は受信値を commit が当てるので無効化。
+  // ダブルクリックで両層リセット。
+  useEffect(() => {
+    if (isRx) return undefined;   // rx は受信した userTransform を commit が反映するので操作は受けない
+    const el = userRef.current;
+    if (!el) return undefined;
+    const u = userTransform.current;   // { shared, local }
+    const pointers = new Map();   // pointerId → { x, y }
+    let drag = null;              // { px, py, ox, oy, layer } 1本指/マウスの移動（px=生座標, ox/oy=vw/vh）
+    let pinch = null;             // { dist, zoom, layer } 2本指の拡縮
+    let movedFar = false;         // 押下スケールを解除済みか
+
+    // どの層を操作するか。Shift キー（PC）または「反映先」トグル ON（スマホ）= local（この端末
+    // だけ）、いずれも無ければ shared（CEF へ送る）。
+    const layerFor = (e) => ((e.shiftKey || localModeRef.current) ? u.local : u.shared);
+
+    // 表示は shared+local の合成。送信されるのは shared だけ（composeUserTransform に式を集約）。
+    const apply = () => { el.style.transform = composeUserTransform(u); };
+    // pointers が2点あるときの指間距離。pinch 中のみ呼ぶ前提。
+    const dist = () => {
+      const [a, b] = pointers.values();
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+
+    const onDown = (e) => {
+      el.setPointerCapture?.(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) {
+        const layer = layerFor(e);
+        drag = { px: e.clientX, py: e.clientY, ox: layer.x, oy: layer.y, layer };
+        movedFar = false;
+        el.style.cursor = 'grabbing';
+      } else if (pointers.size === 2) {
+        const layer = drag ? drag.layer : layerFor(e); // 1本目で決めた層を維持
+        drag = null;                       // 2本指はピンチ優先
+        pinch = { dist: dist() || 1, zoom: layer.zoom, layer };
+      }
+    };
+    const onMove = (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && pointers.size >= 2) {
+        pinch.layer.zoom = clamp(pinch.zoom * (dist() / pinch.dist), USER_ZOOM_MIN, USER_ZOOM_MAX);
+        apply();
+      } else if (drag) {
+        // px の移動量を vw/vh へ変換（解像度差を吸収して CEF にも比例反映させる）。
+        drag.layer.x = drag.ox + (e.clientX - drag.px) / window.innerWidth * 100;
+        drag.layer.y = drag.oy + (e.clientY - drag.py) / window.innerHeight * 100;
+        if (!movedFar &&
+            Math.hypot(e.clientX - drag.px, e.clientY - drag.py) > DRAG_SQUISH_CANCEL_PX) {
+          movedFar = true;
+          setPressed(false);               // ドラッグ中は押下スケールを解除
+        }
+        apply();
+      }
+    };
+    const onUp = (e) => {
+      pointers.delete(e.pointerId);
+      el.releasePointerCapture?.(e.pointerId);
+      // ピンチ→1本指に戻るときに層を引き継ぐため、消す前に layer を控える。
+      const prevLayer = (pinch && pinch.layer) || (drag && drag.layer) || u.shared;
+      if (pointers.size < 2) pinch = null;
+      if (pointers.size === 1) {
+        // 残った指で取り直してジャンプを防ぐ（層は維持・squish は不要）。
+        const [p] = pointers.values();
+        drag = { px: p.x, py: p.y, ox: prevLayer.x, oy: prevLayer.y, layer: prevLayer };
+        movedFar = true;
+      } else if (pointers.size === 0) {
+        drag = null;
+        setPressed(false);                 // capture で charRef の up が来ないため明示解除
+        el.style.cursor = 'grab';
+      }
+    };
+    const onWheel = (e) => {
+      e.preventDefault();
+      const layer = layerFor(e);           // Shift+ホイール = local（この端末だけ）
+      layer.zoom = clamp(layer.zoom * Math.exp(-e.deltaY * WHEEL_ZOOM_SENS), USER_ZOOM_MIN, USER_ZOOM_MAX);
+      apply();
+    };
+    // 両層を初期化（位置中央・等倍）。リセットボタンと共通経路。
+    const onReset = () => resetUserTransform();
+
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('dblclick', onReset);
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('dblclick', onReset);
+    };
+    // setPressed は安定参照。userRef はマウント後固定なので初回のみ張ればよい。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 自動まばたき（まばたき同調OFFのときだけ動作。ONのときは computeStateFrame が実眼に追従）。
   // 結果は autoBlinkRef に書き、メインループが blinkOverride として computeStateFrame に渡す。
@@ -440,6 +590,12 @@ function App() {
           かしげは「首元」を支点にする → 回転原点を下部中央(横50%・縦 tiltPivotY%)に置く。
           translate は transform-origin の影響を受けないのでスライドは不変。
           ズームは別ラッパー(原点=中央)に分けることで、かしげの支点と干渉させない。 */}
+      {/* userRef: ドラッグ移動・ホイール/ピンチズーム（ユーザー操作）を当てる最外ラッパー。
+          顔追従の zoomRef/motionRef より外側なので、画面座標での平行移動＋全体スケールになる。 */}
+      <div
+        ref={userRef}
+        style={{ willChange: 'transform', touchAction: 'none', cursor: isRx ? 'default' : 'grab' }}
+      >
       <div ref={zoomRef} style={{ willChange: 'transform' }}>
        <div ref={motionRef} style={{ willChange: 'transform', transformOrigin: `50% ${view.tiltPivotY}%` }}>
         <div
@@ -474,6 +630,7 @@ function App() {
           ))}
         </div>
        </div>
+      </div>
       </div>
 
       {!obsMode && (
@@ -558,6 +715,46 @@ function App() {
         color: mode === 'rx' ? inkColor : subColor,
         textDecoration: 'none', letterSpacing: '0.06em'
       }}>受信側(rx) →</a>
+      )}
+
+      {/* 「反映先」トグル＋リセット（左下）。ドラッグ移動・ズームを CEF へ送るか、この端末
+          だけにするかを切り替える。PC は Shift キーでも一時的に「この端末だけ」になる。
+          配信に映さないよう obsMode では非表示。rx は操作しないので非表示。 */}
+      {!obsMode && !isRx && (
+      <div style={{
+        position: 'absolute', bottom: 16, left: 16, zIndex: 6,
+        display: 'flex', gap: 8, alignItems: 'center',
+        fontFamily: "'Zen Maru Gothic', sans-serif"
+      }}>
+        <button
+          type="button"
+          onClick={() => setLocalMode((v) => !v)}
+          title="ドラッグ移動・ズームの反映先を切替（PC は Shift 併用でも『この端末だけ』）"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+            padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+            border: `1.5px solid ${localMode ? '#E8923C' : '#46C26A'}`,
+            background: localMode ? 'rgba(232,146,60,0.14)' : 'rgba(70,194,106,0.12)',
+            color: inkColor, fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
+          }}
+        >
+          <span style={{
+            width: 9, height: 9, borderRadius: '50%', display: 'inline-block',
+            background: localMode ? '#E8923C' : '#46C26A',
+          }}></span>
+          {localMode ? '反映先: この端末だけ' : '反映先: CEFへ送る'}
+        </button>
+        <button
+          type="button"
+          onClick={resetUserTransform}
+          title="移動・ズームを中央／等倍に戻す"
+          style={{
+            padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+            border: `1.5px solid ${subColor}`, background: 'transparent',
+            color: subColor, fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
+          }}
+        >リセット</button>
+      </div>
       )}
 
       {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。 */}

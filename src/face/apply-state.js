@@ -23,6 +23,9 @@ export function createSmoothState() {
     slideX: 0, // 左右スライド(vw)
     slideY: 0, // 上下スライド(vh)
     zoom: 1,   // ズーム率（初期=等倍）
+    userX: 0,  // ユーザー操作の左右移動(vw)
+    userY: 0,  // ユーザー操作の上下移動(vh)
+    userZoom: 1, // ユーザー操作のズーム率
   };
 }
 
@@ -32,6 +35,7 @@ export function createSmoothState() {
  * @property {number} sheet シート番号(0..5)
  * @property {string} motionTransform motionRef へ書く transform（translate+rotate）
  * @property {string} zoomTransform zoomRef へ書く transform（scale）
+ * @property {string} userTransform userRef へ書く transform（ユーザー操作の移動+ズーム）
  */
 
 /**
@@ -54,10 +58,20 @@ export function applyState(frame, t, sm) {
   sm.slideY += (frame.slideY - sm.slideY) * t.motionSmoothing;
   sm.zoom += (frame.zoom - sm.zoom) * t.motionSmoothing;
 
+  // ユーザー操作（ドラッグ移動・ズーム）も同じ係数で lerp。フィールドが無い旧フレーム
+  // でも落ちないよう既定（移動0・ズーム1）に倒す。
+  const userX = frame.userX || 0;
+  const userY = frame.userY || 0;
+  const userZoom = frame.userZoom == null ? 1 : frame.userZoom;
+  sm.userX += (userX - sm.userX) * t.motionSmoothing;
+  sm.userY += (userY - sm.userY) * t.motionSmoothing;
+  sm.userZoom += (userZoom - sm.userZoom) * t.motionSmoothing;
+
   return {
     cell: { r, c },
     sheet: frame.sheet,
     motionTransform: `translateX(${sm.slideX.toFixed(2)}vw) translateY(${sm.slideY.toFixed(2)}vh) rotate(${sm.tilt.toFixed(2)}deg)`,
     zoomTransform: `scale(${sm.zoom.toFixed(3)})`,
+    userTransform: `translate(${sm.userX.toFixed(2)}vw, ${sm.userY.toFixed(2)}vh) scale(${sm.userZoom.toFixed(3)})`,
   };
 }

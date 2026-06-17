@@ -5,8 +5,11 @@
 // 送受信側はこの encode/decode だけ差し替えればよい＝ここが唯一の境界。
 //
 // 配列の並び（固定）:
-//   [faceDetected(0/1), colX, rowY, tilt, slideX, slideY, zoom, sheet]
+//   [faceDetected(0/1), colX, rowY, tilt, slideX, slideY, zoom, sheet,
+//    userX, userY, userZoom]
 // blendshapes と yaw/pitch は送らない（受信側は使わない＝サイズ削減の本丸）。
+// userX/userY(vw/vh) と userZoom はユーザーがドラッグ移動・ズームした「表示上の」
+// 調整。後ろに追記したので旧8要素フレームも既定値(0,0,1)で復元できる（後方互換）。
 
 // 桁を丸めて JSON を小さくする。平滑化が後段に入るので 0.001 刻みで十分。
 function r3(n) {
@@ -27,6 +30,9 @@ export function encodeStateFrame(f) {
     r3(f.slideY),
     r3(f.zoom),
     f.sheet | 0,
+    r3(f.userX || 0),
+    r3(f.userY || 0),
+    r3(f.userZoom == null ? 1 : f.userZoom),
   ];
 }
 
@@ -44,5 +50,8 @@ export function decodeStateFrame(a) {
     slideY: a[5],
     zoom: a[6],
     sheet: a[7] | 0,
+    userX: a[8] ?? 0,
+    userY: a[9] ?? 0,
+    userZoom: a[10] ?? 1,
   };
 }

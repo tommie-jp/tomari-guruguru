@@ -39,4 +39,15 @@ describe('applyState', () => {
     applyState(frame({ tilt: 20 }), { smoothing: 1, motionSmoothing: 1 }, sm);
     expect(sm.tilt).toBe(20);
   });
+
+  it('userTransform をユーザー操作（vw/vh + scale）のフォーマットで返す', () => {
+    const sm = createSmoothState();
+    const out = applyState(frame({ userX: 20, userY: -10, userZoom: 1.5 }), { smoothing: 1, motionSmoothing: 1 }, sm);
+    expect(out.userTransform).toBe('translate(20.00vw, -10.00vh) scale(1.500)');
+  });
+
+  it('ユーザー操作フィールドが無いフレームでも userTransform は恒等になる', () => {
+    const out = applyState(frame(), { smoothing: 1, motionSmoothing: 1 }, createSmoothState());
+    expect(out.userTransform).toBe('translate(0.00vw, 0.00vh) scale(1.000)');
+  });
 });
