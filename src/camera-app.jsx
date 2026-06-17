@@ -58,6 +58,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "zoomPitchComp": 1.0,
   "zoomBaseline": 0,
   "motionSmoothing": 0.2,
+  "moveRatio": 1.0,
   "charSize": 64,
   "bgColor": "#FFF8EE",
   "showDebug": false,
@@ -120,6 +121,10 @@ const USER_ZOOM_MIN = 0.3;
 const USER_ZOOM_MAX = 4;
 const WHEEL_ZOOM_SENS = 0.0015;     // ホイール deltaY → ズーム倍率（exp で滑らかに）
 const DRAG_SQUISH_CANCEL_PX = 4;    // この距離以上動いたら押下スケールを解除しドラッグ扱い
+
+// 移動の tx→rx 比率（rx の移動量 = tx の移動量 × moveRatio）。スライダーの範囲。
+const MOVE_RATIO_MIN = 0.1;
+const MOVE_RATIO_MAX = 3.0;
 
 // ユーザー操作2層（shared+local）→ userRef へ書く transform 文字列。
 // 移動は加算(vw/vh)、ズームは乗算(倍率)。effect とボタンの両方から使う（式の一元化）。
@@ -318,9 +323,14 @@ function App() {
         if (frame) commit(applyState(frame, viewRef.current, smoothStateRef.current));
       } else {
         const tw = tweaksRef.current;
+        // 送信する移動量だけ moveRatio 倍（rx が tx の比率倍動く）。tx 自身の表示は
+        // userRef 直書きのまま 1:1 で、ここでは送信値だけ拡縮する。ズームは対象外。
+        const sh = userTransform.current.shared;
+        const ratio = tw.moveRatio == null ? 1 : tw.moveRatio;
+        const sentUser = { x: sh.x * ratio, y: sh.y * ratio, zoom: sh.zoom };
         const frame = computeStateFrame(
           readSignals(), tw, exprStateRef.current, now,
-          { blinkOverride: autoBlinkRef.current, user: userTransform.current.shared },
+          { blinkOverride: autoBlinkRef.current, user: sentUser },
         );
         if (mode === 'tx' && now - lastSent >= SEND_INTERVAL_MS) {
           lastSent = now;
@@ -754,6 +764,28 @@ function App() {
             color: subColor, fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
           }}
         >リセット</button>
+        {/* 移動比率: rx(CEF) の移動量 = tx の移動量 × この値（移動のみ・ズーム対象外）。 */}
+        <label
+          title="rx(CEF) の移動量 = tx の移動量 × この値（移動のみ・ズームは対象外）"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 10px', borderRadius: 999,
+            border: `1.5px solid ${subColor}`, background: 'transparent',
+            color: subColor, fontSize: 12, fontWeight: 700, letterSpacing: '0.04em',
+          }}
+        >
+          <span>移動比率</span>
+          <input
+            type="range"
+            min={MOVE_RATIO_MIN} max={MOVE_RATIO_MAX} step="0.1"
+            value={t.moveRatio ?? 1}
+            onChange={(e) => setTweak('moveRatio', Number(e.target.value))}
+            style={{ width: 92, accentColor: '#46C26A', cursor: 'pointer' }}
+          />
+          <span style={{ color: inkColor, fontVariantNumeric: 'tabular-nums', minWidth: 28, textAlign: 'right' }}>
+            ×{(t.moveRatio ?? 1).toFixed(1)}
+          </span>
+        </label>
       </div>
       )}
 
