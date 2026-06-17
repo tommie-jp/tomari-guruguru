@@ -6,6 +6,17 @@ import { parseObsParams } from './obs-mode';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
+// バージョン表記。vite.fork.js の define でビルド時に静的置換される。
+// build: "v1.0.0 · f7efa25 · 2026-06-17" / dev: "v1.0.0 · dev"。
+// define が効かない環境（万一）でも落ちないよう typeof でガードする。
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+const GIT_SHA = typeof __GIT_SHA__ !== 'undefined' ? __GIT_SHA__ : 'dev';
+const BUILD_DATE = typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : 'dev';
+const VERSION_LABEL =
+  GIT_SHA === 'dev'
+    ? `v${APP_VERSION} · dev`
+    : `v${APP_VERSION} · ${GIT_SHA} · ${BUILD_DATE}`;
+
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "smoothing": 0.3,
   "sensitivity": 1.0,
@@ -455,6 +466,15 @@ function App() {
         position: 'absolute', top: 62, right: 18, fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>QRコード</a>
+      )}
+
+      {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。 */}
+      {!obsMode && (
+      <div style={{
+        position: 'absolute', bottom: 10, right: 12, fontSize: 11,
+        color: subColor, opacity: 0.65, letterSpacing: '0.04em',
+        fontVariantNumeric: 'tabular-nums', pointerEvents: 'none', userSelect: 'none'
+      }}>{VERSION_LABEL}</div>
       )}
 
       {/* カメラ起動エラーの詳細。原因切り分け用に obsMode でも常に表示する

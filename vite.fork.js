@@ -11,6 +11,23 @@
 import { loadEnv } from 'vite';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
+import { execSync } from 'child_process';
+
+// ビルドされたコミットを一意に特定するための short SHA。
+// CI(GitHub Actions)は checkout 済みなので git で取れる。取れない場合は
+// 環境変数 GITHUB_SHA にフォールバックし、それも無ければ 'unknown'。
+function gitShortSha() {
+  try {
+    return execSync('git rev-parse --short HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    const sha = process.env.GITHUB_SHA;
+    return sha ? sha.slice(0, 7) : 'unknown';
+  }
+}
 
 // WSL かどうかの判定。WSL では Windows 側ブラウザが WSL の eth0 IP 経由でしか
 // 届かず、127.0.0.1 バインドだと到達できない。0.0.0.0 バインドが必須になる。
@@ -31,7 +48,22 @@ export default function forkConfig({ command, mode }) {
   //   VITE_NO_OPEN=1 … 自動ブラウザオープンを無効化
   const env = loadEnv(mode, process.cwd(), '');
 
+  // バージョン表示用。真実の源は package.json の version（semver）。
+  // build 時のみ SHA / 日付を埋め込み、dev では 'dev' 表記にして区別する。
+  const pkg = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, 'package.json'), 'utf8'),
+  );
+  const isBuild = command === 'build';
+
   const config = {
+    // ビルド時に静的置換される定数。camera-app.jsx などから参照する。
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __GIT_SHA__: JSON.stringify(isBuild ? gitShortSha() : 'dev'),
+      __BUILD_DATE__: JSON.stringify(
+        isBuild ? new Date().toISOString().slice(0, 10) : 'dev',
+      ),
+    },
     // fork: GitHub Pages のリポジトリ名（guruguru-avatar）に追従させる base。
     // 本家 vite.config.js は upstream と字面一致を保ちたいので、リネームに伴う
     // base 上書きはこの fork 側に集約する（mergeConfig で fork が勝つ）。
