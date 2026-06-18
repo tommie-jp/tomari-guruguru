@@ -8,6 +8,7 @@ import React from 'react';
 import { startWebcam, stopWebcam } from './webcam';
 import { createFaceDetector } from './create-detector';
 import { collectCameraDiagnostics } from './camera-diagnostics';
+import { nextFaceRefs } from './next-face-refs';
 
 const { useRef, useState, useEffect } = React;
 
@@ -63,24 +64,27 @@ export function useFacePose(targetRef, opts = {}) {
       setStatus((s) => ({ ...s, faceDetected: detected }));
     }
 
-    // deriveFaceSignals の戻りを各 ref に反映する。
-    // 顔ロスト(faceDetected=false)時は向き(target/pose)を据え置き、
-    // 傾き・スライド・ズーム・口・目は中立(0/[])へ戻す（固まり防止）。
+    // deriveFaceSignals の戻りを各 ref に反映する。ロスト時の据え置き／中立ルールは
+    // 純関数 nextFaceRefs に集約（next-face-refs.test.js で検証）。ここはその結果を
+    // 既存の ref オブジェクトへ書き込むだけ（描画ループは ref を同一参照で読むため
+    // 差し替えず in-place で代入する）。
     function applySignals(s) {
-      if (s.faceDetected) {
-        targetRef.current.x = s.x;
-        targetRef.current.y = s.y;
-        poseRef.current.yaw = s.yaw;
-        poseRef.current.pitch = s.pitch;
-      }
-      rollRef.current = s.roll;
-      posRef.current.x = s.posX;
-      posRef.current.y = s.posY;
-      faceScaleRef.current = s.faceScale;
-      mouthRef.current = s.mouth;
-      eyesClosedRef.current = s.eyesClosed;
-      blendshapesRef.current = s.blendshapes;
-      markFace(s.faceDetected);
+      const next = nextFaceRefs(
+        { target: targetRef.current, pose: poseRef.current },
+        s,
+      );
+      targetRef.current.x = next.target.x;
+      targetRef.current.y = next.target.y;
+      poseRef.current.yaw = next.pose.yaw;
+      poseRef.current.pitch = next.pose.pitch;
+      rollRef.current = next.roll;
+      posRef.current.x = next.posX;
+      posRef.current.y = next.posY;
+      faceScaleRef.current = next.faceScale;
+      mouthRef.current = next.mouth;
+      eyesClosedRef.current = next.eyesClosed;
+      blendshapesRef.current = next.blendshapes;
+      markFace(next.faceDetected);
     }
 
     function currentOptions() {
