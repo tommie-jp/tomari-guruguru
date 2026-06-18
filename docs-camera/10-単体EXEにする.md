@@ -79,8 +79,8 @@ npx postject dist-exe\guruguru-relay.exe NODE_SEA_BLOB dist-exe\relay.blob `
 guruguru-relay.exe --web-root dist-local --port 8787 --host 127.0.0.1
 ```
 
-- 送信側(tx): `http://127.0.0.1:8787/camera.html?tx`（Edge/Chrome）
-- OBS 受信側(rx): `http://127.0.0.1:8787/camera.html?rx&obs=1`（OBS のブラウザソース）
+- 送信側(tx): `http://127.0.0.1:8787/?tx`（Edge/Chrome）
+- OBS 受信側(rx): `http://127.0.0.1:8787/?rx&obs=1`（OBS のブラウザソース）
 
 LAN の別端末からも繋ぐなら `--host 0.0.0.0`（要ファイアウォール許可）。
 

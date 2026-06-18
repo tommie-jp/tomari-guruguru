@@ -38,14 +38,14 @@ const mimeFor = (file) => MIME[extname(file).toLowerCase()] || 'application/octe
 
 /**
  * root 配下を配信する (req, res) ハンドラを返す。
- * ルート("/")は camera.html に寄せる（このアプリの入口）。
+ * ルート("/")は index.html に寄せる（このアプリの入口＝カメラ版2/Pixi・複数アバター）。
  * @param {string} root 配信ルート（例: dist-local）
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
 export function createStaticHandler(root) {
   const rootAbs = resolve(root);
   return function serve(req, res) {
-    // クエリを除いた pathname を取り出す。/ は camera.html に寄せる。
+    // クエリを除いた pathname を取り出す。/ は index.html に寄せる。
     let pathname;
     try {
       pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -54,7 +54,7 @@ export function createStaticHandler(root) {
       res.end('Bad Request');
       return;
     }
-    if (pathname === '/') pathname = '/camera.html';
+    if (pathname === '/') pathname = '/index.html';
 
     // root の外へ出る相対パス（../ など）は拒否する。
     const filePath = normalize(join(rootAbs, pathname));
