@@ -7,7 +7,7 @@
 // relay URL を省略したときは「ページと同じホストの :8787」を既定にする。
 // ページが https なら wss、http なら ws を選ぶ（mixed-content 回避）。
 // 役割の判定は ?obs とは独立。表示側では rx を OBS の CEF 用とみなし、
-// obs 未指定でも透過オーバーレイを既定 ON にする（obs-mode.js / camera2-app.jsx 参照）。
+// obs 未指定でも透過オーバーレイを既定 ON にする（obs-mode.js / camera-app.jsx 参照）。
 
 const TRUTHY = new Set(['', '1', 'true', 'yes', 'on', 'ws']);
 

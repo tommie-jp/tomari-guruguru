@@ -42,7 +42,7 @@ npm install
 npm run dev
 ```
 
-- `npm run dev` で `/`（index.html・カメラ版2）が自動で開きます（MediaPipe アセットのコピーも自動実行）。
+- `npm run dev` で `/`（index.html・カメラ版）が自動で開きます（MediaPipe アセットのコピーも自動実行）。
 - カメラは secure context が必要です。`http://localhost:5173/` または `127.0.0.1` で開いてください。
 - WSL は自動判定で `0.0.0.0` にバインドします。Windows 側の Chrome からは起動ログの `Network:` の URL で開けます。
 - `.env.local` は通常不要です（ヘッドレスやリモート閲覧で明示上書きしたいときだけ `.env.local.example` を利用）。
@@ -53,7 +53,7 @@ npm run dev
 
 | モード | エントリ | 内容 |
 | --- | --- | --- |
-| **カメラ版2**（主役） | `index.html` | Webカメラで顔の向き・口に同調・Pixi スプライト描画・複数アバター選択。サイトのトップ（旧 `camera2.html`） |
+| **カメラ版**（主役） | `index.html` | Webカメラで顔の向き・口に同調・Pixi スプライト描画・複数アバター選択。サイトのトップ（旧 `camera2.html`） |
 | トーク版 | `talk.html` | マイク入力／音声ファイルに合わせて口パク |
 | ぐるぐる版 | `guruguru.html` | マウス追従で25方向に振り向く |
 | トラッキング | `tracking.html` | 手・体のポーズを推定して可視化するデモ |
@@ -165,7 +165,7 @@ http://127.0.0.1:4173/guruguru-avatar/
 
 ```text
 .
-├── index.html              # トップ＝主役（カメラ版2・Pixi／複数アバター。旧 camera2.html）
+├── index.html              # トップ＝主役（カメラ版・Pixi／複数アバター。旧 camera2.html）
 ├── talk.html               # トーク版エントリ
 ├── guruguru.html           # ぐるぐる版エントリ
 ├── tracking.html           # トラッキング版エントリ
@@ -174,7 +174,7 @@ http://127.0.0.1:4173/guruguru-avatar/
 ├── vite.config.js          # 本家と字面一致を保つ素の設定
 ├── vite.fork.js            # フォーク固有の設定（エントリ／WSL／base）
 ├── src/
-│   ├── camera2-app.jsx     # カメラ版2本体（Pixi・複数アバター）
+│   ├── camera-app.jsx     # カメラ版本体（Pixi・複数アバター）
 │   ├── talk-app.jsx        # トーク版本体
 │   ├── app.jsx             # ぐるぐる版本体
 │   ├── tracking-app.jsx    # トラッキング版本体
@@ -210,7 +210,7 @@ git push origin main
 ```
 
 公開URL: [https://tommie-jp.github.io/guruguru-avatar/](https://tommie-jp.github.io/guruguru-avatar/)
-（トップ `/` ＝ `index.html`・カメラ版2）
+（トップ `/` ＝ `index.html`・カメラ版）
 
 ---
 

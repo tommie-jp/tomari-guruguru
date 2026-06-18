@@ -2,7 +2,7 @@
 //
 // 単一キャラ時代の名残で `export default` は「デフォルトアバターの設定」を返す
 // （app/talk/camera/apply-state が `charConfig.src/.sheets/.rows/.cols` で使う後方互換）。
-// camera2（PixiJS スプライト版）は複数アバター対応なので、名前付き export の
+// camera（PixiJS スプライト版）は複数アバター対応なので、名前付き export の
 // `avatars` / `getAvatar` / `DEFAULT_AVATAR_ID` を使って実行時に切り替える。
 //
 // 新アバター追加手順:
@@ -10,7 +10,7 @@
 //   2. tools/pack_sheet.py --avatar <id> で public/slices2-sheets/<id>/{A..F}.webp を生成
 //   3. ここの AVATAR_DEFS に1エントリ足す（id は先頭に連番を付ける運用ルール）
 
-// スプライトシート（camera2 用）の共通ベースパス（public/ からの相対）。
+// スプライトシート（camera 用）の共通ベースパス（public/ からの相対）。
 // 実体は public/slices2-sheets/<id>/<状態>.webp。
 const SHEET_BASE_PATH = 'slices2-sheets';
 
@@ -21,7 +21,7 @@ const DEFAULT_SHEETS = {
   eyesClosed: { close: 'D', half: 'E', open: 'F' },
 };
 
-// A〜F の並び順（camera2 の setState 引数 index 0..5 に対応）。
+// A〜F の並び順（camera の setState 引数 index 0..5 に対応）。
 const SHEET_ORDER = (sheets) => [
   sheets.eyesOpen.close, sheets.eyesOpen.half, sheets.eyesOpen.open,
   sheets.eyesClosed.close, sheets.eyesClosed.half, sheets.eyesClosed.open,
@@ -53,7 +53,7 @@ const AVATAR_DEFS = [
   {
     id: '02-kesyou_jirai_make',
     displayName: '化粧地雷メイク',
-    // sheet 方式のみ（個別スライスは持たない）。camera2 は sheetUrls() しか参照しないので
+    // sheet 方式のみ（個別スライスは持たない）。camera は sheetUrls() しか参照しないので
     // basePath/src() は未使用。doAvatarConvert.sh で slices2-sheets/<id>/ を生成する。
     ext: 'webp',
     rows: 5,
@@ -74,7 +74,7 @@ const AVATAR_DEFS = [
   {
     id: '03-yumekawa_angel_tenshi',
     displayName: '夢川エンジェル天使',
-    // sheet 方式のみ（個別スライスは持たない）。camera2 は sheetUrls() しか参照しないので
+    // sheet 方式のみ（個別スライスは持たない）。camera は sheetUrls() しか参照しないので
     // basePath/src() は未使用。doAvatarConvert.sh で slices2-sheets/<id>/ を生成する。
     ext: 'webp',
     rows: 5,
@@ -110,7 +110,7 @@ function makeAvatar(def) {
       return `${SHEET_BASE_PATH}/${this.id}/${sheet}.${this.ext}`;
     },
 
-    // A〜F の6シートURL配列（camera2 の SpriteAvatar に渡す。index 0..5 = A..F）。
+    // A〜F の6シートURL配列（camera の SpriteAvatar に渡す。index 0..5 = A..F）。
     sheetUrls() {
       return SHEET_ORDER(this.sheets).map((name) => this.sheetSrc(name));
     },

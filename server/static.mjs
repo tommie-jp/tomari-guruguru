@@ -38,7 +38,7 @@ const mimeFor = (file) => MIME[extname(file).toLowerCase()] || 'application/octe
 
 /**
  * root 配下を配信する (req, res) ハンドラを返す。
- * ルート("/")は index.html に寄せる（このアプリの入口＝カメラ版2/Pixi・複数アバター）。
+ * ルート("/")は index.html に寄せる（このアプリの入口＝カメラ版/Pixi・複数アバター）。
  * @param {string} root 配信ルート（例: dist-local）
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */

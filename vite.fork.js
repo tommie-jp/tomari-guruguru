@@ -56,7 +56,7 @@ export default function forkConfig({ command, mode }) {
   const isBuild = command === 'build';
 
   const config = {
-    // ビルド時に静的置換される定数。camera2-app.jsx などから参照する。
+    // ビルド時に静的置換される定数。camera-app.jsx などから参照する。
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __GIT_SHA__: JSON.stringify(isBuild ? gitShortSha() : 'dev'),
@@ -74,7 +74,7 @@ export default function forkConfig({ command, mode }) {
     server: {
       port: 5173,
       strictPort: true,
-      // npm run dev で開く既定ページ。トップ＝index.html（カメラ版2/Pixi・複数アバター）。
+      // npm run dev で開く既定ページ。トップ＝index.html（カメラ版/Pixi・複数アバター）。
       open: '/',
     },
     preview: {

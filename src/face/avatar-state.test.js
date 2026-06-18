@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeStateFrame, createExprState } from './avatar-state';
 
-// camera2-app.jsx の TWEAK_DEFAULTS と同等の最小セット（このモジュールが読む項目だけ）。
+// camera-app.jsx の TWEAK_DEFAULTS と同等の最小セット（このモジュールが読む項目だけ）。
 function tweaks(over = {}) {
   return {
     mouthGain: 1.3, thHalf: 0.12, thFull: 0.35, release: 0.25,

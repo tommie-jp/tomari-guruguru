@@ -707,7 +707,7 @@ function App() {
         position: 'absolute', bottom: isNarrow ? 84 : '4.5vh', left: 0, right: 0,
         textAlign: 'center', pointerEvents: 'none'
       }}>
-        <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版2（Pixi）</div>
+        <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版</div>
         <div style={{ fontSize: 'clamp(11px, 1.5vmin, 14px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
         {/* アバター画像の帰属表示（registry の attribution を per-avatar 表示）。
             01-tomari は原作ろてじん、02 はいらすとや素材＋ChatGPT 生成、のように出し分ける。
