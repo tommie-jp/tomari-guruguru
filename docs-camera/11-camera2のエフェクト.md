@@ -1,6 +1,6 @@
 # camera2 のエフェクト（PixiJS）
 
-`camera2.html`（PixiJS スプライト描画版）のアバターに掛けるエフェクトのしくみと、
+`index.html`（PixiJS スプライト描画版・旧 `camera2.html`）のアバターに掛けるエフェクトのしくみと、
 追加できるエフェクトの一覧メモ。`camera.html`（img 切替版）はエフェクト非対応。
 
 関連: [01-使い方.md](01-使い方.md) / [04-OBSでライブ配信.md](04-OBSでライブ配信.md)

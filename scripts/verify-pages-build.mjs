@@ -4,7 +4,10 @@ import { avatars } from '../src/character-config.js';
 
 const DIST = 'dist';
 const BASE = '/guruguru-avatar/';
-const HTML_FILES = ['index.html', 'talk.html', 'guruguru.html', 'camera.html', 'camera2.html', 'tracking.html'];
+const HTML_FILES = ['index.html', 'index_old.html', 'camera2.html', 'talk.html', 'guruguru.html', 'camera.html', 'tracking.html'];
+// バンドル資産を持たないリダイレクト専用ページ（base 資産参照チェックの対象外）。
+// index_old.html → camera.html、camera2.html → index.html。
+const REDIRECT_ONLY = new Set(['index_old.html', 'camera2.html']);
 const SHEETS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 function fail(message) {
@@ -63,7 +66,7 @@ function assertSliceImages() {
   }
 }
 
-// camera2.html（PixiJS 版・複数アバター）が参照するスプライトシート（状態ごとに 5x5 を
+// index.html（PixiJS 版・複数アバター。旧 camera2.html）が参照するスプライトシート（状態ごとに 5x5 を
 // 1枚へ詰めたもの）。JS の Assets.load で取得するため HTML の src/href には現れないので、
 // character-config の avatars レジストリを真実の源にアバター別サブフォルダを検査する。
 function assertSheetImages() {
@@ -82,7 +85,8 @@ for (const file of HTML_FILES) {
   const html = readDistHtml(file);
   assertNoRootAssetReference(file, html);
   assertReferencedBaseAssetsExist(file, html);
-  if (file !== 'index.html') assertBaseAssetReference(file, html);
+  // リダイレクト専用ページ（index_old.html / camera2.html）は資産を持たないので除外。
+  if (!REDIRECT_ONLY.has(file)) assertBaseAssetReference(file, html);
 }
 
 assertSliceImages();

@@ -57,7 +57,9 @@ npm run dev
 | トーク版 | `talk.html` | マイク入力／音声ファイルに合わせて口パク |
 | ぐるぐる版 | `guruguru.html` | マウス追従で25方向に振り向く |
 | トラッキング | `tracking.html` | 手・体のポーズを推定して可視化するデモ |
-| トップ | `index.html` | `camera.html` へ自動転送 |
+| トップ（カメラ版2・Pixi） | `index.html` | スプライト描画・複数アバター選択。サイトのトップ（旧 `camera2.html`） |
+| 旧トップ | `index_old.html` | `camera.html` へ自動転送（旧 `index.html`） |
+| 互換リダイレクト | `camera2.html` | `index.html` へ自動転送（OGPキャッシュ・旧共有リンク対策） |
 
 ---
 
@@ -168,7 +170,9 @@ http://127.0.0.1:4173/guruguru-avatar/camera.html
 ├── talk.html               # トーク版エントリ
 ├── guruguru.html           # ぐるぐる版エントリ
 ├── tracking.html           # トラッキング版エントリ
-├── index.html              # camera.html へのリダイレクト
+├── index.html              # トップ（カメラ版2・Pixi／複数アバター。旧 camera2.html）
+├── index_old.html          # camera.html へのリダイレクト（旧 index.html）
+├── camera2.html            # index.html へのリダイレクト（OGPキャッシュ/旧リンク対策）
 ├── vite.config.js          # 本家と字面一致を保つ素の設定
 ├── vite.fork.js            # フォーク固有の設定（エントリ／WSL／base）
 ├── src/

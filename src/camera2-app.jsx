@@ -779,7 +779,7 @@ function App() {
       {/* WS 中継の役割切替リンク。相対パスなので開いているホスト（localhost / Tailscale 等）を
           そのまま引き継ぐ。現在のモードを太字＋色で強調する。配信には映さない。 */}
       {!obsMode && (
-      <a href="camera2.html?tx" style={{
+      <a href="index.html?tx" style={{
         position: 'absolute', top: 106, right: 18, fontSize: 13,
         fontWeight: mode === 'tx' ? 900 : 700,
         color: mode === 'tx' ? inkColor : subColor,
@@ -788,7 +788,7 @@ function App() {
       )}
 
       {!obsMode && (
-      <a href="camera2.html?rx" style={{
+      <a href="index.html?rx" style={{
         position: 'absolute', top: 128, right: 18, fontSize: 13,
         fontWeight: mode === 'rx' ? 900 : 700,
         color: mode === 'rx' ? inkColor : subColor,

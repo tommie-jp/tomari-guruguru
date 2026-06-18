@@ -74,17 +74,19 @@ export default function forkConfig({ command, mode }) {
     server: {
       port: 5173,
       strictPort: true,
-      // npm run dev で開く既定ページ（本家の /talk.html を上書き）
-      open: '/camera.html',
+      // npm run dev で開く既定ページ。トップ＝index.html（カメラ版2/Pixi・複数アバター）。
+      open: '/',
     },
     preview: {
-      // npm run preview では常にカメラ版を開く（base /guruguru-avatar/ 込みの絶対パス）
-      open: '/guruguru-avatar/camera.html',
+      // npm run preview ではトップ index.html を開く（base /guruguru-avatar/ 込みの絶対パス）
+      open: '/guruguru-avatar/',
     },
     build: {
       rollupOptions: {
         input: {
           camera: resolve(import.meta.dirname, 'camera.html'),
+          index_old: resolve(import.meta.dirname, 'index_old.html'),
+          // 旧 camera2.html は index.html へのリダイレクトとして残す（OGPキャッシュ/既存リンク対策）
           camera2: resolve(import.meta.dirname, 'camera2.html'),
           tracking: resolve(import.meta.dirname, 'tracking.html'),
         },
