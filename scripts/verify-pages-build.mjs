@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, posix } from 'node:path';
+import { avatars } from '../src/character-config.js';
 
 const DIST = 'dist';
 const BASE = '/guruguru-avatar/';
@@ -62,13 +63,18 @@ function assertSliceImages() {
   }
 }
 
-// camera2.html（PixiJS 版）が参照するスプライトシート（状態ごとに 5x5 を1枚へ詰めたもの）。
-// JS の Assets.load で取得するため HTML の src/href には現れないので、ここで個別に検査する。
+// camera2.html（PixiJS 版・複数アバター）が参照するスプライトシート（状態ごとに 5x5 を
+// 1枚へ詰めたもの）。JS の Assets.load で取得するため HTML の src/href には現れないので、
+// character-config の avatars レジストリを真実の源にアバター別サブフォルダを検査する。
 function assertSheetImages() {
-  const dir = join(DIST, 'slices2-sheets');
-  assertFile(dir);
-  for (const sheet of SHEETS) {
-    assertFile(join(dir, `${sheet}.webp`));
+  const base = join(DIST, 'slices2-sheets');
+  assertFile(base);
+  for (const avatar of avatars) {
+    const dir = join(base, avatar.id);
+    assertFile(dir);
+    for (const sheet of SHEETS) {
+      assertFile(join(dir, `${sheet}.webp`));
+    }
   }
 }
 

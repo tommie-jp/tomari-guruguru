@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""既存の正規化済みスライス webp（public/slices2/<状態>/r{行}c{列}.webp）を、
+"""既存の正規化済みスライス webp（<slices>/<状態>/r{行}c{列}.webp）を、
 状態ごとに 5x5 の1枚スプライトシートへ詰め直すツール。
 
-camera2.html（PixiJS スプライト描画版）が参照する
-public/slices2-sheets/<状態>.webp を生成する。スライスはスライスツール
+camera2.html（PixiJS スプライト描画版・複数アバター対応）が参照する
+public/slices2-sheets/<アバターID>/<状態>.webp を生成する。スライスはスライスツール
 （tools/slice_character_sheets.py）の時点で既にセル単位で正規化済み
 （中心X・足元Y を 1200x1200 キャンバスへアンカリング済み）なので、ここでは
 検出や再アンカリングをせず、等サイズセルをそのまま格子状に並べるだけでよい。
 
 使い方:
-    python tools/pack_sheet.py                  # 既定: 768px セル・q92（公開版の成果物）
-    python tools/pack_sheet.py --cell-out 1200  # 元解像度のまま（高品質・重い）
-    python tools/pack_sheet.py --quality 0      # lossless（さらに重い）
+    python tools/pack_sheet.py                       # 既定アバター(01-tomari)を 768px/q92 で
+    python tools/pack_sheet.py --avatar 02-foo \\
+        --slices 新キャラ資料/02-foo/slices            # 新アバター（生スライスは git 非追跡でよい）
+    python tools/pack_sheet.py --cell-out 1200       # 元解像度のまま（高品質・重い）
+    python tools/pack_sheet.py --quality 0           # lossless（さらに重い）
+
+出力先は <out>/<avatar>/<状態>.webp（既定 public/slices2-sheets/01-tomari/*.webp）。
+character-config.js の avatars[].id とディレクトリ名を一致させること。
 
 既定が 768px/q92 なのは、アバター表示が最大でも 1200px・通常はもっと小さく、
 6枚合計 ~5.6MB（個別150枚 ~6.8MB より軽い）に収まり、平面イラストでは
@@ -87,8 +92,18 @@ def pack_state(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--avatar",
+        default="01-tomari",
+        help="アバターID（出力サブフォルダ名 = character-config の avatars[].id）。既定 01-tomari。",
+    )
     parser.add_argument("--slices", default="public/slices2", type=Path)
-    parser.add_argument("--out", default="public/slices2-sheets", type=Path)
+    parser.add_argument(
+        "--out",
+        default="public/slices2-sheets",
+        type=Path,
+        help="シート出力のベース。実体は <out>/<avatar>/<状態>.webp。",
+    )
     parser.add_argument(
         "--cell-out",
         default=768,
@@ -103,9 +118,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # 出力はアバターごとのサブフォルダへ（public/slices2-sheets/<avatar>/<状態>.webp）。
+    out_dir = args.out / args.avatar
+
     total = 0
+    print(f"avatar: {args.avatar}  slices: {args.slices.as_posix()}")
     for state in STATES:
-        out_path = pack_state(args.slices, args.out, state, args.cell_out, args.quality)
+        out_path = pack_state(args.slices, out_dir, state, args.cell_out, args.quality)
         size = out_path.stat().st_size
         total += size
         with Image.open(out_path) as im:

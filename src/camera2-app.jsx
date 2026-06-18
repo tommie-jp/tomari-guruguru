@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import charConfig from './character-config';
+import charConfig, { avatars, getAvatar } from './character-config';
 import { useFacePose } from './face/use-face-pose';
 import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
@@ -29,6 +29,7 @@ const VERSION_LABEL_SHORT =
   GIT_SHA === 'dev' ? `v${APP_VERSION} · dev` : `v${APP_VERSION} · ${GIT_SHA}`;
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "avatarId": "01-tomari",
   "smoothing": 0.3,
   "sensitivity": 1.0,
   "biasYawDeg": 0,
@@ -96,18 +97,19 @@ const MAIN_BLENDSHAPES = [
   { key: 'cheekSquintRight', label: '頬上げ右' },
 ];
 
+// 顔推定ドライバが扱うグリッド（左右5×上下5＝25方向）。全アバター共通の表情グリッド。
 const { rows: ROWS, cols: COLS } = charConfig;
-// シート: 目開け×口[とじ/中間/開け] = A/B/C, 目閉じ×口[とじ/中間/開け] = D/E/F
-const SHEETS = [
-  charConfig.sheets.eyesOpen.close,   // A
-  charConfig.sheets.eyesOpen.half,    // B
-  charConfig.sheets.eyesOpen.open,    // C
-  charConfig.sheets.eyesClosed.close, // D
-  charConfig.sheets.eyesClosed.half,  // E
-  charConfig.sheets.eyesClosed.open,  // F
-];
-// スプライトシート方式: 状態(A〜F)ごとの正規化済み5×5シートURL（index=sheet 0..5）。
-const SHEET_URLS = SHEETS.map((s) => charConfig.sheetSrc(s));
+
+// ?avatar=<id> を読む。未指定・未知 id は null（＝保存値/既定に従う）。
+// OBS シーンごとにアバターを URL で固定したいとき用（セレクタより優先する）。
+function parseAvatarParam(search) {
+  try {
+    const id = new URLSearchParams(search).get('avatar');
+    return id && avatars.some((a) => a.id === id) ? id : null;
+  } catch {
+    return null;
+  }
+}
 
 const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
 // エフェクトの色プリセット（発光／ディゾルブ縁）。
@@ -194,6 +196,16 @@ function App() {
   // rx は受信した設定で描画し、それ以外はローカルの tweaks を使う。
   const [rxConfig, setRxConfig] = useState(TWEAK_DEFAULTS);
   const view = isRx ? rxConfig : t;
+  // 表示アバター。?avatar=<id> があれば最優先（OBS シーン固定）、無ければ tweaks の値。
+  // URL は起動時固定なので一度だけ解析する。未知 id は getAvatar が既定へフォールバック。
+  const avatarParam = useMemo(
+    () => parseAvatarParam(typeof window !== 'undefined' ? window.location.search : ''),
+    [],
+  );
+  const avatar = getAvatar(avatarParam ?? view.avatarId);
+  const avatarId = avatar.id;
+  // A〜F の6シートURL。アバターが変わったときだけ作り直す（参照安定＝再マウントのキーに使う）。
+  const sheetUrls = useMemo(() => avatar.sheetUrls(), [avatarId]);
   // rx はカメラを持たないのでプレビュー無し。
   const showPreview = view.preview && !obsMode && !isRx; // 配信にカメラ枠を出さない
   const [cell, setCell] = useState({ r: 2, c: 2 });
@@ -672,11 +684,13 @@ function App() {
           }}
         >
           {/* PixiJS スプライト描画。150枚の img スタックを1枚の canvas に置き換える。
-              顔推定が決めた sheet(0..5)/cell をそのまま渡し、コアが該当セルを描く。 */}
+              顔推定が決めた sheet(0..5)/cell をそのまま渡し、コアが該当セルを描く。
+              key にアバターIDを使い、切替時は Pixi を dispose→再生成する（sheets は初期化時固定）。 */}
           <SpriteAvatar
-            sheets={SHEET_URLS}
-            rows={ROWS}
-            cols={COLS}
+            key={avatarId}
+            sheets={sheetUrls}
+            rows={avatar.rows}
+            cols={avatar.cols}
             sheetIndex={sheet}
             cell={cell}
             effects={effects}
@@ -965,6 +979,19 @@ function App() {
 
       {!isRx && (!obsMode || panelOpen) && (
       <TweaksPanel>
+        <TweakSection label="アバター"></TweakSection>
+        {avatarParam ? (
+          <TweakRow label="キャラ" value="URL固定">
+            <span style={{ fontSize: 13, opacity: 0.8 }}>{avatar.displayName}</span>
+          </TweakRow>
+        ) : (
+          <TweakSelect label="キャラ" value={avatar.id}
+            options={avatars.map((a) => ({ value: a.id, label: a.displayName }))}
+            onChange={(v) => setTweak('avatarId', v)}></TweakSelect>
+        )}
+        <TweakRow label="クレジット">
+          <span style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.4 }}>{avatar.credit}</span>
+        </TweakRow>
         <TweakSection label="顔追従"></TweakSection>
         <TweakSlider label="感度" value={t.sensitivity} min={0.4} max={2.5} step={0.1}
           onChange={(v) => setTweak('sensitivity', v)}></TweakSlider>
