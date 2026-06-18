@@ -175,13 +175,12 @@ function useIsNarrow() {
 
 function App() {
   const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
-  // OBS ブラウザソース用ステージモード（?obs=1 で背景透過＋UI 非表示）。
+  // OBS ブラウザソース用ステージモード（背景透過＋UI 非表示）。
   // URL は起動時に固定なので一度だけ解析する。
   const stage = useMemo(
     () => parseObsParams(typeof window !== 'undefined' ? window.location.search : ''),
     [],
   );
-  const obsMode = stage.obs;
   // WS 中継の役割（local / tx=送信側 / rx=受信側）。URL は起動時固定なので一度だけ解析。
   const relay = useMemo(
     () => parseRelayMode(
@@ -192,6 +191,9 @@ function App() {
   );
   const mode = relay.mode;
   const isRx = mode === 'rx';
+  // ステージモードの既定: obs 未指定なら rx のときだけ ON（rx=OBS の CEF 用なので透過が既定）。
+  // ?obs=1 で常時 ON、?obs=0 で常時 OFF（rx をブラウザのタブでデバッグするとき用）。
+  const obsMode = stage.obs ?? isRx;
   const [panelOpen, setPanelOpen] = useState(false); // obsMode 中に T キーで Tweaks を開閉
   // rx は受信した設定で描画し、それ以外はローカルの tweaks を使う。
   const [rxConfig, setRxConfig] = useState(TWEAK_DEFAULTS);
@@ -788,7 +790,8 @@ function App() {
       )}
 
       {!obsMode && (
-      <a href="index.html?rx" style={{
+      // rx は既定で透過＋UI 非表示なので、ブラウザのタブで確認できるよう ?obs=0 を付ける。
+      <a href="index.html?rx&obs=0" style={{
         position: 'absolute', top: 128, right: 18, fontSize: 13,
         fontWeight: mode === 'rx' ? 900 : 700,
         color: mode === 'rx' ? inkColor : subColor,

@@ -4,9 +4,9 @@ import { avatars } from '../src/character-config.js';
 
 const DIST = 'dist';
 const BASE = '/guruguru-avatar/';
-const HTML_FILES = ['index.html', 'index_old.html', 'camera2.html', 'talk.html', 'guruguru.html', 'camera.html', 'tracking.html'];
+const HTML_FILES = ['index.html', 'index_old.html', 'camera2.html', 'talk.html', 'guruguru.html', 'tracking.html'];
 // バンドル資産を持たないリダイレクト専用ページ（base 資産参照チェックの対象外）。
-// index_old.html → camera.html、camera2.html → index.html。
+// index_old.html / camera2.html はどちらも index.html へ転送する互換ページ。
 const REDIRECT_ONLY = new Set(['index_old.html', 'camera2.html']);
 const SHEETS = ['A', 'B', 'C', 'D', 'E', 'F'];
 

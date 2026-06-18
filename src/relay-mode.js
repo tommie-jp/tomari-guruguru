@@ -1,4 +1,4 @@
-// camera.html を WS 中継のどの役割で動かすかを URL から決める純関数。
+// index.html を WS 中継のどの役割で動かすかを URL から決める純関数。
 //   ?tx[=ws]        → producer（カメラ+推論し、状態フレームを送信。設定UIもここ）
 //   ?rx[=ws]        → consumer（カメラを起動せず、受信した状態フレームで描画。OBS の CEF 用）
 //   どちらも無し      → local（従来どおり単独で完結。送受信しない）
@@ -6,7 +6,8 @@
 //
 // relay URL を省略したときは「ページと同じホストの :8787」を既定にする。
 // ページが https なら wss、http なら ws を選ぶ（mixed-content 回避）。
-// ?obs=1 など他のフラグとは独立（rx + obs でオーバーレイ表示）。
+// 役割の判定は ?obs とは独立。表示側では rx を OBS の CEF 用とみなし、
+// obs 未指定でも透過オーバーレイを既定 ON にする（obs-mode.js / camera2-app.jsx 参照）。
 
 const TRUTHY = new Set(['', '1', 'true', 'yes', 'on', 'ws']);
 

@@ -6,7 +6,7 @@
 //   - producer 後発接続時: 既存 CEF があれば同じく need-config + peer を送る
 // を仲介する（数秒ごとの再ブロードキャストはしない）。
 //
-// --web-root を渡すと、同じポートで静的ファイル（camera.html / assets / mediapipe）も
+// --web-root を渡すと、同じポートで静的ファイル（index.html / assets / mediapipe）も
 // 配信する。単一 Windows PC で OBS 用の tx/rx を動かすとき、Vite を別途立てずに
 // 「node server/relay.mjs --web-root dist-local」だけで完結させるための統合モード。
 //

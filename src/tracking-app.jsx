@@ -157,7 +157,7 @@ function App() {
         {statusText}
       </div>
 
-      <a href="camera.html" style={{
+      <a href="index.html" style={{
         position: 'absolute', top: 18, right: 18, fontSize: 13, fontWeight: 700,
         color: 'rgba(255,255,255,0.6)', textDecoration: 'none', letterSpacing: '0.06em'
       }}>← カメラ版(顔)</a>

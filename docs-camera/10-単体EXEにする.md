@@ -3,7 +3,7 @@
 配布先に Node.js を入れたくないとき、中継 + 静的配信を `guruguru-relay.exe` 1つに固めて、
 `dist-local\`（配信物）と `start.bat` を添えて配る。仕組みは
 **Node SEA（Single Executable Applications）**＋ **postject**。`ws` は esbuild で exe に同梱し、
-`dist-local`（camera.html / assets / mediapipe）は exe の隣に置いて `--web-root` で配る。
+`dist-local`（index.html / assets / mediapipe）は exe の隣に置いて `--web-root` で配る。
 
 通常の運用（Node を入れて使う）は [09-Windowsで動かす.md](09-Windowsで動かす.md) を参照。EXE 化は
 「Node を入れない配布」をしたいときだけでよい。
@@ -24,7 +24,7 @@ powershell -ExecutionPolicy Bypass -File windows\build-exe.ps1
 これで次が `dist-exe\` に揃う:
 
 - `guruguru-relay.exe` … 中継 + 静的配信（Node 同梱・単体動作）
-- `dist-local\` … 配信物（camera.html ほか）
+- `dist-local\` … 配信物（index.html ほか）
 - `start.bat` … 起動用（exe を起動 → 送信側ブラウザを開く → rx URL 表示）
 
 `dist-exe\` を丸ごとコピーして配布し、配布先では **`start.bat` をダブルクリック**するだけ。
@@ -48,7 +48,7 @@ npx postject dist-exe/guruguru-relay.exe NODE_SEA_BLOB dist-exe/relay.blob --sen
 
 動作確認は **Windows 側から**行う（WSL が NAT ネットワークだと WSL 側からは Windows の
 `127.0.0.1` に届かないため）。例: `powershell.exe -Command "(iwr -UseBasicParsing
-http://127.0.0.1:8787/camera.html).StatusCode"` が `200`。停止は
+http://127.0.0.1:8787/index.html).StatusCode"` が `200`。停止は
 `taskkill.exe /F /IM guruguru-relay.exe`。
 
 ## 中身（手動でやる場合）
@@ -80,7 +80,7 @@ guruguru-relay.exe --web-root dist-local --port 8787 --host 127.0.0.1
 ```
 
 - 送信側(tx): `http://127.0.0.1:8787/?tx`（Edge/Chrome）
-- OBS 受信側(rx): `http://127.0.0.1:8787/?rx&obs=1`（OBS のブラウザソース）
+- OBS 受信側(rx): `http://127.0.0.1:8787/?rx`（OBS のブラウザソース。rx は既定で透過＋UI 非表示）
 
 LAN の別端末からも繋ぐなら `--host 0.0.0.0`（要ファイアウォール許可）。
 

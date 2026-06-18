@@ -56,7 +56,7 @@ export default function forkConfig({ command, mode }) {
   const isBuild = command === 'build';
 
   const config = {
-    // ビルド時に静的置換される定数。camera-app.jsx などから参照する。
+    // ビルド時に静的置換される定数。camera2-app.jsx などから参照する。
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __GIT_SHA__: JSON.stringify(isBuild ? gitShortSha() : 'dev'),
@@ -84,7 +84,6 @@ export default function forkConfig({ command, mode }) {
     build: {
       rollupOptions: {
         input: {
-          camera: resolve(import.meta.dirname, 'camera.html'),
           index_old: resolve(import.meta.dirname, 'index_old.html'),
           // 旧 camera2.html は index.html へのリダイレクトとして残す（OGPキャッシュ/既存リンク対策）
           camera2: resolve(import.meta.dirname, 'camera2.html'),

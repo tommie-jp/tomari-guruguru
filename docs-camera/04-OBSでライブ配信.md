@@ -1,26 +1,26 @@
 # OBS でライブ配信（ブラウザソース透過オーバーレイ）
 
-カメラ版アバター（`camera.html`）を OBS の **ブラウザソース**として読み込み、
+カメラ版アバター（`index.html`）を OBS の **ブラウザソース**として読み込み、
 **背景透過でアバターだけ**を配信オーバーレイにするための手順メモ。
 
 関連: [01-使い方.md](01-使い方.md)
 
 ## 全体像
 
-- OBS の「ブラウザソース」に `camera.html?obs=1` を読ませる。
+- OBS の「ブラウザソース」に `index.html?obs=1` を読ませる。
 - `?obs=1`（ステージモード）で背景が透過し、UI が隠れてアバターだけになる。
 - 顔トラッキングは OBS 内蔵ブラウザ(CEF)の中で動く（カメラを CEF が掴む）。
 - **最重要**: OBS を `--enable-media-stream` 付きで起動しないとカメラが使えない（後述）。
 
 ## ステージモードの URL パラメータ
 
-`camera.html` は URL パラメータで配信用の見た目に切り替わる（通常表示は無変更）。
+`index.html` は URL パラメータで配信用の見た目に切り替わる（通常表示は無変更）。
 
 - `?obs=1` … 背景透過＋UI 非表示（アバターのみのオーバーレイ）
 - `?shadow=n` … アバターに影を付ける（`n` は 0~3。大きいほど濃い。0=無し、値なしは 2）
 - ステージモード中だけ **`T` キー**で Tweaks パネルを開閉できる（OBS の「対話」で較正する用）
 
-例: `http://localhost:5173/camera.html?obs=1&shadow=2`
+例: `http://localhost:5173/index.html?obs=1&shadow=2`
 
 ## 必須: OBS を `--enable-media-stream` 付きで起動する
 
@@ -64,8 +64,8 @@ obs64.exe --enable-media-stream --use-fake-ui-for-media-stream
 
 1. ソース → 追加 → 「ブラウザ」
 2. URL:
-   - dev: `http://localhost:5173/camera.html?obs=1`
-   - 本番: `https://tommie-jp.github.io/guruguru-avatar/camera.html?obs=1`
+   - dev: `http://localhost:5173/index.html?obs=1`
+   - 本番: `https://tommie-jp.github.io/guruguru-avatar/index.html?obs=1`
 3. 幅・高さ: 1280×720 か 1920×1080
 4. 「ソースが非アクティブのときシャットダウン」OFF（トラッキングを温存）
 5. ソースを右クリック →「対話」でカメラ許可の確認、`T` キーで Tweaks を出して較正
@@ -73,7 +73,7 @@ obs64.exe --enable-media-stream --use-fake-ui-for-media-stream
 ## カメラ許可の確認のしかた
 
 `?obs=1` だとエラー表示が隠れる。原因を見たいときは一時的に `?obs=1` を外して
-（`camera.html` だけにして）「対話」で開くと、画面下にステータスが出る。
+（`index.html` だけにして）「対話」で開くと、画面下にステータスが出る。
 
 - 「顔を検出中」… 成功
 - 「エラー: Permission denied」… 下のトラブルシュートへ

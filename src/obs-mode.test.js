@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { parseObsParams, parseShadowLevel } from './obs-mode';
 
 describe('parseObsParams', () => {
-  it('パラメータ無しは通常モード（obs=false / shadow=0）', () => {
+  it('obs 未指定は undefined（呼び出し側で rx 既定を決める） / shadow=0', () => {
     const r = parseObsParams('');
-    expect(r.obs).toBe(false);
+    expect(r.obs).toBeUndefined();
     expect(r.shadow).toBe(0);
   });
 
@@ -15,7 +15,7 @@ describe('parseObsParams', () => {
     expect(parseObsParams('?obs=ON').obs).toBe(true);
   });
 
-  it('?obs=0 / ?obs=false は無効化できる', () => {
+  it('?obs=0 / ?obs=false は明示的に無効化（rx の既定 ON を打ち消す）', () => {
     expect(parseObsParams('?obs=0').obs).toBe(false);
     expect(parseObsParams('?obs=false').obs).toBe(false);
   });
@@ -31,9 +31,9 @@ describe('parseObsParams', () => {
     expect(parseObsParams('obs=1').obs).toBe(true);
   });
 
-  it('引数を省略しても安全（obs=false / shadow=0）', () => {
+  it('引数を省略しても安全（obs=undefined / shadow=0）', () => {
     const r = parseObsParams();
-    expect(r.obs).toBe(false);
+    expect(r.obs).toBeUndefined();
     expect(r.shadow).toBe(0);
   });
 });

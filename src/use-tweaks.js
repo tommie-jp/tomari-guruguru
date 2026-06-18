@@ -6,7 +6,7 @@
 //
 // tweaks-panel.jsx の useTweaks がこれらを import して使う。
 
-// 現在ページ名（例: camera.html）。ストレージキーと default-themes の
+// 現在ページ名（例: index.html）。ストレージキーと default-themes の
 // ファイル名の両方で使う。パスが取れなければ index にフォールバック。
 export function tweaksPageName() {
   const path = (typeof location !== 'undefined' && location.pathname) || '';
