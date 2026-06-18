@@ -22,4 +22,15 @@ export default {
   src(sheet, r, c) {
     return `${this.basePath}/${sheet}/r${r}c${c}.${this.ext}`;
   },
+
+  // ── スプライトシート方式（camera2.html / PixiJS）─────────────────────────
+  // 状態(A〜F)ごとに 5x5 を1枚へ詰めたシート画像のベースパス。
+  // tools/pack_sheet.py が public/slices2-sheets/<状態>.webp を生成する。
+  sheetBasePath: 'slices2-sheets',
+
+  // 状態シート1枚の参照先。グリッド/セルサイズは実行時にテクスチャ寸法から導出する
+  // （sheet幅/cols, sheet高/rows）ので、ここではパスだけ持てばよい。
+  sheetSrc(sheet) {
+    return `${this.sheetBasePath}/${sheet}.${this.ext}`;
+  },
 };

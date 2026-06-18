@@ -85,6 +85,7 @@ export default function forkConfig({ command, mode }) {
       rollupOptions: {
         input: {
           camera: resolve(import.meta.dirname, 'camera.html'),
+          camera2: resolve(import.meta.dirname, 'camera2.html'),
           tracking: resolve(import.meta.dirname, 'tracking.html'),
         },
       },

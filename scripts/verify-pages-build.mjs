@@ -3,7 +3,7 @@ import { join, posix } from 'node:path';
 
 const DIST = 'dist';
 const BASE = '/guruguru-avatar/';
-const HTML_FILES = ['index.html', 'talk.html', 'guruguru.html', 'camera.html', 'tracking.html'];
+const HTML_FILES = ['index.html', 'talk.html', 'guruguru.html', 'camera.html', 'camera2.html', 'tracking.html'];
 const SHEETS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 function fail(message) {
@@ -62,6 +62,16 @@ function assertSliceImages() {
   }
 }
 
+// camera2.html（PixiJS 版）が参照するスプライトシート（状態ごとに 5x5 を1枚へ詰めたもの）。
+// JS の Assets.load で取得するため HTML の src/href には現れないので、ここで個別に検査する。
+function assertSheetImages() {
+  const dir = join(DIST, 'slices2-sheets');
+  assertFile(dir);
+  for (const sheet of SHEETS) {
+    assertFile(join(dir, `${sheet}.webp`));
+  }
+}
+
 for (const file of HTML_FILES) {
   const html = readDistHtml(file);
   assertNoRootAssetReference(file, html);
@@ -70,5 +80,6 @@ for (const file of HTML_FILES) {
 }
 
 assertSliceImages();
+assertSheetImages();
 
 console.log('Pages build verification passed.');
