@@ -707,16 +707,17 @@ function App() {
       }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版2（Pixi）</div>
         <div style={{ fontSize: 'clamp(11px, 1.5vmin, 14px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
-        {/* アバター（キャラクター「トマリ」）の著作権表示。原作: ろてじん。
+        {/* アバター画像の帰属表示（registry の attribution を per-avatar 表示）。
+            01-tomari は原作ろてじん、02 はいらすとや素材＋ChatGPT 生成、のように出し分ける。
             親は pointerEvents:none なので、リンクだけ auto にしてクリック可能にする。
             配信オーバーレイ(obsMode)では他 UI と同様に非表示（このブロックごと !obsMode）。 */}
         <div style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, marginTop: 4, letterSpacing: '0.04em' }}>
-          アバター著作権：<a
-            href="https://github.com/rotejin/tomari-guruguru"
+          {avatar.attribution.prefix}<a
+            href={avatar.attribution.url}
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: inkColor, textDecoration: 'none', fontWeight: 700, pointerEvents: 'auto' }}
-          >ろてじん</a> さん
+          >{avatar.attribution.name}</a>{avatar.attribution.suffix}
         </div>
         <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 6, letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, display: 'inline-block' }}></span>

@@ -1,6 +1,8 @@
 sheets/
 uploads/
 新キャラ資料/
+# アバターの生シート素材（packed シートのみ追跡する方針。doAvatarConvert.sh の入力）
+assets/
 *.psd
 *.clip
 *.kra

@@ -38,8 +38,38 @@ const AVATAR_DEFS = [
     rows: 5,
     cols: 5,
     sheets: DEFAULT_SHEETS,
-    // 画像クレジット/ライセンス（CLAUDE.md: キャラ画像は MIT 対象外・商用利用禁止）。
+    // 商用利用の可否（CLAUDE.md / ASSET_LICENSE.md: キャラ画像は MIT 対象外・商用利用禁止）。
+    commercial: false,
+    // Tweaks パネルの「クレジット」行に出す説明文。
     credit: 'トマリぐるぐる（rotejin）— 画像は商用利用禁止',
+    // フッターの帰属表示（prefix + リンク名 + suffix）。per-avatar に出し分ける。
+    attribution: {
+      prefix: 'アバター著作権：',
+      name: 'ろてじん',
+      url: 'https://github.com/rotejin/tomari-guruguru',
+      suffix: ' さん',
+    },
+  },
+  {
+    id: '02-kesyou_jirai_make',
+    displayName: '化粧地雷メイク',
+    // sheet 方式のみ（個別スライスは持たない）。camera2 は sheetUrls() しか参照しないので
+    // basePath/src() は未使用。doAvatarConvert.sh で slices2-sheets/<id>/ を生成する。
+    ext: 'webp',
+    rows: 5,
+    cols: 5,
+    sheets: DEFAULT_SHEETS,
+    // いらすとや素材を ChatGPT(画像生成)で派生させたもの。いらすとや規約＋OpenAI規約が重なり、
+    // 素材を主体とする再配布/販売・商用は高リスクなので非商用に限定する。
+    commercial: false,
+    credit:
+      'いらすとや素材を元に ChatGPT（画像生成）で作成。いらすとや利用規約に従う（商用利用・素材を主体とする再配布/販売は不可）',
+    attribution: {
+      prefix: 'キャラクター: ',
+      name: 'いらすとや',
+      url: 'https://www.irasutoya.com/p/terms.html',
+      suffix: ' 素材を元に ChatGPT で作成 ／ 非商用',
+    },
   },
 ];
 
