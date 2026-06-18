@@ -22,6 +22,10 @@ const VERSION_LABEL =
   GIT_SHA === 'dev'
     ? `v${APP_VERSION} · dev`
     : `v${APP_VERSION} · ${GIT_SHA} · ${BUILD_DATE}`;
+// 狭い画面用の短縮版（日付を落としてビルド識別だけ残す）。右下 Tweaks ボタンの上に
+// 1行で収め、左下コントロールに被らない長さにする。
+const VERSION_LABEL_SHORT =
+  GIT_SHA === 'dev' ? `v${APP_VERSION} · dev` : `v${APP_VERSION} · ${GIT_SHA}`;
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "smoothing": 0.3,
@@ -133,6 +137,27 @@ function composeUserTransform(u) {
   const y = (u.shared.y + u.local.y).toFixed(2);
   const z = (u.shared.zoom * u.local.zoom).toFixed(3);
   return `translate(${x}vw, ${y}vh) scale(${z})`;
+}
+
+// 狭い画面（スマホのポートレイト）か。下部コントロールを小型化し、中央タイトル帯・
+// 右下 Tweaks と重ならないレイアウトに切り替えるのに使う。Tweaks パネルの CSS と
+// 同じ 480px をブレークポイントにする（tweaks-panel.jsx の @media と揃える）。
+const NARROW_QUERY = '(max-width: 480px)';
+function useIsNarrow() {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia(NARROW_QUERY).matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(NARROW_QUERY);
+    const onChange = (e) => setNarrow(e.matches);
+    setNarrow(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return narrow;
 }
 
 function App() {
@@ -533,6 +558,13 @@ function App() {
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
   const subColor = dark ? 'rgba(255,248,238,0.45)' : 'rgba(60,48,38,0.45)';
 
+  // 狭い画面では下部の「反映先／リセット／移動比率」コントロールを小型化し、折り返して
+  // 左下にまとめる。右下 Tweaks ボタンの幅ぶんを空け、中央タイトル帯は少し上へ逃がす。
+  const isNarrow = useIsNarrow();
+  const ctl = isNarrow
+    ? { font: 11, pad: '5px 9px', gap: 6, dot: 8, slider: 64, mrFont: 10.5, mrPad: '4px 8px' }
+    : { font: 13, pad: '7px 12px', gap: 8, dot: 9, slider: 92, mrFont: 12, mrPad: '6px 10px' };
+
   // rx はカメラを持たないので、状態表示は中継リンクの接続有無にする。
   const statusText = isRx
     ? (relayApi.linkUp ? '中継に接続中（受信）' : '中継に未接続')
@@ -645,11 +677,22 @@ function App() {
 
       {!obsMode && (
       <div style={{
-        position: 'absolute', bottom: '4.5vh', left: 0, right: 0,
+        position: 'absolute', bottom: isNarrow ? 84 : '4.5vh', left: 0, right: 0,
         textAlign: 'center', pointerEvents: 'none'
       }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版</div>
         <div style={{ fontSize: 'clamp(11px, 1.5vmin, 14px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
+        {/* アバター（キャラクター「トマリ」）の著作権表示。原作: ろてじん。
+            親は pointerEvents:none なので、リンクだけ auto にしてクリック可能にする。
+            配信オーバーレイ(obsMode)では他 UI と同様に非表示（このブロックごと !obsMode）。 */}
+        <div style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, marginTop: 4, letterSpacing: '0.04em' }}>
+          アバター著作権：<a
+            href="https://github.com/rotejin/tomari-guruguru"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: inkColor, textDecoration: 'none', fontWeight: 700, pointerEvents: 'auto' }}
+          >ろてじん</a> さん
+        </div>
         <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 6, letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, display: 'inline-block' }}></span>
           {statusText}
@@ -715,7 +758,7 @@ function App() {
         fontWeight: mode === 'tx' ? 900 : 700,
         color: mode === 'tx' ? inkColor : subColor,
         textDecoration: 'none', letterSpacing: '0.06em'
-      }}>送信側(tx) →</a>
+      }}>OBS送信側tx →</a>
       )}
 
       {!obsMode && (
@@ -724,7 +767,7 @@ function App() {
         fontWeight: mode === 'rx' ? 900 : 700,
         color: mode === 'rx' ? inkColor : subColor,
         textDecoration: 'none', letterSpacing: '0.06em'
-      }}>受信側(rx) →</a>
+      }}>OBS受信側rx →</a>
       )}
 
       {/* 「反映先」トグル＋リセット（左下）。ドラッグ移動・ズームを CEF へ送るか、この端末
@@ -732,8 +775,10 @@ function App() {
           配信に映さないよう obsMode では非表示。rx は操作しないので非表示。 */}
       {!obsMode && !isRx && (
       <div style={{
-        position: 'absolute', bottom: 16, left: 16, zIndex: 6,
-        display: 'flex', gap: 8, alignItems: 'center',
+        position: 'absolute', bottom: isNarrow ? 14 : 16, left: isNarrow ? 12 : 16, zIndex: 6,
+        display: 'flex', flexWrap: 'wrap', gap: ctl.gap, alignItems: 'center',
+        // スマホは右下 Tweaks ボタン（約98px）に被らないよう左下に収め、はみ出しは折り返す。
+        maxWidth: isNarrow ? 'calc(100vw - 120px)' : 'none',
         fontFamily: "'Zen Maru Gothic', sans-serif"
       }}>
         <button
@@ -742,14 +787,15 @@ function App() {
           title="ドラッグ移動・ズームの反映先を切替（PC は Shift 併用でも『この端末だけ』）"
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 7,
-            padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+            padding: ctl.pad, borderRadius: 999, cursor: 'pointer',
             border: `1.5px solid ${localMode ? '#E8923C' : '#46C26A'}`,
             background: localMode ? 'rgba(232,146,60,0.14)' : 'rgba(70,194,106,0.12)',
-            color: inkColor, fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
+            color: inkColor, fontSize: ctl.font, fontWeight: 700, letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
           }}
         >
           <span style={{
-            width: 9, height: 9, borderRadius: '50%', display: 'inline-block',
+            width: ctl.dot, height: ctl.dot, borderRadius: '50%', display: 'inline-block',
             background: localMode ? '#E8923C' : '#46C26A',
           }}></span>
           {localMode ? '反映先: この端末だけ' : '反映先: CEFへ送る'}
@@ -759,9 +805,10 @@ function App() {
           onClick={resetUserTransform}
           title="移動・ズームを中央／等倍に戻す"
           style={{
-            padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+            padding: ctl.pad, borderRadius: 999, cursor: 'pointer',
             border: `1.5px solid ${subColor}`, background: 'transparent',
-            color: subColor, fontSize: 13, fontWeight: 700, letterSpacing: '0.04em',
+            color: subColor, fontSize: ctl.font, fontWeight: 700, letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
           }}
         >リセット</button>
         {/* 移動比率: rx(CEF) の移動量 = tx の移動量 × この値（移動のみ・ズーム対象外）。 */}
@@ -769,9 +816,10 @@ function App() {
           title="rx(CEF) の移動量 = tx の移動量 × この値（移動のみ・ズームは対象外）"
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 10px', borderRadius: 999,
+            padding: ctl.mrPad, borderRadius: 999,
             border: `1.5px solid ${subColor}`, background: 'transparent',
-            color: subColor, fontSize: 12, fontWeight: 700, letterSpacing: '0.04em',
+            color: subColor, fontSize: ctl.mrFont, fontWeight: 700, letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
           }}
         >
           <span>移動比率</span>
@@ -780,22 +828,25 @@ function App() {
             min={MOVE_RATIO_MIN} max={MOVE_RATIO_MAX} step="0.1"
             value={t.moveRatio ?? 1}
             onChange={(e) => setTweak('moveRatio', Number(e.target.value))}
-            style={{ width: 92, accentColor: '#46C26A', cursor: 'pointer' }}
+            style={{ width: ctl.slider, accentColor: '#46C26A', cursor: 'pointer' }}
           />
-          <span style={{ color: inkColor, fontVariantNumeric: 'tabular-nums', minWidth: 28, textAlign: 'right' }}>
+          <span style={{ color: inkColor, fontVariantNumeric: 'tabular-nums', minWidth: 26, textAlign: 'right' }}>
             ×{(t.moveRatio ?? 1).toFixed(1)}
           </span>
         </label>
       </div>
       )}
 
-      {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。 */}
+      {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。
+          右下 Tweaks ボタンの真上に逃がして重ならないようにする。狭い画面では
+          日付を落とした短縮版にして左下コントロールにも被らない長さにする。 */}
       {!obsMode && (
       <div style={{
-        position: 'absolute', bottom: 10, right: 12, fontSize: 11,
-        color: subColor, opacity: 0.65, letterSpacing: '0.04em',
-        fontVariantNumeric: 'tabular-nums', pointerEvents: 'none', userSelect: 'none'
-      }}>{VERSION_LABEL}</div>
+        position: 'absolute', bottom: 54, right: isNarrow ? 12 : 16, fontSize: 11,
+        color: subColor, opacity: 0.65, letterSpacing: '0.04em', whiteSpace: 'nowrap',
+        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+        pointerEvents: 'none', userSelect: 'none'
+      }}>{isNarrow ? VERSION_LABEL_SHORT : VERSION_LABEL}</div>
       )}
 
       {/* カメラ起動エラーの詳細。原因切り分け用に obsMode でも常に表示する

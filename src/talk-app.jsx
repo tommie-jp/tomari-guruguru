@@ -255,6 +255,16 @@ function App() {
       <div style={{ position: 'absolute', top: '3.5vh', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター トーク版</div>
         <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 4, letterSpacing: '0.08em' }}>音声に合わせて口パク・まばたきするよ</div>
+        {/* アバター（キャラクター「トマリ」）の著作権表示。原作: ろてじん。
+            親は pointerEvents:none なので、リンクだけ auto にしてクリック可能にする。 */}
+        <div style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, marginTop: 4, letterSpacing: '0.04em' }}>
+          アバター著作権：<a
+            href="https://github.com/rotejin/tomari-guruguru"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: inkColor, textDecoration: 'none', fontWeight: 700, pointerEvents: 'auto' }}
+          >ろてじん</a> さん
+        </div>
       </div>
 
       <div style={{
