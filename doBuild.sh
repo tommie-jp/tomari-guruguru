@@ -81,7 +81,7 @@ timeout /t 2 /nobreak >nul
 start "" "http://127.0.0.1:8787/?tx"
 echo.
 echo  tx (send) : http://127.0.0.1:8787/?tx
-echo  rx (OBS)  : http://127.0.0.1:8787/?rx^&obs=1
+echo  rx (OBS)  : http://127.0.0.1:8787/?rx
 echo.
 pause
 BAT
@@ -96,7 +96,7 @@ cat > dist-exe/README.txt <<'TXT'
  2. start.bat をダブルクリック
     - 送信側(tx)が既定ブラウザで開きます（カメラを許可）
  3. OBS で「ソース → ブラウザ」を追加し、URL に次を貼る:
-       http://localhost:8787/?rx&obs=1
+       http://localhost:8787/?rx
     背景は透過。tx の画面下に「CEF 接続中（1）」が出れば結線 OK。
 
 【中身】

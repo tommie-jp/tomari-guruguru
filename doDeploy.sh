@@ -131,7 +131,7 @@ release_windows() {
 使い方:
 1. zip をローカルドライブに展開（例 C:\\guruguru）。zip 内から直接実行しない。
 2. start.bat をダブルクリック → 送信側(tx)が既定ブラウザで開く。
-3. OBS の「ブラウザ」ソースに http://localhost:8787/?rx&obs=1 。
+3. OBS の「ブラウザ」ソースに http://localhost:8787/?rx 。
 
 詳細は docs-camera/09-Windowsで動かす.md / 10-単体EXEにする.md を参照。
 NOTES
