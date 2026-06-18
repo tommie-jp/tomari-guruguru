@@ -118,7 +118,7 @@ release_windows() {
   local VERSION TAG ZIP notes
   VERSION="$(node -p "require('./package.json').version")"
   TAG="win-v${VERSION}"
-  ZIP="dist-exe/guruguru-relay-win-v${VERSION}.zip"
+  ZIP="dist-exe/guruguru-avatar-win-v${VERSION}.zip"
 
   echo "== ビルド (./doBuild.sh) =="
   ./doBuild.sh

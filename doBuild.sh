@@ -3,7 +3,7 @@
 # Windows 版リレイサーバ（中継 + 静的配信の単体 exe）の配布 zip を「ビルドするだけ」の
 # スクリプト。GitHub へのアップロードはしない（それは ./doDeploy.sh win）。
 #
-# 生成物: dist-exe/guruguru-relay-win-v<version>.zip
+# 生成物: dist-exe/guruguru-avatar-win-v<version>.zip
 #   └─ guruguru-obs-win/  guruguru-relay.exe / dist-local/ / start.bat / README.txt
 #
 set -euo pipefail
@@ -13,11 +13,11 @@ usage() {
 doBuild.sh — Windows 版リレイサーバの配布 zip をビルド（アップロードはしない）
 
 使い方:
-  ./doBuild.sh             dist-exe/guruguru-relay-win-v<version>.zip を生成
+  ./doBuild.sh             dist-exe/guruguru-avatar-win-v<version>.zip を生成
   ./doBuild.sh -h|--help   このヘルプを表示
 
 生成物:
-  dist-exe/guruguru-relay-win-v<version>.zip
+  dist-exe/guruguru-avatar-win-v<version>.zip
     └─ guruguru-obs-win/   guruguru-relay.exe / dist-local/ / start.bat / README.txt
 
 環境変数:
@@ -40,7 +40,7 @@ cd "$(dirname "$0")"
 WINNODE="${WINNODE:-/mnt/c/Program Files/nodejs/node.exe}"
 FUSE="NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"
 VERSION="$(node -p "require('./package.json').version")"
-ZIP="dist-exe/guruguru-relay-win-v${VERSION}.zip"
+ZIP="dist-exe/guruguru-avatar-win-v${VERSION}.zip"
 
 # 前提チェック
 command -v node >/dev/null 2>&1 || { echo "エラー: node が必要です"; exit 1; }
