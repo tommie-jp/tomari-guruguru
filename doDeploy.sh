@@ -2,8 +2,9 @@
 #
 # デプロイ/リリースのエントリポイント。
 #
-#   ./doDeploy.sh [pages]   GitHub Pages へデプロイ（既定・従来動作）
-#   ./doDeploy.sh win       Windows 版リレイサーバを GitHub Release として配置
+#   ./doDeploy.sh [all]     Pages デプロイ → Windows zip リリースの両方（既定）
+#   ./doDeploy.sh pages     GitHub Pages へデプロイのみ
+#   ./doDeploy.sh win       Windows 版リレイサーバを GitHub Release として配置のみ
 #                           （guruguru-relay.exe + dist-local + start.bat を zip 化して upload）
 #
 # 注意: gh は --repo 無指定だと upstream(rotejin) を見て 403 になるので必ず --repo を付ける。
@@ -24,11 +25,13 @@ usage() {
 doDeploy.sh — デプロイ/リリースのエントリポイント
 
 使い方:
-  ./doDeploy.sh [pages]    GitHub Pages へデプロイ（既定・引数なしと同じ）
-  ./doDeploy.sh win        Windows 版リレイサーバを GitHub Release として配置
+  ./doDeploy.sh [all]      Pages デプロイ → Windows zip リリースの両方（既定・引数なしと同じ）
+  ./doDeploy.sh pages      GitHub Pages へデプロイのみ
+  ./doDeploy.sh win        Windows 版リレイサーバを GitHub Release として配置のみ
   ./doDeploy.sh -h|--help  このヘルプを表示
 
 サブコマンド:
+  all     pages → win を続けて実行（既定）。途中で失敗したら止まる（set -e）。
   pages   origin/$BRANCH を対象に $WORKFLOW を workflow_dispatch で起動し、
           完了まで監視して $SITE_URL の反映を確認する。
   win     ./doBuild.sh で配布 zip（guruguru-relay.exe + dist-local + start.bat）を
@@ -145,9 +148,10 @@ NOTES
 }
 
 # ── ディスパッチ ─────────────────────────────────────────────────────────
-case "${1:-pages}" in
+case "${1:-all}" in
   -h|--help|help)          usage ;;
   pages)                   deploy_pages ;;
   win|windows|release-win) release_windows ;;
+  all)                     deploy_pages; release_windows ;;
   *) echo "不明な引数: $1"; echo; usage; exit 2 ;;
 esac
