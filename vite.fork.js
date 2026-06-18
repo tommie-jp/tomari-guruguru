@@ -67,7 +67,10 @@ export default function forkConfig({ command, mode }) {
     // fork: GitHub Pages のリポジトリ名（guruguru-avatar）に追従させる base。
     // 本家 vite.config.js は upstream と字面一致を保ちたいので、リネームに伴う
     // base 上書きはこの fork 側に集約する（mergeConfig で fork が勝つ）。
-    base: command === 'build' ? '/guruguru-avatar/' : '/',
+    // VITE_BASE があれば最優先（ローカル統合サーバ配信用に base '/' を流し込む。
+    //   build:local: cross-env VITE_BASE=/ vite build --outDir dist-local
+    // ＝ node server/relay.mjs --web-root dist-local がルート配信で動くようにする）。
+    base: env.VITE_BASE || (command === 'build' ? '/guruguru-avatar/' : '/'),
     server: {
       port: 5173,
       strictPort: true,

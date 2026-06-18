@@ -9,6 +9,8 @@ __pycache__/
 *.pyc
 node_modules/
 dist/
+dist-local/
+dist-exe/
 public/*
 !public/slices2/
 !public/camera-qr.svg
@@ -26,3 +28,8 @@ Thumbs.db
 *.crt
 *.key
 *.pem
+guruguru-relay-win-*.zip
+guruguru-obs-win/
+
+# Windows のダウンロード ADS（WSL から *:Zone.Identifier として見える）
+*:Zone.Identifier
