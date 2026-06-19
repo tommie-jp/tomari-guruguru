@@ -18,14 +18,22 @@ export async function startWebcam(video, constraints = DEFAULT_CONSTRAINTS) {
     );
   }
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  video.srcObject = stream;
-  // メタデータが揃うのを待ってから再生（readyState を安定させる）
-  await new Promise((resolve) => {
-    if (video.readyState >= 1) return resolve();
-    video.onloadedmetadata = () => resolve();
-  });
-  await video.play();
-  return stream;
+  try {
+    video.srcObject = stream;
+    // メタデータが揃うのを待ってから再生（readyState を安定させる）。
+    // once 指定でリスナを自動除去（同じ video への再起動でハンドラが残らない）。
+    await new Promise((resolve) => {
+      if (video.readyState >= 1) return resolve();
+      video.addEventListener('loadedmetadata', () => resolve(), { once: true });
+    });
+    await video.play();
+    return stream;
+  } catch (err) {
+    // 取得後（メタデータ待ち/再生）でこけたら、確保済み stream を解放してから投げ直す。
+    // ここで止めないと呼び出し側の stream 変数に未代入のままトラックが残りリークする。
+    stopWebcam(stream);
+    throw err;
+  }
 }
 
 /**

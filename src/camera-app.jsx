@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import charConfig, { avatars, getAvatar } from './character-config';
+import { parseCameraParam, resolveCameraDevice, formatCameraLabel } from './camera-config';
 import { useFacePose } from './face/use-face-pose';
 import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
@@ -69,6 +70,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "bgColor": "#FFF8EE",
   "showDebug": false,
   "showExpr": false,
+  "cameraLabel": "",
+  "facingMode": "user",
   "useWorker": true,
   "effGlow": false,
   "effGlowStrength": 3,
@@ -197,6 +200,8 @@ function App() {
   const [panelOpen, setPanelOpen] = useState(false); // obsMode 中に T キーで Tweaks を開閉
   // rx は受信した設定で描画し、それ以外はローカルの tweaks を使う。
   const [rxConfig, setRxConfig] = useState(TWEAK_DEFAULTS);
+  // 接続中のカメラ一覧（[{deviceId,label}]）。カメラ許可後に列挙して埋める（下の effect）。
+  const [cameras, setCameras] = useState([]);
   const view = isRx ? rxConfig : t;
   // 表示アバター。?avatar=<id> があれば最優先（OBS シーン固定）、無ければ tweaks の値。
   // URL は起動時固定なので一度だけ解析する。未知 id は getAvatar が既定へフォールバック。
@@ -206,6 +211,37 @@ function App() {
   );
   const avatar = getAvatar(avatarParam ?? view.avatarId);
   const avatarId = avatar.id;
+  // 使用カメラ。?camera=<ラベル|番号> があれば最優先（OBS シーン固定）、無ければ保存値 t.cameraLabel。
+  // 一覧(cameras)はカメラ許可後に列挙する（下の effect）。deviceId はそこから純関数で解決する。
+  const cameraParam = useMemo(
+    () => parseCameraParam(typeof window !== 'undefined' ? window.location.search : ''),
+    [],
+  );
+  // 前面/背面トグルを出すかの判定（モバイルのみ）。タッチ可 or モバイル UA。
+  const isMobile = useMemo(
+    () => typeof navigator !== 'undefined'
+      && (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || navigator.maxTouchPoints > 0),
+    [],
+  );
+  const cameraLabelEff = cameraParam ?? t.cameraLabel;
+  // 解決済み deviceId（文字列 or null）。値が変わったときだけ useFacePose がカメラを取り直す。
+  const deviceId = useMemo(
+    () => resolveCameraDevice(cameras, cameraLabelEff),
+    [cameras, cameraLabelEff],
+  );
+  // セレクタの選択肢（参照安定のため memo 化）。ラベルが取れたカメラのみ。
+  const cameraOptions = useMemo(
+    () => [
+      { value: '', label: '自動（既定）' },
+      ...cameras
+        .filter((d) => d.label)
+        .map((d, i) => ({ value: d.label, label: formatCameraLabel(d.label, i) })),
+    ],
+    [cameras],
+  );
+  // 保存ラベルのカメラが今は無い（消失・名前変更）ときは、表示上「自動（既定）」に落として
+  // select が空欄にならないようにする（実際の解決は cameraLabelEff→deviceId が担う）。
+  const cameraSelectValue = cameras.some((d) => d.label === t.cameraLabel) ? t.cameraLabel : '';
   // A〜F の6シートURL。アバターが変わったときだけ作り直す（参照安定＝再マウントのキーに使う）。
   const sheetUrls = useMemo(() => avatar.sheetUrls(), [avatarId]);
   // rx はカメラを持たないのでプレビュー無し。
@@ -254,7 +290,25 @@ function App() {
   };
   // 立ち位置（左右・上下）。invert は pose と同じく source 側(純関数)で適用する。
   const positionOptions = { invertX: t.invertSlide, invertY: t.invertSlideY };
-  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: !isRx, poseOptions, positionOptions, preferWorker: t.useWorker });
+  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: !isRx, poseOptions, positionOptions, preferWorker: t.useWorker, deviceId, facingMode: t.facingMode });
+
+  // カメラ許可後（status.phase==='running'）に videoinput を列挙して選択肢を更新する。
+  // 許可前はラベルが空なので必ず起動後に列挙する。rx はカメラ無しなので対象外。
+  useEffect(() => {
+    if (isRx || status.phase !== 'running') return undefined;
+    let cancelled = false;
+    navigator.mediaDevices?.enumerateDevices?.()
+      .then((devs) => {
+        if (cancelled) return;
+        setCameras(
+          devs
+            .filter((d) => d.kind === 'videoinput')
+            .map((d) => ({ deviceId: d.deviceId, label: d.label })),
+        );
+      })
+      .catch(() => { /* 列挙失敗は無視（選択肢が空＝自動のまま） */ });
+    return () => { cancelled = true; };
+  }, [isRx, status.phase]);
 
   // useFacePose が各 ref に書いた最新値を「signals」へまとめる（avatar-state の入力）。
   function readSignals() {
@@ -996,6 +1050,20 @@ function App() {
         <TweakRow label="クレジット">
           <span style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.4 }}>{avatar.credit}</span>
         </TweakRow>
+        <TweakSection label="カメラ"></TweakSection>
+        {cameraParam ? (
+          <TweakRow label="カメラ" value="URL固定">
+            <span style={{ fontSize: 13, opacity: 0.8 }}>{cameraLabelEff}</span>
+          </TweakRow>
+        ) : (
+          <TweakSelect label="カメラ" value={cameraSelectValue}
+            options={cameraOptions}
+            onChange={(v) => setTweak('cameraLabel', v)}></TweakSelect>
+        )}
+        {!cameraParam && t.cameraLabel === '' && isMobile ? (
+          <TweakToggle label="背面カメラ" value={t.facingMode === 'environment'}
+            onChange={(v) => setTweak('facingMode', v ? 'environment' : 'user')}></TweakToggle>
+        ) : null}
         <TweakSection label="顔追従"></TweakSection>
         <TweakSlider label="感度" value={t.sensitivity} min={0.4} max={2.5} step={0.1}
           onChange={(v) => setTweak('sensitivity', v)}></TweakSlider>

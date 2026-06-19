@@ -9,16 +9,20 @@ import { startWebcam, stopWebcam } from './webcam';
 import { createFaceDetector } from './create-detector';
 import { collectCameraDiagnostics } from './camera-diagnostics';
 import { nextFaceRefs } from './next-face-refs';
+import { buildCameraConstraints } from '../camera-config';
 
 const { useRef, useState, useEffect } = React;
 
 /**
  * @param {{ current: { x: number, y: number } }} targetRef 書き込み先（-1..1）
- * @param {{ enabled?: boolean, poseOptions?: object }} [opts]
+ * @param {{ enabled?: boolean, poseOptions?: object, positionOptions?: object, preferWorker?: boolean, deviceId?: (string|null), facingMode?: ('user'|'environment') }} [opts]
+ *   deviceId: 使うカメラ（null は既定）。facingMode: deviceId 未指定時の前面/背面ヒント。
+ *   どちらも変わると cleanup→init でカメラを取り直す。videoinput の列挙は呼び出し側が
+ *   status.phase==='running'（＝許可済み）を見てから行う（許可前はラベルが空になるため）。
  * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, rollRef: { current: number }, posRef: { current: { x: number, y: number } }, faceScaleRef: { current: number }, mouthRef: { current: number }, eyesClosedRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
  */
 export function useFacePose(targetRef, opts = {}) {
-  const { enabled = true, poseOptions, positionOptions, preferWorker = true } = opts;
+  const { enabled = true, poseOptions, positionOptions, preferWorker = true, deviceId = null, facingMode = 'user' } = opts;
   const videoRef = useRef(null);
   // 最新の「生の」顔向き角(rad)。正面キャリブレーション用に外へ公開する。
   const poseRef = useRef({ yaw: 0, pitch: 0 });
@@ -126,6 +130,20 @@ export function useFacePose(targetRef, opts = {}) {
       }
     }
 
+    // deviceId 指定で開けないとき（デバイス消失・OverconstrainedError 等）は、
+    // deviceId を外して既定カメラで1回だけ再試行する（保存カメラが無くても止めない）。
+    async function startCamera() {
+      try {
+        return await startWebcam(videoRef.current, buildCameraConstraints(deviceId, facingMode));
+      } catch (err) {
+        const recoverable = err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError';
+        if (deviceId && recoverable) {
+          return startWebcam(videoRef.current, buildCameraConstraints(null, facingMode));
+        }
+        throw err;
+      }
+    }
+
     async function init() {
       try {
         setStatus({ phase: 'loading', faceDetected: false, error: null, engine: null });
@@ -144,7 +162,7 @@ export function useFacePose(targetRef, opts = {}) {
           detector = null;
           return;
         }
-        stream = await startWebcam(videoRef.current);
+        stream = await startCamera();
         if (cancelled) return;
         setStatus({ phase: 'running', faceDetected: false, error: null, engine: detector.engine });
         scheduleNext();
@@ -172,8 +190,9 @@ export function useFacePose(targetRef, opts = {}) {
       stopWebcam(stream);
       detector?.close?.();
     };
-    // preferWorker が変わったら detector を作り直す（エンジン切替＝カメラ再取得）。
-  }, [enabled, targetRef, preferWorker]);
+    // preferWorker / deviceId / facingMode が変わったら detector・カメラを作り直す
+    // （エンジン切替もカメラ切替も同じ cleanup→init サイクルで再取得）。
+  }, [enabled, targetRef, preferWorker, deviceId, facingMode]);
 
   return { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status };
 }
