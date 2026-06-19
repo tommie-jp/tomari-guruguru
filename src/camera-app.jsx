@@ -11,6 +11,7 @@ import { encodeStateFrame, decodeStateFrame } from './face/state-codec';
 import { useRelay } from './face/use-relay';
 import { DraggablePanel } from './draggable-panel.jsx';
 import { SpriteAvatar } from './sprite-avatar';
+import { QRCodeSVG } from 'qrcode.react';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -28,6 +29,15 @@ const VERSION_LABEL =
 // 1行で収め、左下コントロールに被らない長さにする。
 const VERSION_LABEL_SHORT =
   GIT_SHA === 'dev' ? `v${APP_VERSION} · dev` : `v${APP_VERSION} · ${GIT_SHA}`;
+
+// アプリ内 QR が指す iPhone(tx) URL。vite.fork.js が __TX_PUBLIC_ORIGIN__ に外部到達可能な
+// 公開オリジン（tailscale 証明書名 → https://FQDN:5173）を注入する。無ければ現在開いている
+// オリジン（tailscale URL で開いていればそれで正しい）。パスは BASE_URL を尊重するので
+// GitHub Pages の /guruguru-avatar/ サブパスでも壊れない。
+const TX_PUBLIC_ORIGIN =
+  (typeof __TX_PUBLIC_ORIGIN__ !== 'undefined' && __TX_PUBLIC_ORIGIN__) ||
+  (typeof location !== 'undefined' ? location.origin : '');
+const TX_URL = `${TX_PUBLIC_ORIGIN}${import.meta.env.BASE_URL}index.html?tx`;
 
 // 配布デフォルト値。旧 default-themes/camera.html.json の "01-for-PC(Default)" を
 // 取り込んだもの（showDebug/showExpr のみ配信向けに OFF）。現行 index.html 構成では
@@ -186,6 +196,45 @@ function useIsNarrow() {
     return () => mq.removeEventListener('change', onChange);
   }, []);
   return narrow;
+}
+
+// アプリ内 QR ボタン。クリックで iPhone(tx) URL の QR をポップオーバー表示する。
+// tailscale の長い URL を手入力せず、iPhone のカメラで読み取って tx を開けるようにする。
+// 配信(obsMode)中は呼び出し側で隠す。url は外部端末から到達できる公開 URL（TX_URL）。
+function TxQrButton({ url, subColor, inkColor, style }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: 'absolute', pointerEvents: 'auto', ...style }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          font: 'inherit', fontSize: 13, fontWeight: 700, letterSpacing: '0.06em',
+          color: open ? inkColor : subColor,
+        }}
+      >{`QRコード ${open ? '▲' : '▼'}`}</button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 24, right: 0, zIndex: 40,
+          background: '#fff', borderRadius: 12, padding: 12, width: 256,
+          boxShadow: '0 8px 28px rgba(0,0,0,0.28)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+        }}>
+          <QRCodeSVG value={url} size={232} level="M" marginSize={2}
+            bgColor="#ffffff" fgColor="#1a1410" />
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#3c3026', letterSpacing: '0.04em', textAlign: 'center' }}>
+            iPhone のカメラで読み取り → tx を開く
+          </div>
+          <code style={{
+            fontSize: 10, lineHeight: 1.4, color: '#6a5a48',
+            wordBreak: 'break-all', textAlign: 'center', userSelect: 'all',
+          }}>{url}</code>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function App() {
@@ -829,12 +878,11 @@ function App() {
       }}>手・ポーズ →</a>
       )}
 
-      {/* このページURLのQRコード画像へのリンク（スマホで開いてもらう用） */}
+      {/* iPhone(tx) を開くための QR。tailscale の長い URL を手入力せず読み取れる。
+          公開オリジンは vite.fork.js が __TX_PUBLIC_ORIGIN__ に注入（無ければ現在のオリジン）。
+          配信(obsMode)には出さない。 */}
       {!obsMode && (
-      <a href="camera-qr.svg" target="_blank" rel="noopener" style={{
-        position: 'absolute', top: 62, right: 18, fontSize: 13, fontWeight: 700,
-        color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
-      }}>QRコード</a>
+        <TxQrButton url={TX_URL} subColor={subColor} inkColor={inkColor} style={{ top: 62, right: 18 }} />
       )}
 
       {/* GitHub リポジトリへのリンク（外部・別タブ）。配信には映さない。 */}

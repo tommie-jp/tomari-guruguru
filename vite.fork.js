@@ -9,7 +9,7 @@
 //
 // 新しいページを足すときは下の input に1行足すだけ。vite.config.js は触らない。
 import { loadEnv } from 'vite';
-import { resolve } from 'path';
+import { resolve, basename } from 'path';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 
@@ -55,6 +55,24 @@ export default function forkConfig({ command, mode }) {
   );
   const isBuild = command === 'build';
 
+  // dev/preview サーバの固定ポート（strictPort）。下の server.port と公開オリジンで共有。
+  const DEV_PORT = 5173;
+
+  // アプリ内 QR（camera-app の「QRコード」）が指す、外部端末（iPhone 等）から到達できる
+  // 公開オリジン。これを埋め込むと、PC を localhost で開いても iPhone(tx) 用の tailscale
+  // URL を QR 化できる。優先順位:
+  //   1) VITE_TX_PUBLIC_ORIGIN … 明示指定（例: https://wsl40.taild830ae.ts.net:5173）
+  //   2) TLS 証明書ファイル名が FQDN（tailscale cert / mkcert）なら https://<FQDN>:5173
+  //   3) どちらも無ければ空 … ブラウザ側で location.origin にフォールバック
+  const txPublicOrigin = (() => {
+    if (env.VITE_TX_PUBLIC_ORIGIN) return env.VITE_TX_PUBLIC_ORIGIN;
+    if (env.VITE_TLS_CERT) {
+      const name = basename(env.VITE_TLS_CERT).replace(/\.(crt|pem|cer|key)$/i, '');
+      if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(name)) return `https://${name}:${DEV_PORT}`;
+    }
+    return '';
+  })();
+
   const config = {
     // ビルド時に静的置換される定数。camera-app.jsx などから参照する。
     define: {
@@ -63,6 +81,7 @@ export default function forkConfig({ command, mode }) {
       __BUILD_DATE__: JSON.stringify(
         isBuild ? new Date().toISOString().slice(0, 10) : 'dev',
       ),
+      __TX_PUBLIC_ORIGIN__: JSON.stringify(txPublicOrigin),
     },
     // fork: GitHub Pages のリポジトリ名（guruguru-avatar）に追従させる base。
     // 本家 vite.config.js は upstream と字面一致を保ちたいので、リネームに伴う
@@ -72,7 +91,7 @@ export default function forkConfig({ command, mode }) {
     // ＝ node server/relay.mjs --web-root dist-local がルート配信で動くようにする）。
     base: env.VITE_BASE || (command === 'build' ? '/guruguru-avatar/' : '/'),
     server: {
-      port: 5173,
+      port: DEV_PORT,
       strictPort: true,
       // npm run dev で開く既定ページ。トップ＝index.html（カメラ版/Pixi・複数アバター）。
       open: '/',
