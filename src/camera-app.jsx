@@ -29,46 +29,51 @@ const VERSION_LABEL =
 const VERSION_LABEL_SHORT =
   GIT_SHA === 'dev' ? `v${APP_VERSION} · dev` : `v${APP_VERSION} · ${GIT_SHA}`;
 
+// 配布デフォルト値。旧 default-themes/camera.html.json の "01-for-PC(Default)" を
+// 取り込んだもの（showDebug/showExpr のみ配信向けに OFF）。現行 index.html 構成では
+// seed 用 JSON が無くてもこのハードコード値が初期テーマとして効く（iPhone 等の初回
+// アクセスでもテーマが当たる）。配布テーマを足したい場合は public/default-themes/
+// index.json を置けば上に重なる（fetchBuiltinPresets / 読込失敗は console に出る）。
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "avatarId": "01-tomari",
   "smoothing": 0.3,
-  "sensitivity": 1.0,
-  "biasYawDeg": 0,
-  "biasPitchDeg": 0,
-  "invertX": false,
+  "sensitivity": 1.3,
+  "biasYawDeg": -8,
+  "biasPitchDeg": -10,
+  "invertX": true,
   "invertY": false,
   "preview": true,
-  "mouthGain": 1.3,
+  "mouthGain": 1.8,
   "thHalf": 0.12,
   "thFull": 0.35,
   "release": 0.25,
   "blinkSync": true,
   "blinkSensitivity": 1.0,
-  "eyesOpenBias": 0,
+  "eyesOpenBias": 0.44,
   "tiltEnabled": true,
-  "tiltGain": 1.0,
-  "tiltMax": 20,
+  "tiltGain": 1.3,
+  "tiltMax": 23,
   "tiltPivotY": 72,
   "invertTilt": false,
   "slideEnabled": true,
   "slideGain": 12,
   "slideMax": 30,
-  "invertSlide": false,
+  "invertSlide": true,
   "slideGainY": 8,
   "slideMaxY": 25,
   "invertSlideY": false,
   "slidePoseComp": 0.6,
   "zoomEnabled": true,
-  "zoomGain": 1.0,
-  "zoomMin": 0.6,
-  "zoomMax": 1.8,
+  "zoomGain": 1.4,
+  "zoomMin": 0.35,
+  "zoomMax": 1.5,
   "zoomPitchComp": 1.0,
-  "zoomBaseline": 0,
+  "zoomBaseline": 0.387,
   "motionSmoothing": 0.2,
   "moveRatio": 1.0,
-  "charSize": 64,
+  "charSize": 39,
   "shadow": 3,
-  "bgColor": "#FFF8EE",
+  "bgColor": "#EEF4FB",
   "showDebug": false,
   "showExpr": false,
   "cameraLabel": "",
@@ -1044,141 +1049,160 @@ function App() {
       ) : null}
 
       {!isRx && (!obsMode || panelOpen) && (
-      <TweaksPanel>
-        <TweakSection label="アバター"></TweakSection>
-        {avatarParam ? (
-          <TweakRow label="キャラ" value="URL固定">
-            <span style={{ fontSize: 13, opacity: 0.8 }}>{avatar.displayName}</span>
+      <TweaksPanel closeOnOutsideClick={false}>
+        {/* fork:sections — よく触る3つを上に集約し初期展開。残りは折りたたみ
+            （開閉は localStorage に永続化）。各セクションはコントロールを内側に
+            入れ子にする（兄弟並びは折りたたみ対象にならない）。 */}
+        <TweakSection label="顔追従" collapsible defaultOpen>
+          <TweakSlider label="感度" value={t.sensitivity} min={0.4} max={2.5} step={0.1}
+            onChange={(v) => setTweak('sensitivity', v)}></TweakSlider>
+          <TweakSlider label="追従速度" value={t.smoothing} min={0.04} max={0.5} step={0.01}
+            onChange={(v) => setTweak('smoothing', v)}></TweakSlider>
+          <TweakToggle label="まばたき同調" value={t.blinkSync}
+            onChange={(v) => setTweak('blinkSync', v)}></TweakToggle>
+          <TweakSlider label="まばたき感度" value={t.blinkSensitivity} min={0.5} max={2.5} step={0.1}
+            onChange={(v) => setTweak('blinkSensitivity', v)}></TweakSlider>
+          <TweakButton label="今の目の大きさを まばたきなし にする" onClick={calibrateEyesOpen}></TweakButton>
+          <TweakButton label="まばたき基準をリセット" secondary onClick={resetEyesOpen}></TweakButton>
+        </TweakSection>
+        <TweakSection label="口パク" collapsible defaultOpen>
+          <TweakSlider label="口の感度" value={t.mouthGain} min={0.3} max={4} step={0.1}
+            onChange={(v) => setTweak('mouthGain', v)}></TweakSlider>
+          <TweakSlider label="しきい値（はんびらき）" value={t.thHalf} min={0.02} max={0.5} step={0.01}
+            onChange={(v) => setTweak('thHalf', v)}></TweakSlider>
+          <TweakSlider label="しきい値（ぜんかい）" value={t.thFull} min={0.05} max={0.8} step={0.01}
+            onChange={(v) => setTweak('thFull', v)}></TweakSlider>
+          <TweakSlider label="口を閉じる速さ" value={t.release} min={0.05} max={0.5} step={0.01}
+            onChange={(v) => setTweak('release', v)}></TweakSlider>
+        </TweakSection>
+        <TweakSection label="見た目" collapsible defaultOpen>
+          <TweakSlider label="キャラサイズ" value={t.charSize} min={30} max={92} unit="vmin"
+            onChange={(v) => setTweak('charSize', v)}></TweakSlider>
+          <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
+            onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+          <TweakSlider label="影の濃さ" value={t.shadow} min={0} max={SHADOW_MAX} step={1}
+            onChange={(v) => setTweak('shadow', v)}></TweakSlider>
+        </TweakSection>
+        <TweakSection label="エフェクト" collapsible>
+          <TweakToggle label="発光（グロー）" value={t.effGlow}
+            onChange={(v) => setTweak('effGlow', v)}></TweakToggle>
+          <TweakSlider label="発光の強さ" value={t.effGlowStrength} min={0} max={8} step={0.1}
+            onChange={(v) => setTweak('effGlowStrength', v)}></TweakSlider>
+          <TweakColor label="発光色" value={t.effGlowColor} options={GLOW_COLORS}
+            onChange={(v) => setTweak('effGlowColor', v)}></TweakColor>
+          <TweakToggle label="ディゾルブ" value={t.effDissolve}
+            onChange={(v) => setTweak('effDissolve', v)}></TweakToggle>
+          <TweakSlider label="ディゾルブ量" value={t.effDissolveAmount} min={0} max={1} step={0.01}
+            onChange={(v) => setTweak('effDissolveAmount', v)}></TweakSlider>
+          <TweakColor label="ディゾルブ縁色" value={t.effDissolveColor} options={DISSOLVE_COLORS}
+            onChange={(v) => setTweak('effDissolveColor', v)}></TweakColor>
+        </TweakSection>
+        <TweakSection label="アバター" collapsible>
+          {avatarParam ? (
+            <TweakRow label="キャラ" value="URL固定">
+              <span style={{ fontSize: 13, opacity: 0.8 }}>{avatar.displayName}</span>
+            </TweakRow>
+          ) : (
+            <TweakSelect label="キャラ" value={avatar.id}
+              options={avatars.map((a) => ({ value: a.id, label: a.displayName }))}
+              onChange={(v) => setTweak('avatarId', v)}></TweakSelect>
+          )}
+          <TweakRow label="クレジット">
+            <span style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.4 }}>{avatar.credit}</span>
           </TweakRow>
-        ) : (
-          <TweakSelect label="キャラ" value={avatar.id}
-            options={avatars.map((a) => ({ value: a.id, label: a.displayName }))}
-            onChange={(v) => setTweak('avatarId', v)}></TweakSelect>
-        )}
-        <TweakRow label="クレジット">
-          <span style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.4 }}>{avatar.credit}</span>
-        </TweakRow>
-        <TweakSection label="カメラ"></TweakSection>
-        {cameraParam ? (
-          <TweakRow label="カメラ" value="URL固定">
-            <span style={{ fontSize: 13, opacity: 0.8 }}>{cameraLabelEff}</span>
-          </TweakRow>
-        ) : (
-          <TweakSelect label="カメラ" value={cameraSelectValue}
-            options={cameraOptions}
-            onChange={(v) => setTweak('cameraLabel', v)}></TweakSelect>
-        )}
-        {!cameraParam && t.cameraLabel === '' && isMobile ? (
-          <TweakToggle label="背面カメラ" value={t.facingMode === 'environment'}
-            onChange={(v) => setTweak('facingMode', v ? 'environment' : 'user')}></TweakToggle>
-        ) : null}
-        <TweakSection label="顔追従"></TweakSection>
-        <TweakSlider label="感度" value={t.sensitivity} min={0.4} max={2.5} step={0.1}
-          onChange={(v) => setTweak('sensitivity', v)}></TweakSlider>
-        <TweakSlider label="追従速度" value={t.smoothing} min={0.04} max={0.5} step={0.01}
-          onChange={(v) => setTweak('smoothing', v)}></TweakSlider>
-        <TweakToggle label="まばたき同調" value={t.blinkSync}
-          onChange={(v) => setTweak('blinkSync', v)}></TweakToggle>
-        <TweakSlider label="まばたき感度" value={t.blinkSensitivity} min={0.5} max={2.5} step={0.1}
-          onChange={(v) => setTweak('blinkSensitivity', v)}></TweakSlider>
-        <TweakButton label="今の目の大きさを まばたきなし にする" onClick={calibrateEyesOpen}></TweakButton>
-        <TweakButton label="まばたき基準をリセット" secondary onClick={resetEyesOpen}></TweakButton>
-        <TweakSection label="正面バイアス"></TweakSection>
-        <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
-          onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
-        <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
-          onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
-        <TweakButton label="今の向きを正面にする" onClick={calibrateCenter}></TweakButton>
-        <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
-        <TweakSection label="反転"></TweakSection>
-        <TweakToggle label="左右反転" value={t.invertX}
-          onChange={(v) => setTweak('invertX', v)}></TweakToggle>
-        <TweakToggle label="上下反転" value={t.invertY}
-          onChange={(v) => setTweak('invertY', v)}></TweakToggle>
-        <TweakToggle label="カメラ映像を表示" value={t.preview}
-          onChange={(v) => setTweak('preview', v)}></TweakToggle>
-        <TweakSection label="首かしげ・スライド"></TweakSection>
-        <TweakToggle label="首かしげ" value={t.tiltEnabled}
-          onChange={(v) => setTweak('tiltEnabled', v)}></TweakToggle>
-        <TweakSlider label="かしげ量" value={t.tiltGain} min={0} max={2.5} step={0.1}
-          onChange={(v) => setTweak('tiltGain', v)}></TweakSlider>
-        <TweakSlider label="かしげ上限" value={t.tiltMax} min={0} max={45} step={1} unit="°"
-          onChange={(v) => setTweak('tiltMax', v)}></TweakSlider>
-        <TweakSlider label="かしげ支点（高さ）" value={t.tiltPivotY} min={40} max={100} step={1} unit="%"
-          onChange={(v) => setTweak('tiltPivotY', v)}></TweakSlider>
-        <TweakToggle label="かしげ反転" value={t.invertTilt}
-          onChange={(v) => setTweak('invertTilt', v)}></TweakToggle>
-        <TweakToggle label="スライド追従（左右・上下）" value={t.slideEnabled}
-          onChange={(v) => setTweak('slideEnabled', v)}></TweakToggle>
-        <TweakSlider label="左右の量" value={t.slideGain} min={0} max={40} step={1} unit="vw"
-          onChange={(v) => setTweak('slideGain', v)}></TweakSlider>
-        <TweakSlider label="左右の上限" value={t.slideMax} min={0} max={50} step={1} unit="vw"
-          onChange={(v) => setTweak('slideMax', v)}></TweakSlider>
-        <TweakToggle label="左右反転" value={t.invertSlide}
-          onChange={(v) => setTweak('invertSlide', v)}></TweakToggle>
-        <TweakSlider label="上下の量" value={t.slideGainY} min={0} max={40} step={1} unit="vh"
-          onChange={(v) => setTweak('slideGainY', v)}></TweakSlider>
-        <TweakSlider label="上下の上限" value={t.slideMaxY} min={0} max={50} step={1} unit="vh"
-          onChange={(v) => setTweak('slideMaxY', v)}></TweakSlider>
-        <TweakToggle label="上下反転" value={t.invertSlideY}
-          onChange={(v) => setTweak('invertSlideY', v)}></TweakToggle>
-        <TweakSlider label="向き補正" value={t.slidePoseComp} min={0} max={2} step={0.05}
-          onChange={(v) => setTweak('slidePoseComp', v)}></TweakSlider>
-        <TweakSlider label="動きの滑らかさ" value={t.motionSmoothing} min={0.04} max={0.5} step={0.01}
-          onChange={(v) => setTweak('motionSmoothing', v)}></TweakSlider>
-        <TweakSection label="ズーム（カメラ距離）"></TweakSection>
-        <TweakToggle label="距離でズーム" value={t.zoomEnabled}
-          onChange={(v) => setTweak('zoomEnabled', v)}></TweakToggle>
-        <TweakSlider label="ズーム量" value={t.zoomGain} min={0} max={3} step={0.1}
-          onChange={(v) => setTweak('zoomGain', v)}></TweakSlider>
-        <TweakSlider label="ズーム下限" value={t.zoomMin} min={0.3} max={1} step={0.05}
-          onChange={(v) => setTweak('zoomMin', v)}></TweakSlider>
-        <TweakSlider label="ズーム上限" value={t.zoomMax} min={1} max={3} step={0.1}
-          onChange={(v) => setTweak('zoomMax', v)}></TweakSlider>
-        <TweakSlider label="下向き補正" value={t.zoomPitchComp} min={0} max={2} step={0.05}
-          onChange={(v) => setTweak('zoomPitchComp', v)}></TweakSlider>
-        <TweakButton label="今の距離を基準にする" onClick={calibrateZoom}></TweakButton>
-        <TweakButton label="距離基準をリセット" secondary onClick={resetZoom}></TweakButton>
-        <TweakSection label="口パク"></TweakSection>
-        <TweakSlider label="口の感度" value={t.mouthGain} min={0.3} max={4} step={0.1}
-          onChange={(v) => setTweak('mouthGain', v)}></TweakSlider>
-        <TweakSlider label="しきい値（はんびらき）" value={t.thHalf} min={0.02} max={0.5} step={0.01}
-          onChange={(v) => setTweak('thHalf', v)}></TweakSlider>
-        <TweakSlider label="しきい値（ぜんかい）" value={t.thFull} min={0.05} max={0.8} step={0.01}
-          onChange={(v) => setTweak('thFull', v)}></TweakSlider>
-        <TweakSlider label="口を閉じる速さ" value={t.release} min={0.05} max={0.5} step={0.01}
-          onChange={(v) => setTweak('release', v)}></TweakSlider>
-        <TweakSection label="見た目"></TweakSection>
-        <TweakSlider label="キャラサイズ" value={t.charSize} min={30} max={92} unit="vmin"
-          onChange={(v) => setTweak('charSize', v)}></TweakSlider>
-        <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
-          onChange={(v) => setTweak('bgColor', v)}></TweakColor>
-        <TweakSlider label="影の濃さ" value={t.shadow} min={0} max={SHADOW_MAX} step={1}
-          onChange={(v) => setTweak('shadow', v)}></TweakSlider>
-        <TweakSection label="推論エンジン"></TweakSection>
-        <TweakToggle label="Web Worker を使う" value={t.useWorker}
-          onChange={(v) => setTweak('useWorker', v)}></TweakToggle>
-        <TweakRow label="実行先" value={`${engineLabel}${engineNote}`}></TweakRow>
-        <TweakSection label="エフェクト"></TweakSection>
-        <TweakToggle label="発光（グロー）" value={t.effGlow}
-          onChange={(v) => setTweak('effGlow', v)}></TweakToggle>
-        <TweakSlider label="発光の強さ" value={t.effGlowStrength} min={0} max={8} step={0.1}
-          onChange={(v) => setTweak('effGlowStrength', v)}></TweakSlider>
-        <TweakColor label="発光色" value={t.effGlowColor} options={GLOW_COLORS}
-          onChange={(v) => setTweak('effGlowColor', v)}></TweakColor>
-        <TweakToggle label="ディゾルブ" value={t.effDissolve}
-          onChange={(v) => setTweak('effDissolve', v)}></TweakToggle>
-        <TweakSlider label="ディゾルブ量" value={t.effDissolveAmount} min={0} max={1} step={0.01}
-          onChange={(v) => setTweak('effDissolveAmount', v)}></TweakSlider>
-        <TweakColor label="ディゾルブ縁色" value={t.effDissolveColor} options={DISSOLVE_COLORS}
-          onChange={(v) => setTweak('effDissolveColor', v)}></TweakColor>
-        <TweakSection label="デバッグ"></TweakSection>
-        <TweakToggle label="グリッド表示" value={t.showDebug}
-          onChange={(v) => setTweak('showDebug', v)}></TweakToggle>
-        <TweakToggle label="表情係数を表示" value={t.showExpr}
-          onChange={(v) => setTweak('showExpr', v)}></TweakToggle>
-        <TweakSection label="テーマ"></TweakSection>
-        <TweakPresets themes={themes}></TweakPresets>
+        </TweakSection>
+        <TweakSection label="カメラ" collapsible>
+          {cameraParam ? (
+            <TweakRow label="カメラ" value="URL固定">
+              <span style={{ fontSize: 13, opacity: 0.8 }}>{cameraLabelEff}</span>
+            </TweakRow>
+          ) : (
+            <TweakSelect label="カメラ" value={cameraSelectValue}
+              options={cameraOptions}
+              onChange={(v) => setTweak('cameraLabel', v)}></TweakSelect>
+          )}
+          {!cameraParam && t.cameraLabel === '' && isMobile ? (
+            <TweakToggle label="背面カメラ" value={t.facingMode === 'environment'}
+              onChange={(v) => setTweak('facingMode', v ? 'environment' : 'user')}></TweakToggle>
+          ) : null}
+        </TweakSection>
+        <TweakSection label="正面バイアス" collapsible>
+          <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
+            onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
+          <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
+            onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
+          <TweakButton label="今の向きを正面にする" onClick={calibrateCenter}></TweakButton>
+          <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
+        </TweakSection>
+        <TweakSection label="反転" collapsible>
+          <TweakToggle label="左右反転" value={t.invertX}
+            onChange={(v) => setTweak('invertX', v)}></TweakToggle>
+          <TweakToggle label="上下反転" value={t.invertY}
+            onChange={(v) => setTweak('invertY', v)}></TweakToggle>
+          <TweakToggle label="カメラ映像を表示" value={t.preview}
+            onChange={(v) => setTweak('preview', v)}></TweakToggle>
+        </TweakSection>
+        <TweakSection label="首かしげ" collapsible>
+          <TweakToggle label="首かしげ" value={t.tiltEnabled}
+            onChange={(v) => setTweak('tiltEnabled', v)}></TweakToggle>
+          <TweakSlider label="かしげ量" value={t.tiltGain} min={0} max={2.5} step={0.1}
+            onChange={(v) => setTweak('tiltGain', v)}></TweakSlider>
+          <TweakSlider label="かしげ上限" value={t.tiltMax} min={0} max={45} step={1} unit="°"
+            onChange={(v) => setTweak('tiltMax', v)}></TweakSlider>
+          <TweakSlider label="かしげ支点（高さ）" value={t.tiltPivotY} min={40} max={100} step={1} unit="%"
+            onChange={(v) => setTweak('tiltPivotY', v)}></TweakSlider>
+          <TweakToggle label="かしげ反転" value={t.invertTilt}
+            onChange={(v) => setTweak('invertTilt', v)}></TweakToggle>
+        </TweakSection>
+        <TweakSection label="スライド" collapsible>
+          <TweakToggle label="スライド追従（左右・上下）" value={t.slideEnabled}
+            onChange={(v) => setTweak('slideEnabled', v)}></TweakToggle>
+          <TweakSlider label="左右の量" value={t.slideGain} min={0} max={40} step={1} unit="vw"
+            onChange={(v) => setTweak('slideGain', v)}></TweakSlider>
+          <TweakSlider label="左右の上限" value={t.slideMax} min={0} max={50} step={1} unit="vw"
+            onChange={(v) => setTweak('slideMax', v)}></TweakSlider>
+          <TweakToggle label="左右反転" value={t.invertSlide}
+            onChange={(v) => setTweak('invertSlide', v)}></TweakToggle>
+          <TweakSlider label="上下の量" value={t.slideGainY} min={0} max={40} step={1} unit="vh"
+            onChange={(v) => setTweak('slideGainY', v)}></TweakSlider>
+          <TweakSlider label="上下の上限" value={t.slideMaxY} min={0} max={50} step={1} unit="vh"
+            onChange={(v) => setTweak('slideMaxY', v)}></TweakSlider>
+          <TweakToggle label="上下反転" value={t.invertSlideY}
+            onChange={(v) => setTweak('invertSlideY', v)}></TweakToggle>
+          <TweakSlider label="向き補正" value={t.slidePoseComp} min={0} max={2} step={0.05}
+            onChange={(v) => setTweak('slidePoseComp', v)}></TweakSlider>
+          <TweakSlider label="動きの滑らかさ" value={t.motionSmoothing} min={0.04} max={0.5} step={0.01}
+            onChange={(v) => setTweak('motionSmoothing', v)}></TweakSlider>
+        </TweakSection>
+        <TweakSection label="ズーム（カメラ距離）" collapsible>
+          <TweakToggle label="距離でズーム" value={t.zoomEnabled}
+            onChange={(v) => setTweak('zoomEnabled', v)}></TweakToggle>
+          <TweakSlider label="ズーム量" value={t.zoomGain} min={0} max={3} step={0.1}
+            onChange={(v) => setTweak('zoomGain', v)}></TweakSlider>
+          <TweakSlider label="ズーム下限" value={t.zoomMin} min={0.3} max={1} step={0.05}
+            onChange={(v) => setTweak('zoomMin', v)}></TweakSlider>
+          <TweakSlider label="ズーム上限" value={t.zoomMax} min={1} max={3} step={0.1}
+            onChange={(v) => setTweak('zoomMax', v)}></TweakSlider>
+          <TweakSlider label="下向き補正" value={t.zoomPitchComp} min={0} max={2} step={0.05}
+            onChange={(v) => setTweak('zoomPitchComp', v)}></TweakSlider>
+          <TweakButton label="今の距離を基準にする" onClick={calibrateZoom}></TweakButton>
+          <TweakButton label="距離基準をリセット" secondary onClick={resetZoom}></TweakButton>
+        </TweakSection>
+        <TweakSection label="推論エンジン" collapsible>
+          <TweakToggle label="Web Worker を使う" value={t.useWorker}
+            onChange={(v) => setTweak('useWorker', v)}></TweakToggle>
+          <TweakRow label="実行先" value={`${engineLabel}${engineNote}`}></TweakRow>
+        </TweakSection>
+        <TweakSection label="デバッグ" collapsible>
+          <TweakToggle label="グリッド表示" value={t.showDebug}
+            onChange={(v) => setTweak('showDebug', v)}></TweakToggle>
+          <TweakToggle label="表情係数を表示" value={t.showExpr}
+            onChange={(v) => setTweak('showExpr', v)}></TweakToggle>
+        </TweakSection>
+        <TweakSection label="テーマ" collapsible>
+          <TweakPresets themes={themes}></TweakPresets>
+        </TweakSection>
+        {/* リセットはアコーディオン外。常時フッターとして見せる。 */}
         <TweakSection label="リセット"></TweakSection>
         <TweakButton label="設定をデフォルトに戻す" secondary onClick={resetTweaks}></TweakButton>
       </TweaksPanel>

@@ -5,6 +5,7 @@ import {
   presetsStorageKey, loadPresets, savePresets,
   mergeIntoDefaults, effectiveDefaultsFrom,
   serializePresets, parsePresetsImport, fetchBuiltinPresets,
+  loadSectionState, saveSectionState,
 } from './use-tweaks.js';
 
 // @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
@@ -109,6 +110,18 @@ const __TWEAKS_STYLE = `
     color:rgba(41,38,27,.45);padding:10px 0 0}
   .twk-sect:first-child{padding-top:0}
 
+  /* fork:sections — 折りたたみセクションのヘッダ（クリックで開閉） */
+  .twk-sect-btn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;
+    appearance:none;border:0;background:transparent;cursor:default;
+    font:600 10px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;
+    letter-spacing:.06em;text-transform:uppercase;color:rgba(41,38,27,.45);
+    padding:10px 0 0}
+  .twk-sect-btn:first-child{padding-top:0}
+  .twk-sect-btn:hover{color:rgba(41,38,27,.7)}
+  .twk-sect-chev{flex:0 0 auto;font-size:8px;line-height:1;color:rgba(41,38,27,.4);
+    transition:transform .15s}
+  .twk-sect-btn[data-open="1"] .twk-sect-chev{transform:rotate(90deg)}
+
   .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
     border:.5px solid rgba(0,0,0,.1);border-radius:7px;
     background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
@@ -198,7 +211,9 @@ const __TWEAKS_STYLE = `
     .twk-hd b{font-size:14px}
     .twk-x{width:32px;height:32px;font-size:17px}
     .twk-body{padding:2px 16px 16px;gap:14px;font-size:13px}
-    .twk-sect{font-size:11px}
+    .twk-sect,.twk-sect-btn{font-size:11px}
+    .twk-sect-btn{padding-top:14px}
+    .twk-sect-btn:first-child{padding-top:0}
     .twk-slider{height:6px;margin:9px 0}
     .twk-slider::-webkit-slider-thumb{width:24px;height:24px}
     .twk-slider::-moz-range-thumb{width:24px;height:24px}
@@ -361,6 +376,25 @@ function useTweaks(defaults, storageKey) {
   // ── fork:persist ↑ ──
 }
 
+// ── fork:sections ─────────────────────────────────────────────────────────
+// 折りたたみセクションの開閉状態をパネル単位で一元管理する。各 TweakSection が
+// 個別に localStorage を読み書きすると read-modify-write が競合するため、所有者を
+// Provider 1 つに集約する。状態は専用キー（sectionStateKey）へ永続化し、tweaks
+// 値・テーマとは混ぜない。Provider 外（collapsible を使わない talk/app 等）では
+// TweakSection は従来どおり素のヘッダを描くので、後方互換は保たれる。
+const CollapseContext = React.createContext(null);
+
+function CollapseProvider({ storageKey, children }) {
+  const [openMap, setOpenMap] = React.useState(() => loadSectionState(storageKey));
+  React.useEffect(() => { saveSectionState(openMap, storageKey); }, [storageKey, openMap]);
+  const api = React.useMemo(() => ({
+    // 未記録のラベルはセクション側の defaultOpen に従う。
+    isOpen: (label, defaultOpen) => (label in openMap ? openMap[label] : defaultOpen),
+    setOpen: (label, val) => setOpenMap((m) => ({ ...m, [label]: val })),
+  }), [openMap]);
+  return <CollapseContext.Provider value={api}>{children}</CollapseContext.Provider>;
+}
+
 // ── TweaksPanel ─────────────────────────────────────────────────────────────
 // Floating shell. Registers the protocol listener BEFORE announcing
 // availability — if the announce ran first, the host's activate could land
@@ -368,7 +402,7 @@ function useTweaks(defaults, storageKey) {
 // The close button posts __edit_mode_dismissed so the host's toolbar toggle
 // flips off in lockstep; the host echoes __deactivate_edit_mode back which
 // is what actually hides the panel.
-function TweaksPanel({ title = 'Tweaks', children }) {
+function TweaksPanel({ title = 'Tweaks', storageKey, closeOnOutsideClick = true, children }) {
   const [open, setOpen] = React.useState(false);
   const dragRef = React.useRef(null);
   const offsetRef = React.useRef({ x: 16, y: 16 });
@@ -411,12 +445,13 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     return () => window.removeEventListener('message', onMsg);
   }, []);
 
-  // ── fork:outside-close ↓ ── 本家 scaffold に無い「外側クリックで閉じる」
-  // 範囲外のクリック/タップでパネルを閉じる（pointerdown でマウス・タッチ両対応）。
-  // capture フェーズで拾い、パネル内（dragRef）のタップは無視する。開いた瞬間の
-  // クリックは open=false 時にはリスナ未登録なので即閉じは起きない。
+  // ── fork:outside-close ↓ ── 本家 scaffold に無い「外側クリックで閉じる」。
+  // closeOnOutsideClick=false なら無効化し、範囲外をクリックしても開いたままにする
+  // （camera 版で使用）。有効時は範囲外のクリック/タップでパネルを閉じる（pointerdown
+  // でマウス・タッチ両対応）。capture フェーズで拾い、パネル内（dragRef）のタップは
+  // 無視する。開いた瞬間のクリックは open=false 時にはリスナ未登録なので即閉じは起きない。
   React.useEffect(() => {
-    if (!open) return undefined;
+    if (!open || !closeOnOutsideClick) return undefined;
     const onOutsidePointer = (e) => {
       const panel = dragRef.current;
       if (panel && !panel.contains(e.target)) {
@@ -426,7 +461,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
     };
     document.addEventListener('pointerdown', onOutsidePointer, true);
     return () => document.removeEventListener('pointerdown', onOutsidePointer, true);
-  }, [open]);
+  }, [open, closeOnOutsideClick]);
   // ── fork:outside-close ↑ ──
 
   const dismiss = () => {
@@ -478,7 +513,9 @@ function TweaksPanel({ title = 'Tweaks', children }) {
                   onClick={dismiss}>✕</button>
         </div>
         <div className="twk-body">
-          {children}
+          <CollapseProvider storageKey={storageKey}>
+            {children}
+          </CollapseProvider>
         </div>
       </div>
     </>
@@ -487,11 +524,29 @@ function TweaksPanel({ title = 'Tweaks', children }) {
 
 // ── Layout helpers ──────────────────────────────────────────────────────────
 
-function TweakSection({ label, children }) {
+// collapsible を付けると、ヘッダをクリックで開閉できる折りたたみセクションになる
+// （子要素として内側にコントロールを入れ子にする使い方）。開閉状態は CollapseContext
+// が一元管理し永続化する。collapsible 未指定、または Provider 外では従来どおり
+// 素のラベル＋兄弟並びで描く（既存呼び出しは無改修で同じ見た目）。
+function TweakSection({ label, children, collapsible = false, defaultOpen = false }) {
+  const ctx = React.useContext(CollapseContext);
+  if (!collapsible || !ctx) {
+    return (
+      <>
+        <div className="twk-sect">{label}</div>
+        {children}
+      </>
+    );
+  }
+  const open = ctx.isOpen(label, defaultOpen);
   return (
     <>
-      <div className="twk-sect">{label}</div>
-      {children}
+      <button type="button" className="twk-sect-btn" data-open={open ? '1' : '0'}
+              aria-expanded={open} onClick={() => ctx.setOpen(label, !open)}>
+        <span className="twk-sect-chev" aria-hidden="true">▸</span>
+        <span>{label}</span>
+      </button>
+      {open && children}
     </>
   );
 }

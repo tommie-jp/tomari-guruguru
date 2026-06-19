@@ -12,6 +12,9 @@ import {
   savePanelPos,
   clearPanelPos,
   clampPanelPos,
+  sectionStateKey,
+  loadSectionState,
+  saveSectionState,
 } from './use-tweaks.js';
 
 describe('mergeIntoDefaults', () => {
@@ -242,5 +245,55 @@ describe('パネル位置の永続化', () => {
     savePanelPos('preview', { left: 5, top: 6 }, 'k');
     clearPanelPos('preview', 'k');
     expect(loadPanelPos('preview', 'k')).toBeNull();
+  });
+});
+
+// セクションの開閉状態（{ ラベル: 開いているか }）の永続化。値とは別キーに置き、
+// テーマ export を汚さず resetTweaks でも消えないようにする。
+describe('セクション開閉状態の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('sectionStateKey は :sections を付ける', () => {
+    expect(sectionStateKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:sections');
+  });
+
+  it('save した開閉マップを load で取り戻せる', () => {
+    saveSectionState({ 顔追従: true, ズーム: false }, 'k');
+    expect(loadSectionState('k')).toEqual({ 顔追従: true, ズーム: false });
+  });
+
+  it('boolean 以外の値は捨てる（不正値を無視）', () => {
+    saveSectionState({ ok: true, bad1: 1, bad2: 'x', bad3: null }, 'k');
+    expect(loadSectionState('k')).toEqual({ ok: true });
+  });
+
+  it('未保存なら {}', () => {
+    expect(loadSectionState('k')).toEqual({});
+  });
+
+  it('壊れた JSON は {}', () => {
+    store.set(sectionStateKey('k'), '{ broken');
+    expect(loadSectionState('k')).toEqual({});
+  });
+
+  it('オブジェクトでない保存値は {}', () => {
+    store.set(sectionStateKey('k'), JSON.stringify([1, 2]));
+    expect(loadSectionState('k')).toEqual({});
+    store.set(sectionStateKey('k'), JSON.stringify('nope'));
+    expect(loadSectionState('k')).toEqual({});
   });
 });

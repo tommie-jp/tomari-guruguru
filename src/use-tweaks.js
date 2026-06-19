@@ -158,12 +158,19 @@ export function selectBuiltinPresets(data, expectedKey) {
 // public/default-themes/<page>.json を取得してビルトインプリセットを返す。
 // 404・ネットワーク不通・壊れた JSON・ページ不一致はすべて {}（無害に無効化）。
 export async function fetchBuiltinPresets(baseUrl, page, expectedKey) {
+  const url = (baseUrl || '/') + 'default-themes/' + page + '.json';
   try {
-    const url = (baseUrl || '/') + 'default-themes/' + page + '.json';
     const res = await fetch(url);
-    if (!res.ok) return {};
+    if (!res.ok) {
+      // 404 等。配布テーマが無いだけならアプリは継続動作するが、なぜテーマが
+      // 当たらないか調べられるよう必ずログに残す（黙って消さない）。
+      console.warn(`[tweaks] 配布デフォルトテーマを読み込めません (HTTP ${res.status}): ${url}`);
+      return {};
+    }
     return selectBuiltinPresets(JSON.parse(await res.text()), expectedKey);
-  } catch {
+  } catch (err) {
+    // ネットワーク不通や JSON パース失敗など「読めない」ケース。原因を添えて出す。
+    console.error(`[tweaks] 配布デフォルトテーマの読み込みに失敗しました: ${url}`, err);
     return {};
   }
 }
@@ -222,4 +229,36 @@ export function clampPanelPos(pos, viewport, size, pad = 8) {
     left: Math.min(maxLeft, Math.max(pad, pos.left)),
     top: Math.min(maxTop, Math.max(pad, pos.top)),
   };
+}
+
+// ── fork:sections ── 折りたたみセクションの開閉状態（{ ラベル: 開いているか }）。
+// tweaks 値とは別キーに保存する。値に混ぜると mergeIntoDefaults で落ち、テーマ
+// export を汚し、resetTweaks で消えてしまうため、UI クロームとして分離する。
+export function sectionStateKey(explicit) {
+  return tweaksStorageKey(explicit) + ':sections';
+}
+
+// 開閉マップを返す。未保存・壊れ・読取不可は {}。boolean 以外の値は捨てる。
+export function loadSectionState(explicit) {
+  try {
+    const raw = window.localStorage.getItem(sectionStateKey(explicit));
+    if (!raw) return {};
+    const o = JSON.parse(raw);
+    if (!isPlainObject(o)) return {};
+    const out = {};
+    for (const k of Object.keys(o)) {
+      if (typeof o[k] === 'boolean') out[k] = o[k];
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveSectionState(map, explicit) {
+  try {
+    window.localStorage.setItem(sectionStateKey(explicit), JSON.stringify(map));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定の開閉に戻るだけ） */
+  }
 }
