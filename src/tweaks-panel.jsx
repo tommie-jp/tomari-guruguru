@@ -5,7 +5,7 @@ import {
   presetsStorageKey, loadPresets, savePresets,
   mergeIntoDefaults, effectiveDefaultsFrom,
   serializePresets, parsePresetsImport, fetchBuiltinPresets,
-  loadSectionState, saveSectionState,
+  loadSectionState, saveSectionState, tweaksExportFilename,
 } from './use-tweaks.js';
 
 // @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
@@ -823,7 +823,7 @@ function TweakPresets({ themes }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'tomari-tweaks-themes.json';
+    a.download = tweaksExportFilename(new Date());
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -15,6 +15,7 @@ import {
   sectionStateKey,
   loadSectionState,
   saveSectionState,
+  tweaksExportFilename,
 } from './use-tweaks.js';
 
 describe('mergeIntoDefaults', () => {
@@ -295,5 +296,24 @@ describe('セクション開閉状態の永続化', () => {
     expect(loadSectionState('k')).toEqual({});
     store.set(sectionStateKey('k'), JSON.stringify('nope'));
     expect(loadSectionState('k')).toEqual({});
+  });
+});
+
+// エクスポート JSON のファイル名（guruguru-avatar-tweaks-YYYY-MM-DD-HHMM.json）。
+// Date を受け取る純関数なので、固定日時で決定的に検証できる（ローカル時刻を使う）。
+describe('tweaksExportFilename', () => {
+  it('YYYY-MM-DD-HHMM 形式のファイル名を返す', () => {
+    const d = new Date(2026, 5, 19, 21, 34); // 2026-06-19 21:34（月は0始まり）
+    expect(tweaksExportFilename(d)).toBe('guruguru-avatar-tweaks-2026-06-19-2134.json');
+  });
+
+  it('月日・時分を2桁ゼロ埋めする', () => {
+    const d = new Date(2026, 0, 3, 9, 5); // 2026-01-03 09:05
+    expect(tweaksExportFilename(d)).toBe('guruguru-avatar-tweaks-2026-01-03-0905.json');
+  });
+
+  it('深夜0時0分も 0000 になる', () => {
+    const d = new Date(2026, 11, 31, 0, 0); // 2026-12-31 00:00
+    expect(tweaksExportFilename(d)).toBe('guruguru-avatar-tweaks-2026-12-31-0000.json');
   });
 });

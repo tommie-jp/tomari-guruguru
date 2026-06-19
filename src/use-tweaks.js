@@ -262,3 +262,15 @@ export function saveSectionState(map, explicit) {
     /* 容量超過やプライベートモードでは黙って諦める（次回は既定の開閉に戻るだけ） */
   }
 }
+
+// テーマ・エクスポート JSON のファイル名。形式は
+// guruguru-avatar-tweaks-YYYY-MM-DD-HHMM.json（HHMM=時分）。Date を引数で
+// 受ける純関数にして決定的にテストできるようにする。値はローカル時刻で組む。
+export function tweaksExportFilename(date) {
+  const p2 = (n) => String(n).padStart(2, '0');
+  const y = date.getFullYear();
+  const mo = p2(date.getMonth() + 1);
+  const d = p2(date.getDate());
+  const hhmm = p2(date.getHours()) + p2(date.getMinutes());
+  return `guruguru-avatar-tweaks-${y}-${mo}-${d}-${hhmm}.json`;
+}
