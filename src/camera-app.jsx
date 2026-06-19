@@ -12,6 +12,8 @@ import { useRelay } from './face/use-relay';
 import { DraggablePanel } from './draggable-panel.jsx';
 import { SpriteAvatar } from './sprite-avatar';
 import { QRCodeSVG } from 'qrcode.react';
+import { installMobileHardening } from './mobile-hardening.js';
+import { applyThemeColor } from './theme-color.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -346,6 +348,12 @@ function App() {
   // 描画ループが参照する「実効 tweaks」。rx は受信した config、それ以外はローカル t。
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  // スマホでのページズーム（背景ピンチ・ダブルタップ）を抑止。1本指スクロールや、アバターの
+  // pointer ピンチ（userRef）は温存する。obs/tx/rx いずれのモードでも誤ズームは困るので常時。
+  useEffect(() => installMobileHardening(), []);
+  // 背景色に合わせて theme-color を追従させる。obs は背景 transparent（無効値）なので更新しない。
+  useEffect(() => { if (!obsMode) applyThemeColor(view.bgColor); }, [obsMode, view.bgColor]);
 
   // 顔向き → target への注入（マウス版の pointermove ハンドラの代わり）
   const poseOptions = {
@@ -841,7 +849,9 @@ function App() {
 
       {!obsMode && (
       <div style={{
-        position: 'absolute', bottom: isNarrow ? 84 : '4.5vh', left: 0, right: 0,
+        position: 'absolute',
+        bottom: isNarrow ? 'calc(84px + var(--sab))' : 'calc(4.5vh + var(--sab))',
+        left: 0, right: 0,
         textAlign: 'center', pointerEvents: 'none'
       }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版</div>
@@ -887,14 +897,16 @@ function App() {
 
       {!obsMode && (
       <a href="talk.html" style={{
-        position: 'absolute', top: 18, right: 18, fontSize: 13, fontWeight: 700,
+        position: 'absolute', top: 'calc(18px + var(--sat))', right: 'calc(18px + var(--sar))',
+        fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>口パク版 →</a>
       )}
 
       {!obsMode && (
       <a href="tracking.html" style={{
-        position: 'absolute', top: 40, right: 18, fontSize: 13, fontWeight: 700,
+        position: 'absolute', top: 'calc(40px + var(--sat))', right: 'calc(18px + var(--sar))',
+        fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>手・ポーズ →</a>
       )}
@@ -903,13 +915,15 @@ function App() {
           公開オリジンは vite.fork.js が __TX_PUBLIC_ORIGIN__ に注入（無ければ現在のオリジン）。
           配信(obsMode)には出さない。 */}
       {!obsMode && (
-        <TxQrButton url={TX_URL} subColor={subColor} inkColor={inkColor} style={{ top: 62, right: 18 }} />
+        <TxQrButton url={TX_URL} subColor={subColor} inkColor={inkColor}
+          style={{ top: 'calc(62px + var(--sat))', right: 'calc(18px + var(--sar))' }} />
       )}
 
       {/* GitHub リポジトリへのリンク（外部・別タブ）。配信には映さない。 */}
       {!obsMode && (
       <a href="https://github.com/tommie-jp/guruguru-avatar" target="_blank" rel="noopener noreferrer" style={{
-        position: 'absolute', top: 84, right: 18, fontSize: 13, fontWeight: 700,
+        position: 'absolute', top: 'calc(84px + var(--sat))', right: 'calc(18px + var(--sar))',
+        fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>GitHub ↗</a>
       )}
@@ -918,7 +932,8 @@ function App() {
           そのまま引き継ぐ。現在のモードを太字＋色で強調する。配信には映さない。 */}
       {!obsMode && (
       <a href="index.html?tx" style={{
-        position: 'absolute', top: 106, right: 18, fontSize: 13,
+        position: 'absolute', top: 'calc(106px + var(--sat))', right: 'calc(18px + var(--sar))',
+        fontSize: 13,
         fontWeight: mode === 'tx' ? 900 : 700,
         color: mode === 'tx' ? inkColor : subColor,
         textDecoration: 'none', letterSpacing: '0.06em'
@@ -928,7 +943,8 @@ function App() {
       {!obsMode && (
       // rx は既定で透過＋UI 非表示なので、ブラウザのタブで確認できるよう ?obs=0 を付ける。
       <a href="index.html?rx&obs=0" style={{
-        position: 'absolute', top: 128, right: 18, fontSize: 13,
+        position: 'absolute', top: 'calc(128px + var(--sat))', right: 'calc(18px + var(--sar))',
+        fontSize: 13,
         fontWeight: mode === 'rx' ? 900 : 700,
         color: mode === 'rx' ? inkColor : subColor,
         textDecoration: 'none', letterSpacing: '0.06em'
@@ -940,7 +956,9 @@ function App() {
           配信に映さないよう obsMode では非表示。rx は操作しないので非表示。 */}
       {!obsMode && !isRx && (
       <div style={{
-        position: 'absolute', bottom: isNarrow ? 14 : 16, left: isNarrow ? 12 : 16, zIndex: 6,
+        position: 'absolute',
+        bottom: isNarrow ? 'calc(14px + var(--sab))' : 'calc(16px + var(--sab))',
+        left: isNarrow ? 'calc(12px + var(--sal))' : 'calc(16px + var(--sal))', zIndex: 6,
         display: 'flex', flexWrap: 'wrap', gap: ctl.gap, alignItems: 'center',
         // スマホは右下 Tweaks ボタン（約98px）に被らないよう左下に収め、はみ出しは折り返す。
         maxWidth: isNarrow ? 'calc(100vw - 120px)' : 'none',
@@ -1007,7 +1025,8 @@ function App() {
           日付を落とした短縮版にして左下コントロールにも被らない長さにする。 */}
       {!obsMode && (
       <div style={{
-        position: 'absolute', bottom: 54, right: isNarrow ? 12 : 16, fontSize: 11,
+        position: 'absolute', bottom: 'calc(54px + var(--sab))',
+        right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', fontSize: 11,
         color: subColor, opacity: 0.65, letterSpacing: '0.04em', whiteSpace: 'nowrap',
         textAlign: 'right', fontVariantNumeric: 'tabular-nums',
         pointerEvents: 'none', userSelect: 'none'
@@ -1023,7 +1042,9 @@ function App() {
         onClick={calibrateAll}
         title="今の向きを正面・今の距離を基準・今の目の大きさをまばたきなしに、まとめて校正する"
         style={{
-          position: 'absolute', bottom: isNarrow ? 80 : 84, right: isNarrow ? 12 : 16, zIndex: 7,
+          position: 'absolute',
+          bottom: isNarrow ? 'calc(80px + var(--sab))' : 'calc(84px + var(--sab))',
+          right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', zIndex: 7,
           padding: isNarrow ? '7px 15px' : '9px 18px', borderRadius: 999, cursor: 'pointer',
           border: 'none', background: justCalibrated ? '#46C26A' : '#E8923C', color: '#fff',
           fontSize: isNarrow ? 12 : 13, fontWeight: 800, letterSpacing: '0.08em',

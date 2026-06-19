@@ -68,7 +68,8 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const __TWEAKS_STYLE = `
-  .twk-fab{position:fixed;right:16px;bottom:16px;z-index:2147483646;
+  .twk-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));
+    bottom:calc(16px + env(safe-area-inset-bottom));z-index:2147483646;
     appearance:none;border:0;border-radius:999px;padding:10px 14px;
     background:rgba(41,38,27,.86);color:#fff;
     -webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);
@@ -92,6 +93,7 @@ const __TWEAKS_STYLE = `
   .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
   .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
     overflow-y:auto;overflow-x:hidden;min-height:0;
+    overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
     scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
   .twk-body::-webkit-scrollbar{width:8px}
   .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
@@ -139,7 +141,7 @@ const __TWEAKS_STYLE = `
     background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
 
   .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
-    background:rgba(0,0,0,.06);user-select:none}
+    background:rgba(0,0,0,.06);user-select:none;touch-action:none}
   .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
     background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
     transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
@@ -206,7 +208,8 @@ const __TWEAKS_STYLE = `
   /* モバイル（狭いポートレイト）: 横幅いっぱい＋タッチしやすい大きめUI */
   @media (max-width:480px){
     .twk-panel{width:calc(100vw - 24px);right:12px;bottom:12px;max-height:72vh}
-    .twk-fab{right:12px;bottom:12px;padding:12px 16px;font-size:13px}
+    .twk-fab{right:calc(12px + env(safe-area-inset-right));
+      bottom:calc(12px + env(safe-area-inset-bottom));padding:12px 16px;font-size:13px}
     .twk-hd{padding:12px 10px 12px 16px}
     .twk-hd b{font-size:14px}
     .twk-x{width:32px;height:32px;font-size:17px}
@@ -395,6 +398,40 @@ function CollapseProvider({ storageKey, children }) {
   return <CollapseContext.Provider value={api}>{children}</CollapseContext.Provider>;
 }
 
+// ── fork:safe-area ───────────────────────────────────────────────────────────
+// パネルは JS が right/bottom を px で直書きするため CSS の env() が効かない。ノッチ/
+// ホームインジケータを避けるには JS で safe-area inset(px) を知る必要がある。CSS の
+// custom property は env() を未解決のまま返すので、実プロパティを持つプローブで1度だけ
+// 実測してキャッシュする（PC では全て 0px に落ちる）。
+let __saCache = null;
+let __saBound = false;
+function safeAreaInsets() {
+  if (__saCache) return __saCache;
+  if (typeof document === 'undefined' || !document.body) {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+  // 回転で inset 値は入れ替わる（縦ノッチ上→横で左右へ）。初回だけ購読し、回転/リサイズで
+  // キャッシュを捨てて次回 clampToViewport が再実測するようにする。
+  if (!__saBound && typeof window !== 'undefined') {
+    __saBound = true;
+    const clear = () => { __saCache = null; };
+    window.addEventListener('orientationchange', clear);
+    window.addEventListener('resize', clear);
+  }
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;'
+    + 'top:env(safe-area-inset-top,0px);right:env(safe-area-inset-right,0px);'
+    + 'bottom:env(safe-area-inset-bottom,0px);left:env(safe-area-inset-left,0px)';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  __saCache = {
+    top: parseFloat(cs.top) || 0, right: parseFloat(cs.right) || 0,
+    bottom: parseFloat(cs.bottom) || 0, left: parseFloat(cs.left) || 0,
+  };
+  probe.remove();
+  return __saCache;
+}
+
 // ── TweaksPanel ─────────────────────────────────────────────────────────────
 // Floating shell. Registers the protocol listener BEFORE announcing
 // availability — if the announce ran first, the host's activate could land
@@ -412,11 +449,14 @@ function TweaksPanel({ title = 'Tweaks', storageKey, closeOnOutsideClick = true,
     const panel = dragRef.current;
     if (!panel) return;
     const w = panel.offsetWidth, h = panel.offsetHeight;
-    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
-    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    // safe-area を避けるため、各辺の最小オフセットに inset を足す（ノッチ/ホームバー回避）。
+    const sa = safeAreaInsets();
+    const minX = PAD + sa.right, minY = PAD + sa.bottom;
+    const maxRight = Math.max(minX, window.innerWidth - w - PAD - sa.left);
+    const maxBottom = Math.max(minY, window.innerHeight - h - PAD - sa.top);
     offsetRef.current = {
-      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
-      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+      x: Math.min(maxRight, Math.max(minX, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(minY, offsetRef.current.y)),
     };
     panel.style.right = offsetRef.current.x + 'px';
     panel.style.bottom = offsetRef.current.y + 'px';

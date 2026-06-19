@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
+import { installMobileHardening } from './mobile-hardening.js';
+import { applyThemeColor } from './theme-color.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -31,6 +33,11 @@ function App() {
   const current = useRef({ x: 0, y: 0 });
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
+
+  // スマホでのページズーム（背景ピンチ・ダブルタップ）を抑止。1本指スクロール等は温存。
+  useEffect(() => installMobileHardening(), []);
+  // 背景色に合わせて theme-color（ブラウザ chrome / PWA ステータスバー）を追従させる。
+  useEffect(() => { applyThemeColor(t.bgColor); }, [t.bgColor]);
 
   useEffect(() => {
     function onMove(e) {
@@ -172,7 +179,7 @@ function App() {
       </div>
 
       <div style={{
-        position: 'absolute', bottom: '4.5vh', left: 0, right: 0,
+        position: 'absolute', bottom: 'calc(4.5vh + var(--sab))', left: 0, right: 0,
         textAlign: 'center', pointerEvents: 'none'
       }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター</div>
@@ -190,7 +197,8 @@ function App() {
       </div>
 
       <a href="talk.html" style={{
-        position: 'absolute', top: 18, right: 18, fontSize: 13, fontWeight: 700,
+        position: 'absolute', top: 'calc(18px + var(--sat))', right: 'calc(18px + var(--sar))',
+        fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>口パク版 →</a>
 

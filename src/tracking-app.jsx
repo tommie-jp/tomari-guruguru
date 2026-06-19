@@ -2,6 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { DrawingUtils, GestureRecognizer, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { useHandPose } from './tracking/use-hand-pose';
+import { installMobileHardening } from './mobile-hardening.js';
+import { applyThemeColor } from './theme-color.js';
 
 const { useState, useEffect, useRef } = React;
 
@@ -34,6 +36,11 @@ function App() {
   const canvasRef = useRef(null);
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
+
+  // スマホでのページズーム（背景ピンチ・ダブルタップ）を抑止。1本指スクロール等は温存。
+  useEffect(() => installMobileHardening(), []);
+  // 背景色に合わせて theme-color（ブラウザ chrome / PWA ステータスバー）を追従させる。
+  useEffect(() => { applyThemeColor(t.bgColor); }, [t.bgColor]);
 
   const { videoRef, handResultRef, poseResultRef, status } = useHandPose({
     enabled: true,
@@ -158,7 +165,8 @@ function App() {
       </div>
 
       <a href="index.html" style={{
-        position: 'absolute', top: 18, right: 18, fontSize: 13, fontWeight: 700,
+        position: 'absolute', top: 'calc(18px + var(--sat))', right: 'calc(18px + var(--sar))',
+        fontSize: 13, fontWeight: 700,
         color: 'rgba(255,255,255,0.6)', textDecoration: 'none', letterSpacing: '0.06em'
       }}>← カメラ版(顔)</a>
 

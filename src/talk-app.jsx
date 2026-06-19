@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
+import { installMobileHardening } from './mobile-hardening.js';
+import { applyThemeColor } from './theme-color.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -102,6 +104,11 @@ function App() {
   const env = useRef(0);
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
+
+  // スマホでのページズーム（背景ピンチ・ダブルタップ）を抑止。1本指スクロール等は温存。
+  useEffect(() => installMobileHardening(), []);
+  // 背景色に合わせて theme-color（ブラウザ chrome / PWA ステータスバー）を追従させる。
+  useEffect(() => { applyThemeColor(t.bgColor); }, [t.bgColor]);
 
   // マウス追従
   useEffect(() => {
@@ -252,7 +259,7 @@ function App() {
         ))}
       </div>
 
-      <div style={{ position: 'absolute', top: '3.5vh', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', top: 'calc(3.5vh + var(--sat))', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター トーク版</div>
         <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 4, letterSpacing: '0.08em' }}>音声に合わせて口パク・まばたきするよ</div>
         {/* アバター（キャラクター「トマリ」）の著作権表示。原作: ろてじん。
@@ -268,7 +275,7 @@ function App() {
       </div>
 
       <div style={{
-        position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+        position: 'absolute', bottom: 'calc(20px + var(--sab))', left: '50%', transform: 'translateX(-50%)',
         display: 'flex', alignItems: 'center', gap: 14,
         background: panelBg, backdropFilter: 'blur(10px)',
         border: `1px solid ${lineColor}`, borderRadius: 18,
@@ -318,15 +325,16 @@ function App() {
         </div>
       </div>
       {micErr ? (
-        <div style={{ position: 'absolute', bottom: 92, left: '50%', transform: 'translateX(-50%)', color: '#B3261E', fontSize: 13, fontWeight: 700 }}>{micErr}</div>
+        <div style={{ position: 'absolute', bottom: 'calc(92px + var(--sab))', left: '50%', transform: 'translateX(-50%)', color: '#B3261E', fontSize: 13, fontWeight: 700 }}>{micErr}</div>
       ) : null}
       <audio ref={audioElRef} controls style={{
-        position: 'absolute', bottom: 20, right: 20, width: 260,
+        position: 'absolute', bottom: 'calc(20px + var(--sab))', right: 'calc(20px + var(--sar))', width: 260,
         display: fileName ? 'block' : 'none', cursor: 'default'
       }}></audio>
 
       <a href="guruguru.html" style={{
-        position: 'absolute', top: 18, left: 18, fontSize: 13, fontWeight: 700,
+        position: 'absolute', top: 'calc(18px + var(--sat))', left: 'calc(18px + var(--sal))',
+        fontSize: 13, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>← ぐるぐる版</a>
 

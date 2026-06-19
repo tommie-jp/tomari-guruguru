@@ -2,7 +2,12 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#EEF4FB">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ぐるぐる">
 <title>ぐるぐるアバター カメラ版</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <meta name="description" content="Webカメラで顔の向き・口の動きに合わせて同調するブラウザアバター（PixiJS スプライト描画版）。">
@@ -24,6 +29,26 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
   img { -webkit-user-drag: none; }
+  /* スマホ対応: safe-area 変数（JSX/パネルが calc で参照）。env 未対応でも 0px に落ちる。 */
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+  }
+  /* ダブルタップズーム抑止（パン＝スクロールは残る）／タップハイライト・長押しメニュー抑止。
+     2本指ピンチのページズーム抑止は src/mobile-hardening.js が JS で担う。 */
+  html {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  html, body { overscroll-behavior: none; }
+  /* コピー/入力したい要素は選択を復活（QR の <code>・クレジットリンク等を潰さない）。 */
+  code, a, input, textarea, [contenteditable] {
+    -webkit-touch-callout: default; user-select: text; -webkit-user-select: text;
+  }
   @media (prefers-reduced-motion: no-preference) {
     .bob { animation: bob 3.4s ease-in-out infinite; }
     @keyframes bob {
