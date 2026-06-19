@@ -12,7 +12,7 @@ function tweaks(over = {}) {
     blinkSync: true, blinkSensitivity: 1.0, eyesOpenBias: 0,
     tiltEnabled: true, tiltGain: 1.0, tiltMax: 20, invertTilt: false,
     slideEnabled: true, slideGain: 12, slideMax: 30, invertSlide: false,
-    slideGainY: 8, slideMaxY: 25, invertSlideY: false, slidePoseComp: 0.6,
+    slideGainY: 8, slideMaxY: 25, invertSlideY: false, slidePoseCompX: 0.6, slidePoseCompY: 0.6,
     zoomEnabled: false, zoomGain: 1, zoomMin: 0.6, zoomMax: 1.8, zoomPitchComp: 1, zoomBaseline: 0,
     ...over,
   };

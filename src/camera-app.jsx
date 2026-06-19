@@ -67,6 +67,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "tiltMax": 23,
   "tiltPivotY": 72,
   "invertTilt": false,
+  "tiltYawComp": 0,
   "slideEnabled": true,
   "slideGain": 12,
   "slideMax": 30,
@@ -74,15 +75,20 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "slideGainY": 8,
   "slideMaxY": 25,
   "invertSlideY": false,
-  "slidePoseComp": 0.6,
+  "slidePoseCompX": 0.6,
+  "slidePoseCompY": 0.6,
   "zoomEnabled": true,
   "zoomGain": 1.4,
   "zoomMin": 0.35,
   "zoomMax": 1.5,
   "zoomPitchComp": 1.0,
+  "zoomMouthComp": 0,
   "zoomBaseline": 0.387,
   "motionSmoothing": 0.2,
   "moveRatio": 1.0,
+  "userZoomMin": 0.3,
+  "userZoomMax": 4,
+  "wheelZoomDial": 30,
   "charSize": 39,
   "shadow": 3,
   "bgColor": "#EEF4FB",
@@ -161,10 +167,20 @@ function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
 // アバターのユーザー操作（ドラッグ移動・ホイール/ピンチでズーム）の範囲と感度。
 // 顔追従とは独立した「表示上の」調整なので relay には送らずローカルのみで完結する。
+// 実値は Tweaks（userZoomMin/userZoomMax/wheelZoomDial）から毎イベント読んでリアルタイムに
+// 効かせる。以下の定数は保存値が無いとき／旧テーマ用の「フォールバック既定」として残す。
 const USER_ZOOM_MIN = 0.3;
 const USER_ZOOM_MAX = 4;
-const WHEEL_ZOOM_SENS = 0.0015;     // ホイール deltaY → ズーム倍率（exp で滑らかに）
 const DRAG_SQUISH_CANCEL_PX = 4;    // この距離以上動いたら押下スケールを解除しドラッグ扱い
+
+// ホイール感度は UI 上「0〜100」のダイヤルで持ち、exp の係数へ線形変換する。
+// ダイヤル100 で WHEEL_SENS_MAX、0 で 0（＝ホイールズーム無効）。既定30 ≒ 旧 0.0015。
+const WHEEL_SENS_MAX = 0.005;
+const WHEEL_SENS_DIAL_DEFAULT = 30;
+function wheelSensFromDial(dial) {
+  const d = Math.min(100, Math.max(0, dial));
+  return (d / 100) * WHEEL_SENS_MAX;
+}
 
 // 「校正」ボタンを押した後、ボタン上に確認表示（✓ 校正しました）を出す時間(ms)。
 // 校正は値の変化が控えめで効いたか分かりにくいため、短く効果を知らせる。
@@ -478,6 +494,21 @@ function App() {
     applyUserTransform();
   }
 
+  // ユーザーズームの上下限(Tweaks)を変えたら、現在のズーム値を新範囲へ即クランプし直して
+  // 表示へ反映する。スライダー操作だけで最小/最大が「今すぐ」効くようにする（次のホイール
+  // 操作を待たない）。rx は受信値を commit が当てるので対象外。
+  useEffect(() => {
+    if (isRx) return;
+    const lo = t.userZoomMin ?? USER_ZOOM_MIN;
+    const hi = t.userZoomMax ?? USER_ZOOM_MAX;
+    const u = userTransform.current;
+    u.shared.zoom = clamp(u.shared.zoom, lo, hi);
+    u.local.zoom = clamp(u.local.zoom, lo, hi);
+    applyUserTransform();
+    // applyUserTransform/clamp は安定参照。上下限と rx 切替のみで張り直せばよい。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.userZoomMin, t.userZoomMax, isRx]);
+
   // メインループ。3モード共通で「状態フレーム → 平滑化 → 描画」を回す。
   //   local/tx: signals から computeStateFrame（口/まばたき/補正を確定）→ applyState。
   //             tx はさらに状態フレームを ~30Hz 上限で送信。
@@ -585,7 +616,9 @@ function App() {
       if (!pointers.has(e.pointerId)) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pinch && pointers.size >= 2) {
-        pinch.layer.zoom = clamp(pinch.zoom * (dist() / pinch.dist), USER_ZOOM_MIN, USER_ZOOM_MAX);
+        const tw = tweaksRef.current;        // 上下限は Tweaks から毎回読む（リロード不要で即反映）
+        pinch.layer.zoom = clamp(pinch.zoom * (dist() / pinch.dist),
+          tw.userZoomMin ?? USER_ZOOM_MIN, tw.userZoomMax ?? USER_ZOOM_MAX);
         apply();
       } else if (drag) {
         // px の移動量を vw/vh へ変換（解像度差を吸収して CEF にも比例反映させる）。
@@ -618,8 +651,11 @@ function App() {
     };
     const onWheel = (e) => {
       e.preventDefault();
+      const tw = tweaksRef.current;        // 感度・上下限は Tweaks から毎回読む（リロード不要で即反映）
       const layer = layerFor(e);           // Shift+ホイール = local（この端末だけ）
-      layer.zoom = clamp(layer.zoom * Math.exp(-e.deltaY * WHEEL_ZOOM_SENS), USER_ZOOM_MIN, USER_ZOOM_MAX);
+      const sens = wheelSensFromDial(tw.wheelZoomDial ?? WHEEL_SENS_DIAL_DEFAULT);
+      layer.zoom = clamp(layer.zoom * Math.exp(-e.deltaY * sens),
+        tw.userZoomMin ?? USER_ZOOM_MIN, tw.userZoomMax ?? USER_ZOOM_MAX);
       apply();
     };
     // 両層を初期化（位置中央・等倍）。リセットボタンと共通経路。
@@ -1262,6 +1298,8 @@ function App() {
             onChange={(v) => setTweak('tiltPivotY', v)}></TweakSlider>
           <TweakToggle label="かしげ反転" value={t.invertTilt}
             onChange={(v) => setTweak('invertTilt', v)}></TweakToggle>
+          <TweakSlider label="左右向き補正" value={t.tiltYawComp} min={-1} max={1} step={0.05}
+            onChange={(v) => setTweak('tiltYawComp', v)}></TweakSlider>
         </TweakSection>
         <TweakSection label="スライド" collapsible>
           <TweakToggle label="スライド追従（左右・上下）" value={t.slideEnabled}
@@ -1272,14 +1310,16 @@ function App() {
             onChange={(v) => setTweak('slideMax', v)}></TweakSlider>
           <TweakToggle label="左右反転" value={t.invertSlide}
             onChange={(v) => setTweak('invertSlide', v)}></TweakToggle>
+          <TweakSlider label="左右向き補正" value={t.slidePoseCompX} min={0} max={2} step={0.05}
+            onChange={(v) => setTweak('slidePoseCompX', v)}></TweakSlider>
           <TweakSlider label="上下の量" value={t.slideGainY} min={0} max={40} step={1} unit="vh"
             onChange={(v) => setTweak('slideGainY', v)}></TweakSlider>
           <TweakSlider label="上下の上限" value={t.slideMaxY} min={0} max={50} step={1} unit="vh"
             onChange={(v) => setTweak('slideMaxY', v)}></TweakSlider>
           <TweakToggle label="上下反転" value={t.invertSlideY}
             onChange={(v) => setTweak('invertSlideY', v)}></TweakToggle>
-          <TweakSlider label="向き補正" value={t.slidePoseComp} min={0} max={2} step={0.05}
-            onChange={(v) => setTweak('slidePoseComp', v)}></TweakSlider>
+          <TweakSlider label="上下向き補正" value={t.slidePoseCompY} min={0} max={2} step={0.05}
+            onChange={(v) => setTweak('slidePoseCompY', v)}></TweakSlider>
           <TweakSlider label="動きの滑らかさ" value={t.motionSmoothing} min={0.04} max={0.5} step={0.01}
             onChange={(v) => setTweak('motionSmoothing', v)}></TweakSlider>
         </TweakSection>
@@ -1294,8 +1334,19 @@ function App() {
             onChange={(v) => setTweak('zoomMax', v)}></TweakSlider>
           <TweakSlider label="下向き補正" value={t.zoomPitchComp} min={0} max={2} step={0.05}
             onChange={(v) => setTweak('zoomPitchComp', v)}></TweakSlider>
+          <TweakSlider label="口開き補正" value={t.zoomMouthComp} min={0} max={1} step={0.05}
+            onChange={(v) => setTweak('zoomMouthComp', v)}></TweakSlider>
           <TweakButton label="今の距離を基準にする" onClick={calibrateZoom}></TweakButton>
           <TweakButton label="距離基準をリセット" secondary onClick={resetZoom}></TweakButton>
+        </TweakSection>
+        <TweakSection label="ズーム（ホイール/ピンチ）" collapsible>
+          <TweakSlider label="最小（縮小の下限）" value={t.userZoomMin} min={0.05} max={1} step={0.05}
+            onChange={(v) => setTweak('userZoomMin', v)}></TweakSlider>
+          <TweakSlider label="最大（拡大の上限）" value={t.userZoomMax} min={1} max={8} step={0.5}
+            onChange={(v) => setTweak('userZoomMax', v)}></TweakSlider>
+          <TweakSlider label="ホイール感度" value={t.wheelZoomDial} min={0} max={100} step={1}
+            onChange={(v) => setTweak('wheelZoomDial', v)}></TweakSlider>
+          <TweakButton label="表示（移動・ズーム）をリセット" secondary onClick={resetUserTransform}></TweakButton>
         </TweakSection>
         <TweakSection label="推論エンジン" collapsible>
           <TweakToggle label="Web Worker を使う" value={t.useWorker}

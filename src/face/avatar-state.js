@@ -9,6 +9,8 @@
 // 持つので、呼び出し側が createExprState() の戻りを保持して毎フレーム渡す（この関数が更新する）。
 import { compensatePos } from './pitch-compensated-pos';
 import { compensateScaleForPitch } from './pitch-compensated-scale';
+import { compensateScaleForMouth } from './mouth-compensated-scale';
+import { compensateRollForYaw } from './compensate-roll-for-yaw';
 
 const DEG = Math.PI / 180;
 // 口が開くときの追従係数（閉じるときは tweaks.release を使う＝開きは速く・閉じはゆっくり）
@@ -91,26 +93,29 @@ export function computeStateFrame(signals, t, expr, now, opts = {}) {
   }
   const sheet = (blink ? 3 : 0) + mouthLevel;
 
-  // 首かしげ(roll)
+  // 首かしげ(roll)。左右の向き(yaw)が roll に混入してかしげる分を先に打ち消す。
+  const roll = compensateRollForYaw(signals.roll, signals.yaw, t.tiltYawComp);
   const tilt = t.tiltEnabled
-    ? clamp((signals.roll / DEG) * t.tiltGain * (t.invertTilt ? -1 : 1), -t.tiltMax, t.tiltMax)
+    ? clamp((roll / DEG) * t.tiltGain * (t.invertTilt ? -1 : 1), -t.tiltMax, t.tiltMax)
     : 0;
 
   // 左右上下スライド。頭の回転(yaw/pitch)が鼻先に混入する分を compensatePos で打ち消す。
   // 顔ロスト中は posX/posY が中立(0)・pose は保持なので補正を掛けない（誤差防止）。
   const posX = facePresent
-    ? compensatePos(signals.posX, signals.yaw, t.slidePoseComp, { invert: t.invertSlide })
+    ? compensatePos(signals.posX, signals.yaw, t.slidePoseCompX, { invert: t.invertSlide })
     : signals.posX;
   const posY = facePresent
-    ? compensatePos(signals.posY, -signals.pitch, t.slidePoseComp, { invert: t.invertSlideY })
+    ? compensatePos(signals.posY, -signals.pitch, t.slidePoseCompY, { invert: t.invertSlideY })
     : signals.posY;
   const slideX = t.slideEnabled ? clamp(posX * t.slideGain, -t.slideMax, t.slideMax) : 0;
   const slideY = t.slideEnabled ? clamp(posY * t.slideGainY, -t.slideMaxY, t.slideMaxY) : 0;
 
   // ズーム: 見かけサイズ ÷ 基準 が距離比。基準は手動較正(zoomBaseline)優先、無ければ
-  // 初回検出サイズを自動基準にする。下/上向きの foreshortening は補正してから比を取る。
+  // 初回検出サイズを自動基準にする。口を開けた顎ドロップ分と、下/上向きの foreshortening を
+  // それぞれ打ち消してから比を取る（順序は乗算なので不問）。
   let zoom = 1;
-  const sz = compensateScaleForPitch(signals.faceScale, signals.pitch, t.zoomPitchComp);
+  const szMouth = compensateScaleForMouth(signals.faceScale, signals.mouth, t.zoomMouthComp);
+  const sz = compensateScaleForPitch(szMouth, signals.pitch, t.zoomPitchComp);
   if (t.zoomEnabled && sz > 0) {
     let baseline = t.zoomBaseline > 0 ? t.zoomBaseline : expr.autoBaseline;
     if (!(baseline > 0)) {
