@@ -17,10 +17,11 @@
 `index.html` は URL パラメータで配信用の見た目に切り替わる（通常表示は無変更）。
 
 - `?obs=1` … 背景透過＋UI 非表示（アバターのみのオーバーレイ）
-- `?shadow=n` … アバターに影を付ける（`n` は 0~3。大きいほど濃い。0=無し、値なしは 2）
+- 影は Tweaks の「影の濃さ」（`shadow`、0〜6）で調整する（旧 `?shadow=n` は廃止）。`T` キーで
+  パネルを開いて変更でき、tx 側の値は config 同期で rx(OBS) に反映される
 - ステージモード中だけ **`T` キー**で Tweaks パネルを開閉できる（OBS の「対話」で較正する用）
 
-例: `http://localhost:5173/index.html?obs=1&shadow=2`
+例: `http://localhost:5173/index.html?obs=1`
 
 ## 必須: OBS を `--enable-media-stream` 付きで起動する
 
