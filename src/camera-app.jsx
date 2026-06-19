@@ -67,6 +67,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "motionSmoothing": 0.2,
   "moveRatio": 1.0,
   "charSize": 64,
+  "shadow": 3,
   "bgColor": "#FFF8EE",
   "showDebug": false,
   "showExpr": false,
@@ -119,14 +120,20 @@ const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
 const GLOW_COLORS = ['#9FD8FF', '#FFD27A', '#FF8FB1', '#B6FF9F'];
 const DISSOLVE_COLORS = ['#7FE0FF', '#FFB04D', '#C792FF', '#7CFFB0'];
 
-// 影レベル(0~3, ?shadow=n)→ CSS filter。大きいほど濃く広がる。0 は影なし。
+// 影レベル(0~6, tweak `shadow`)→ CSS filter。大きいほど濃く広く広がる。0 は影なし。
 // 高レベルでは「広いぼかし影＋細い輪郭影」を重ねて、透過背景でもはっきり立たせる。
+// 4~6 は旧 ?shadow=3 より大きく広げた追加レンジ（Tweaks のスライダーで選ぶ）。
 const SHADOW_FILTERS = [
-  undefined,
-  'drop-shadow(0 2px 6px rgba(0,0,0,0.35))',
-  'drop-shadow(0 5px 13px rgba(0,0,0,0.45)) drop-shadow(0 0 2px rgba(0,0,0,0.4))',
-  'drop-shadow(0 10px 24px rgba(0,0,0,0.62)) drop-shadow(0 0 5px rgba(0,0,0,0.55))',
+  undefined,                                                                          // 0 なし
+  'drop-shadow(0 2px 6px rgba(0,0,0,0.35))',                                           // 1
+  'drop-shadow(0 5px 13px rgba(0,0,0,0.45)) drop-shadow(0 0 2px rgba(0,0,0,0.4))',     // 2
+  'drop-shadow(0 10px 24px rgba(0,0,0,0.62)) drop-shadow(0 0 5px rgba(0,0,0,0.55))',   // 3
+  'drop-shadow(0 16px 36px rgba(0,0,0,0.66)) drop-shadow(0 0 8px rgba(0,0,0,0.6))',    // 4
+  'drop-shadow(0 24px 52px rgba(0,0,0,0.7)) drop-shadow(0 0 12px rgba(0,0,0,0.62))',   // 5
+  'drop-shadow(0 34px 72px rgba(0,0,0,0.74)) drop-shadow(0 0 18px rgba(0,0,0,0.66))',  // 6 最大幅
 ];
+// 影レベルの最大値（SHADOW_FILTERS の最後のインデックス）。スライダー上限とクランプに使う。
+const SHADOW_MAX = SHADOW_FILTERS.length - 1;
 
 // 感度を頭の振り角(rad)に変換。感度が高いほど少ない首振りで端まで届く。
 const BASE_MAX_YAW = 0.5;
@@ -734,8 +741,9 @@ function App() {
             maxWidth: 1200, maxHeight: 1200,
             transform: pressed ? 'scale(0.94)' : 'scale(1)',
             transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            // ?shadow=n (0~3)。大きいほど濃い影で透過背景上の輪郭を立たせる（0 は無し）。
-            filter: SHADOW_FILTERS[stage.shadow],
+            // tweak `shadow` (0~6)。大きいほど濃い影で透過背景上の輪郭を立たせる（0 は無し）。
+            // view = rx は同期値・それ以外はローカル値。範囲外/未設定は 0(なし) にクランプ。
+            filter: SHADOW_FILTERS[clamp(Math.round(view.shadow ?? 0), 0, SHADOW_MAX)],
             userSelect: 'none', touchAction: 'none'
           }}
         >
@@ -1145,6 +1153,8 @@ function App() {
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+        <TweakSlider label="影の濃さ" value={t.shadow} min={0} max={SHADOW_MAX} step={1}
+          onChange={(v) => setTweak('shadow', v)}></TweakSlider>
         <TweakSection label="推論エンジン"></TweakSection>
         <TweakToggle label="Web Worker を使う" value={t.useWorker}
           onChange={(v) => setTweak('useWorker', v)}></TweakToggle>
