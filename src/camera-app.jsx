@@ -164,6 +164,10 @@ const USER_ZOOM_MAX = 4;
 const WHEEL_ZOOM_SENS = 0.0015;     // ホイール deltaY → ズーム倍率（exp で滑らかに）
 const DRAG_SQUISH_CANCEL_PX = 4;    // この距離以上動いたら押下スケールを解除しドラッグ扱い
 
+// 「校正」ボタンを押した後、ボタン上に確認表示（✓ 校正しました）を出す時間(ms)。
+// 校正は値の変化が控えめで効いたか分かりにくいため、短く効果を知らせる。
+const CALIBRATE_FEEDBACK_MS = 1400;
+
 // 移動の tx→rx 比率（rx の移動量 = tx の移動量 × moveRatio）。スライダーの範囲。
 const MOVE_RATIO_MIN = 0.1;
 const MOVE_RATIO_MAX = 3.0;
@@ -309,6 +313,9 @@ function App() {
   const showPreview = view.preview && !obsMode && !isRx; // 配信にカメラ枠を出さない
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
+  // 「校正」ボタン押下後のフィードバック表示（✓ を短時間出す）と、その消去タイマー。
+  const [justCalibrated, setJustCalibrated] = useState(false);
+  const calibTimerRef = useRef(null);
   // スマホ用「反映先」トグル。ON のとき操作は local 層（この端末だけ・CEF へ送らない）。
   // PC は Shift キーでも同じ層に切り替わる（layerFor が OR で見る）。ref は effect から参照。
   const [localMode, setLocalMode] = useState(false);
@@ -435,6 +442,20 @@ function App() {
     setTweak('zoomBaseline', 0);
     exprStateRef.current.autoBaseline = 0; // 自動基準も捨てて次の検出で取り直す
   }
+
+  // 「校正」ボタン: 今の向き＝正面・今の距離＝等倍の基準・今の目の大きさ＝まばたきなし、
+  // をワンタップでまとめて取り直す。個別校正をそのまま順に呼ぶだけ（計算を重複させない）。
+  // setTweak は関数更新でマージするので、続けて呼んでも取りこぼさず同フレームに反映される。
+  function calibrateAll() {
+    calibrateCenter();   // 今の向きを正面に
+    calibrateZoom();     // 今の距離を等倍の基準に
+    calibrateEyesOpen(); // 今の目の大きさをまばたきなしに
+    setJustCalibrated(true);
+    clearTimeout(calibTimerRef.current);
+    calibTimerRef.current = setTimeout(() => setJustCalibrated(false), CALIBRATE_FEEDBACK_MS);
+  }
+  // アンマウント時にフィードバック用タイマーを後始末する（解除後の setState を避ける）。
+  useEffect(() => () => clearTimeout(calibTimerRef.current), []);
 
   // ユーザー操作（移動・ズーム）2層の現在値を userRef に反映。操作 effect とボタンの共通経路。
   function applyUserTransform() {
@@ -991,6 +1012,25 @@ function App() {
         textAlign: 'right', fontVariantNumeric: 'tabular-nums',
         pointerEvents: 'none', userSelect: 'none'
       }}>{isNarrow ? VERSION_LABEL_SHORT : VERSION_LABEL}</div>
+      )}
+
+      {/* 「校正」ボタン（右下）。今の向きを正面・今の距離を等倍の基準・今の目の大きさを
+          まばたきなしに、ワンタップでまとめて取り直す。バージョン表記／Tweaks ボタンの
+          上に重ねて右下に積む。配信(obsMode)には出さず、カメラを持たない rx でも出さない。 */}
+      {!obsMode && !isRx && (
+      <button
+        type="button"
+        onClick={calibrateAll}
+        title="今の向きを正面・今の距離を基準・今の目の大きさをまばたきなしに、まとめて校正する"
+        style={{
+          position: 'absolute', bottom: isNarrow ? 80 : 84, right: isNarrow ? 12 : 16, zIndex: 7,
+          padding: isNarrow ? '7px 15px' : '9px 18px', borderRadius: 999, cursor: 'pointer',
+          border: 'none', background: justCalibrated ? '#46C26A' : '#E8923C', color: '#fff',
+          fontSize: isNarrow ? 12 : 13, fontWeight: 800, letterSpacing: '0.08em',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.22)', whiteSpace: 'nowrap',
+          fontFamily: "'Zen Maru Gothic', sans-serif", transition: 'background 0.25s ease',
+        }}
+      >{justCalibrated ? '✓ 校正しました' : '校正'}</button>
       )}
 
       {/* カメラ起動エラーの詳細。原因切り分け用に obsMode でも常に表示する
