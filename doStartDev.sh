@@ -1,48 +1,78 @@
 #!/usr/bin/env bash
-# doRunDev.sh — vite dev(5173) を起動。ポートが残プロセスで埋まっていたら先に解放する。
+# doStartDev.sh — vite dev(5173) を起動。ポートが残プロセスで埋まっていたら先に解放する。
 #
 # vite は strictPort なので 5173 が空いていないと「Port 5173 is already in use」で失敗する。
 # 以前の `npm run dev` が残っているとこれが起きるため、起動前に 5173 のリスナーを終了する。
 # 終了は TERM（穏当）→ 効かなければ KILL(-9)。検出は lsof → fuser → ss の順に試す。
 #
-# tailscale があれば自動で HTTPS 配信する（iPhone など別端末からカメラ tx を開くため。
-# Safari は secure context でないと getUserMedia が動かない）。FQDN は固定値を埋め込まず
-# tailscale から動的取得し、証明書 <FQDN>.crt / <FQDN>.key を使う（無ければ発行を試みる）。
+# 接続モード（既定: localhost）:
+#   localhost (A): http で localhost 専用。同一PCでの開発・PC1台2タブの動作確認用（TLS 不要）。
+#   tailscale (B): tailscale 証明書で HTTPS 配信。iPhone/OBS など別端末からカメラ tx を開くとき
+#      （Safari は secure context でないと getUserMedia が動かない）。FQDN は固定値を埋め込まず
+#      tailscale から動的取得し、証明書 <FQDN>.crt / <FQDN>.key を使う（無ければ発行を試みる）。
 #
 # 使い方:
-#   ./doStartDev.sh            # ポート解放 →(tailscale があれば)HTTPS → npm run dev
-#   NO_TLS=1 ./doStartDev.sh   # TLS を使わず http で起動（localhost 専用・手順A）
+#   ./doStartDev.sh            # 既定=localhost（http://localhost:5173）
+#   ./doStartDev.sh -t         # tailscale で HTTPS（モードB）。--tailscale / --tls / TLS=1 でも可
+#   ./doStartDev.sh -l         # localhost を明示（モードA）。--localhost / --no-tls / NO_TLS=1 でも可
 #   PORT=5180 ./doStartDev.sh  # 別ポートを空ける（vite.fork.js のポートを変えた時など）
 #   DRY_RUN=1 ./doStartDev.sh  # ポートを空けるだけで dev は起動しない
-#   VITE_TLS_CERT=… VITE_TLS_KEY=… ./doStartDev.sh  # 証明書を明示指定（最優先）
+#   VITE_TLS_CERT=… VITE_TLS_KEY=… ./doStartDev.sh  # 証明書を明示指定（自動で B）
 #   ./doStartDev.sh -h
 set -euo pipefail
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+print_help() {
   cat <<'HELP'
-doRunDev.sh — vite dev(5173) を起動。ポートが残プロセスで埋まっていたら先に解放する。
+doStartDev.sh — vite dev(5173) を起動。ポートが残プロセスで埋まっていたら先に解放する。
+
+接続モード（既定: localhost）:
+  localhost (A): http で localhost 専用（TLS 不要・同一PC開発用）。http://localhost:5173。
+  tailscale (B): tailscale 証明書で HTTPS 配信（iPhone/OBS など別端末用）。
 
 使い方:
-  ./doStartDev.sh            5173 を空けてから（tailscale があれば HTTPS で）npm run dev
-  NO_TLS=1 ./doStartDev.sh   TLS を使わず http で起動（localhost 専用・手順A）
+  ./doStartDev.sh            既定=localhost（http://localhost:5173）
+  ./doStartDev.sh -t         tailscale で HTTPS。--tailscale / --tls / TLS=1 でも可
+  ./doStartDev.sh -l         localhost を明示。--localhost / --no-tls / NO_TLS=1 でも可
   PORT=5180 ./doStartDev.sh  別ポートを空ける（vite.fork.js のポートを変えた時など）
   DRY_RUN=1 ./doStartDev.sh  ポートを空けるだけで dev は起動しない
-  VITE_TLS_CERT=… VITE_TLS_KEY=… ./doStartDev.sh  証明書を明示指定（最優先）
+  VITE_TLS_CERT=… VITE_TLS_KEY=… ./doStartDev.sh  証明書を明示指定（自動で B）
 
 vite は strictPort なので 5173 が空いていないと起動に失敗する。以前の npm run dev が
 残っていると詰まるため、起動前に 5173 のリスナーを終了してから dev を立ち上げる。
 終了は TERM（穏当）→ 効かなければ KILL(-9)。
 
-TLS: tailscale から FQDN を動的取得し VITE_TLS_CERT=<FQDN>.crt VITE_TLS_KEY=<FQDN>.key を
+モードB: tailscale から FQDN を動的取得し VITE_TLS_CERT=<FQDN>.crt VITE_TLS_KEY=<FQDN>.key を
 渡して HTTPS 配信する。証明書が無ければ `tailscale cert <FQDN>` で発行を試みる。tailscale が
-無い／取得失敗時は警告のうえ http で起動する。
+無い／取得失敗時は警告のうえ http(モードA) にフォールバックする。
 HELP
-  exit 0
-fi
+}
+
+# A/B モードのフラグ（既定 A）。優先順位は後段で: 明示A > 明示cert > 明示B > 既定A。
+MODE_FLAG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) print_help; exit 0 ;;
+    -l|-a|--no-tls|--http|--localhost|--local) MODE_FLAG="A"; shift ;;
+    -t|-b|--tls|--https|--tailscale|--ts)      MODE_FLAG="B"; shift ;;
+    *) echo "不明な引数: $1（-h で使い方）" >&2; exit 2 ;;
+  esac
+done
 
 # スクリプトの場所＝プロジェクト直下。どこから呼んでも正しい場所で npm を実行する。
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-5173}"   # vite dev ポート（vite.fork.js の strictPort と一致）
+
+# 実効モード解決（既定 A）: 明示A(-a/NO_TLS) > 明示cert(VITE_TLS_*) > 明示B(-b/TLS) > 既定A。
+EXPLICIT_CERT=""
+if [[ "$MODE_FLAG" == "A" || "${NO_TLS:-}" == "1" ]]; then
+  MODE="A"
+elif [[ -n "${VITE_TLS_CERT:-}" && -n "${VITE_TLS_KEY:-}" ]]; then
+  MODE="B"; EXPLICIT_CERT="1"
+elif [[ "$MODE_FLAG" == "B" || "${TLS:-}" == "1" ]]; then
+  MODE="B"
+else
+  MODE="A"
+fi
 
 # そのポートで LISTEN しているか。
 port_in_use() {
@@ -97,22 +127,23 @@ resolve_tailscale_fqdn() {
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const n=JSON.parse(s)?.Self?.DNSName||"";process.stdout.write(n.replace(/\.$/,""))}catch{}})'
 }
 
-# VITE_TLS_CERT/KEY を解決して export する。HTTPS にできたら 0、http のままなら 1 を返す。
-# 優先順位: 明示指定(VITE_TLS_CERT/KEY) > NO_TLS=1(http) > tailscale 自動。
+# 解決済み $MODE に従って TLS を設定する。HTTPS(モードB) にできたら 0、http(モードA) なら 1。
 setup_tls() {
-  if [[ -n "${VITE_TLS_CERT:-}" && -n "${VITE_TLS_KEY:-}" ]]; then
-    echo "TLS: 明示指定を使用 (${VITE_TLS_CERT})"
-    return 0
-  fi
-  if [[ "${NO_TLS:-}" == "1" ]]; then
-    echo "TLS: NO_TLS=1 → http で起動（localhost 専用・手順A）"
+  if [[ "$MODE" != "B" ]]; then
+    # モードA: 明示的に http。残っている TLS 環境変数があっても vite に拾わせない。
+    unset VITE_TLS_CERT VITE_TLS_KEY 2>/dev/null || true
+    echo "モードA: http で起動（localhost 専用）。別端末から繋ぐなら -t / --tailscale でモードB"
     return 1
+  fi
+  if [[ -n "$EXPLICIT_CERT" ]]; then
+    echo "TLS: 明示指定の証明書を使用 (${VITE_TLS_CERT})"
+    return 0
   fi
   local fqdn cert key
   fqdn="$(resolve_tailscale_fqdn)"
   if [[ -z "$fqdn" ]]; then
-    echo "警告: tailscale FQDN を取得できません → http で起動します" >&2
-    echo "      （iPhone から繋ぐ場合は tailscale を起動して再実行。localhost だけなら無視可）" >&2
+    echo "警告: モードB ですが tailscale FQDN を取得できません → http(モードA) で起動します" >&2
+    echo "      （tailscale を起動して再実行。localhost だけなら -l／既定のままで可）" >&2
     return 1
   fi
   cert="${fqdn}.crt"; key="${fqdn}.key"
@@ -140,8 +171,10 @@ if [[ "${DRY_RUN:-}" == "1" ]]; then
   exit 0
 fi
 
-# HTTPS 配信の準備（tailscale 証明書を VITE_TLS_CERT/KEY に設定）。失敗時は http で続行。
-setup_tls || true
-
-echo "npm run dev を起動します (port $PORT / Ctrl+C で停止)..."
+# モードB なら HTTPS 配信を準備（失敗時は http へフォールバック）。モードA はそのまま http。
+if setup_tls; then
+  echo "npm run dev を起動します (モードB / port $PORT / Ctrl+C で停止)..."
+else
+  echo "npm run dev を起動します (モードA / http://localhost:$PORT / Ctrl+C で停止)..."
+fi
 exec npm run dev
