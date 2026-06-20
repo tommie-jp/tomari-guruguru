@@ -233,7 +233,7 @@ function TxQrButton({ url, subColor, inkColor, style }) {
         aria-expanded={open}
         style={{
           background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-          font: 'inherit', fontSize: 13, fontWeight: 700, letterSpacing: '0.06em',
+          font: 'inherit', fontSize: 14, fontWeight: 700, letterSpacing: '0.06em',
           color: open ? inkColor : subColor,
         }}
       >{`QRコード ${open ? '▲' : '▼'}`}</button>
@@ -246,11 +246,11 @@ function TxQrButton({ url, subColor, inkColor, style }) {
         }}>
           <QRCodeSVG value={url} size={232} level="M" marginSize={2}
             bgColor="#ffffff" fgColor="#1a1410" />
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#3c3026', letterSpacing: '0.04em', textAlign: 'center' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#3c3026', letterSpacing: '0.04em', textAlign: 'center' }}>
             iPhone のカメラで読み取り → tx を開く
           </div>
           <code style={{
-            fontSize: 10, lineHeight: 1.4, color: '#6a5a48',
+            fontSize: 11, lineHeight: 1.4, color: '#6a5a48',
             wordBreak: 'break-all', textAlign: 'center', userSelect: 'all',
           }}>{url}</code>
         </div>
@@ -770,8 +770,8 @@ function App() {
   // 左下にまとめる。右下 Tweaks ボタンの幅ぶんを空け、中央タイトル帯は少し上へ逃がす。
   const isNarrow = useIsNarrow();
   const ctl = isNarrow
-    ? { font: 11, pad: '5px 9px', gap: 6, dot: 8, slider: 64, mrFont: 10.5, mrPad: '4px 8px' }
-    : { font: 13, pad: '7px 12px', gap: 8, dot: 9, slider: 92, mrFont: 12, mrPad: '6px 10px' };
+    ? { font: 15, pad: '6px 11px', gap: 6, dot: 9, slider: 64, mrFont: 14, mrPad: '5px 9px' }
+    : { font: 14, pad: '7px 12px', gap: 8, dot: 9, slider: 92, mrFont: 13, mrPad: '6px 10px' };
 
   // rx はカメラを持たないので、状態表示は中継リンクの接続有無にする。
   const statusText = isRx
@@ -890,13 +890,13 @@ function App() {
         left: 0, right: 0,
         textAlign: 'center', pointerEvents: 'none'
       }}>
-        <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版</div>
-        <div style={{ fontSize: 'clamp(11px, 1.5vmin, 14px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
+        <div style={{ fontSize: 'clamp(20px, 2.6vmin, 28px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版</div>
+        <div style={{ fontSize: 'clamp(13px, 1.7vmin, 15px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
         {/* アバター画像の帰属表示（registry の attribution を per-avatar 表示）。
             01-tomari は原作ろてじん、02 はいらすとや素材＋ChatGPT 生成、のように出し分ける。
             親は pointerEvents:none なので、リンクだけ auto にしてクリック可能にする。
             配信オーバーレイ(obsMode)では他 UI と同様に非表示（このブロックごと !obsMode）。 */}
-        <div style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, marginTop: 4, letterSpacing: '0.04em' }}>
+        <div style={{ fontSize: 'clamp(12px, 1.5vmin, 14px)', color: subColor, marginTop: 4, letterSpacing: '0.04em' }}>
           {avatar.attribution.prefix}<a
             href={avatar.attribution.url}
             target="_blank"
@@ -904,14 +904,14 @@ function App() {
             style={{ color: inkColor, textDecoration: 'none', fontWeight: 700, pointerEvents: 'auto' }}
           >{avatar.attribution.name}</a>{avatar.attribution.suffix}
         </div>
-        <div style={{ fontSize: 'clamp(12px, 1.6vmin, 16px)', color: subColor, marginTop: 6, letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ fontSize: 'clamp(13px, 1.7vmin, 16px)', color: subColor, marginTop: 6, letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, display: 'inline-block' }}></span>
           {statusText}
         </div>
         {/* 実際にどのエンジンで推論しているか（Worker / メインスレッド）を常時表示。rx は推論なし。 */}
         {!isRx && (
         <div style={{ marginTop: 4 }}>
-          <span style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 'clamp(12px, 1.5vmin, 14px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: onWorker ? '#46C26A' : 'rgba(120,120,120,0.55)', display: 'inline-block' }}></span>
             推論: {engineLabel}{engineNote}
           </span>
@@ -920,7 +920,7 @@ function App() {
         {/* tx（iPhone）: 中継リンクと CEF（受信側）の接続状況を表示する。 */}
         {mode === 'tx' && (
         <div style={{ marginTop: 4 }}>
-          <span style={{ fontSize: 'clamp(10px, 1.3vmin, 12px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 'clamp(12px, 1.5vmin, 14px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: relayApi.peer.connected ? '#46C26A' : 'rgba(120,120,120,0.55)', display: 'inline-block' }}></span>
             {relayApi.linkUp
               ? (relayApi.peer.connected ? `CEF 接続中（${relayApi.peer.count}）` : 'CEF 未接続')
@@ -934,7 +934,7 @@ function App() {
       {!obsMode && (
       <a href="talk.html" style={{
         position: 'absolute', top: 'calc(18px + var(--sat))', right: 'calc(18px + var(--sar))',
-        fontSize: 13, fontWeight: 700,
+        fontSize: 14, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>口パク版 →</a>
       )}
@@ -942,7 +942,7 @@ function App() {
       {!obsMode && (
       <a href="tracking.html" style={{
         position: 'absolute', top: 'calc(40px + var(--sat))', right: 'calc(18px + var(--sar))',
-        fontSize: 13, fontWeight: 700,
+        fontSize: 14, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>手・ポーズ →</a>
       )}
@@ -959,7 +959,7 @@ function App() {
       {!obsMode && (
       <a href="https://github.com/tommie-jp/guruguru-avatar" target="_blank" rel="noopener noreferrer" style={{
         position: 'absolute', top: 'calc(84px + var(--sat))', right: 'calc(18px + var(--sar))',
-        fontSize: 13, fontWeight: 700,
+        fontSize: 14, fontWeight: 700,
         color: subColor, textDecoration: 'none', letterSpacing: '0.06em'
       }}>GitHub ↗</a>
       )}
@@ -969,7 +969,7 @@ function App() {
       {!obsMode && (
       <a href="index.html?tx" style={{
         position: 'absolute', top: 'calc(106px + var(--sat))', right: 'calc(18px + var(--sar))',
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: mode === 'tx' ? 900 : 700,
         color: mode === 'tx' ? inkColor : subColor,
         textDecoration: 'none', letterSpacing: '0.06em'
@@ -980,7 +980,7 @@ function App() {
       // rx は既定で透過＋UI 非表示なので、ブラウザのタブで確認できるよう ?obs=0 を付ける。
       <a href="index.html?rx&obs=0" style={{
         position: 'absolute', top: 'calc(128px + var(--sat))', right: 'calc(18px + var(--sar))',
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: mode === 'rx' ? 900 : 700,
         color: mode === 'rx' ? inkColor : subColor,
         textDecoration: 'none', letterSpacing: '0.06em'
@@ -1062,7 +1062,7 @@ function App() {
       {!obsMode && (
       <div style={{
         position: 'absolute', bottom: 'calc(54px + var(--sab))',
-        right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', fontSize: 11,
+        right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', fontSize: 12,
         color: subColor, opacity: 0.65, letterSpacing: '0.04em', whiteSpace: 'nowrap',
         textAlign: 'right', fontVariantNumeric: 'tabular-nums',
         pointerEvents: 'none', userSelect: 'none'
@@ -1083,7 +1083,7 @@ function App() {
           right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', zIndex: 7,
           padding: isNarrow ? '7px 15px' : '9px 18px', borderRadius: 999, cursor: 'pointer',
           border: 'none', background: justCalibrated ? '#46C26A' : '#E8923C', color: '#fff',
-          fontSize: isNarrow ? 12 : 13, fontWeight: 800, letterSpacing: '0.08em',
+          fontSize: isNarrow ? 15 : 14, fontWeight: 800, letterSpacing: '0.08em',
           boxShadow: '0 4px 14px rgba(0,0,0,0.22)', whiteSpace: 'nowrap',
           fontFamily: "'Zen Maru Gothic', sans-serif", transition: 'background 0.25s ease',
         }}
@@ -1097,7 +1097,7 @@ function App() {
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
           maxWidth: 'min(92vw, 560px)', maxHeight: '80vh', overflow: 'auto',
           background: 'rgba(20,16,14,0.92)', color: '#fff', borderRadius: 12,
-          padding: '14px 16px', fontFamily: 'ui-monospace, monospace', fontSize: 12,
+          padding: '14px 16px', fontFamily: 'ui-monospace, monospace', fontSize: 13,
           lineHeight: 1.65, zIndex: 20, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
           border: '1px solid rgba(229,72,77,0.6)', boxShadow: '0 8px 28px rgba(0,0,0,0.4)'
         }}>
@@ -1137,7 +1137,7 @@ function App() {
           style={{
             width: 'min(220px, 52vw)',
             background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
-            padding: '10px 12px', fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
             zIndex: 6, lineHeight: 1.4,
             maxHeight: 'calc(100vh - 84px)', overflow: 'hidden',
           }}
@@ -1171,7 +1171,7 @@ function App() {
           defaultStyle={{ top: 16, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
           style={{
             background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
-            padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
+            padding: '10px 12px', fontSize: 13, fontFamily: 'ui-monospace, monospace',
             lineHeight: 1.5,
           }}
         >
@@ -1245,7 +1245,7 @@ function App() {
         <TweakSection label="アバター" collapsible>
           {avatarParam ? (
             <TweakRow label="キャラ" value="URL固定">
-              <span style={{ fontSize: 13, opacity: 0.8 }}>{avatar.displayName}</span>
+              <span style={{ fontSize: 14, opacity: 0.8 }}>{avatar.displayName}</span>
             </TweakRow>
           ) : (
             <TweakSelect label="キャラ" value={avatar.id}
@@ -1253,13 +1253,13 @@ function App() {
               onChange={(v) => setTweak('avatarId', v)}></TweakSelect>
           )}
           <TweakRow label="クレジット">
-            <span style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.4 }}>{avatar.credit}</span>
+            <span style={{ fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>{avatar.credit}</span>
           </TweakRow>
         </TweakSection>
         <TweakSection label="カメラ" collapsible>
           {cameraParam ? (
             <TweakRow label="カメラ" value="URL固定">
-              <span style={{ fontSize: 13, opacity: 0.8 }}>{cameraLabelEff}</span>
+              <span style={{ fontSize: 14, opacity: 0.8 }}>{cameraLabelEff}</span>
             </TweakRow>
           ) : (
             <TweakSelect label="カメラ" value={cameraSelectValue}

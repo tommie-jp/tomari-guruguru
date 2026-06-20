@@ -27,10 +27,12 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from make_dummy_sheets import make_sheet  # noqa: E402 (パス調整後に import)
+from key_template_bg import alpha_from_bg, detect_bg  # noqa: E402
 
 DEFAULT_PROMPT_FILE = Path("docs/01_画像生成用プロンプト.txt")
 DEFAULT_TEMPLATE = Path("docs/01_画像生成用テンプレ.png")
@@ -55,6 +57,9 @@ FALLBACK_DIFF = {
     "mouth_open": "この画像の全てのポジションの開けている口を「あ」の口で開けている口にして欲しい。口以外は変更しないで",
     "mouth_mid": "この画像の全てのポジションの開けている口小さく開けている口にして欲しい。口以外は変更しないで",
 }
+# 透過(background=transparent)・input_fidelity 非対応のモデル(Web「Images 2.0」=gpt-image-2系)。
+# 指定時は opaque(グレー)出力＋後段の背景キー抜きへ自動フォールバックする。
+NO_TRANSPARENT_MODELS = ("gpt-image-2", "chatgpt-image-latest")
 
 
 def extract_base_prompt(text: str) -> str:
@@ -91,6 +96,23 @@ def png_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
     img.save(buf, "PNG")
     return buf.getvalue()
+
+
+def key_if_opaque(data: bytes, threshold: int, feather: float = 1.5) -> bytes:
+    """不透明な(=透過の無い)シートなら、外周連結の背景をキー抜きして透過PNGにして返す。
+
+    gpt-image-2 のように透過非対応モデルがグレー背景で出した5×5シートを slice に通せる
+    ようにするための後処理。既に透過があればそのまま返す(no-op)。
+    """
+    img = Image.open(io.BytesIO(data)).convert("RGBA")
+    arr = np.asarray(img)
+    if (arr[:, :, 3] == 0).any():
+        return data  # 既に透過あり(1.5 の background=transparent 出力など)
+    rgb = arr[:, :, :3]
+    bg = detect_bg(rgb.astype(np.int16))
+    alpha = alpha_from_bg(rgb, bg, threshold, feather)
+    out = Image.fromarray(np.dstack([rgb, alpha]), "RGBA")
+    return png_bytes(out)
 
 
 def gptimage_edit(
@@ -150,22 +172,47 @@ def main() -> None:
     parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
     parser.add_argument("--prompt-file", type=Path, default=DEFAULT_PROMPT_FILE)
     parser.add_argument("--out", type=Path, default=Path("/tmp/gptimage_sheets"))
-    parser.add_argument("--model", default="gpt-image-1.5")
+    parser.add_argument("--model", default="gpt-image-2", help="既定 gpt-image-2(Web「Images 2.0」相当・透過非対応)")
     parser.add_argument("--mini", action="store_true", help="model を gpt-image-1-mini にする(ドラフト/安価)")
+    parser.add_argument(
+        "--image2",
+        action="store_true",
+        help="model を gpt-image-2 に明示(既定もこれ)。Web「Images 2.0」相当・5×5一発が最良",
+    )
     parser.add_argument("--n", type=int, default=3, help="base A の候補数(良いものを選ぶ)")
     parser.add_argument("--diff-n", type=int, default=2, help="差分各段の候補数")
     parser.add_argument("--pick", type=int, default=0, help="採用する候補index(既定0)")
     parser.add_argument("--size", default="1024x1024")
     parser.add_argument("--quality", default="high", choices=["low", "medium", "high"])
-    parser.add_argument("--background", default="transparent", choices=["transparent", "opaque"])
+    parser.add_argument("--background", default="opaque", choices=["transparent", "opaque"])
     parser.add_argument("--input-fidelity", default="high", choices=["high", "low", "none"])
+    parser.add_argument(
+        "--auto-key",
+        action="store_true",
+        help="不透明シートの背景を自動キー抜きして透過にする(既定OFF・透過は後処理で行う前提)",
+    )
+    parser.add_argument("--key-threshold", type=int, default=40, help="背景キー抜きの色差しきい値")
     parser.add_argument("--cell", type=int, default=900, help="dry-run ダミーの1セルpx")
     parser.add_argument("--margin", type=int, default=120)
     parser.add_argument("--dry-run", action="store_true", help="APIを呼ばず配管だけ検証")
     args = parser.parse_args()
 
-    model = "gpt-image-1-mini" if args.mini else args.model
+    if args.image2:
+        model = "gpt-image-2"
+    elif args.mini:
+        model = "gpt-image-1-mini"
+    else:
+        model = args.model
+    background = args.background
     input_fidelity = None if args.input_fidelity == "none" else args.input_fidelity
+    # gpt-image-2 系は透過/ input_fidelity 非対応 → opaque＋後段キー抜きへ自動フォールバック。
+    if model.startswith(NO_TRANSPARENT_MODELS):
+        if background == "transparent":
+            print(f"  注意: {model} は透過非対応 → background=opaque(後段で背景キー抜き)", file=sys.stderr)
+            background = "opaque"
+        if input_fidelity is not None:
+            print(f"  注意: {model} は input_fidelity 指定不可 → 省略", file=sys.stderr)
+            input_fidelity = None
 
     text = args.prompt_file.read_text(encoding="utf-8")
     base_prompt = extract_base_prompt(text)
@@ -189,7 +236,7 @@ def main() -> None:
             raise SystemExit("openai が無い。`pip install openai` を実行してください") from exc
         client = OpenAI()
 
-    print(f"model={model}  dry_run={args.dry_run}  character={[p.name for p in char_imgs]}")
+    print(f"model={model}  background={background}  dry_run={args.dry_run}  character={[p.name for p in char_imgs]}")
     print(f"base prompt: {len(base_prompt)}字 / 差分: {list(diffs)}")
 
     sheets: dict[str, Path] = {}
@@ -212,16 +259,28 @@ def main() -> None:
         else:
             datas = gptimage_edit(
                 client, model, inputs, prompt, args.size, n,
-                args.quality, args.background, input_fidelity,
+                args.quality, background, input_fidelity,
             )
 
         for i, data in enumerate(datas):
             (args.out / f"{state}_cand{i}.png").write_bytes(data)
         pick = min(args.pick, len(datas) - 1)
+        raw = datas[pick]
         dst = args.out / f"{state}.png"
-        dst.write_bytes(datas[pick])
-        sheets[state] = dst
-        print(f"     -> {dst}  (候補{len(datas)}枚, 採用#{pick})")
+        if args.auto_key:
+            # 連鎖入力はモデルのネイティブ出力(グレー)を残し、slice 用に透過化する。
+            raw_path = args.out / f"{state}_raw.png"
+            raw_path.write_bytes(raw)
+            sheets[state] = raw_path
+            final = key_if_opaque(raw, args.key_threshold)
+            dst.write_bytes(final)
+            note = "・背景キー抜き" if final is not raw else ""
+        else:
+            # 透過処理なし(後処理で行う)。生成シートをそのまま保存し連鎖入力にも使う。
+            dst.write_bytes(raw)
+            sheets[state] = dst
+            note = ""
+        print(f"     -> {dst}  (候補{len(datas)}枚, 採用#{pick}{note})")
 
     print(f"done: A〜F -> {args.out}")
 

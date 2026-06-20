@@ -74,7 +74,7 @@ const __TWEAKS_STYLE = `
     background:rgba(41,38,27,.86);color:#fff;
     -webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);
     box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 0 rgba(255,255,255,.2) inset;
-    font:12px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;font-weight:700;
+    font:14px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;font-weight:700;
     letter-spacing:.01em;cursor:pointer}
   .twk-fab:hover{background:rgba(41,38,27,.94)}
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
@@ -84,12 +84,12 @@ const __TWEAKS_STYLE = `
     -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
     border:.5px solid rgba(255,255,255,.6);border-radius:14px;
     box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
-    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+    font:14px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
   .twk-hd{display:flex;align-items:center;justify-content:space-between;
     padding:10px 8px 10px 14px;cursor:move;user-select:none}
-  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-hd b{font-size:15px;font-weight:600;letter-spacing:.01em}
   .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
-    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+    width:24px;height:24px;border-radius:6px;cursor:default;font-size:16px;line-height:1}
   .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
   .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
     overflow-y:auto;overflow-x:hidden;min-height:0;
@@ -108,19 +108,19 @@ const __TWEAKS_STYLE = `
   .twk-lbl>span:first-child{font-weight:500}
   .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
 
-  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  .twk-sect{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
     color:rgba(41,38,27,.45);padding:10px 0 0}
   .twk-sect:first-child{padding-top:0}
 
   /* fork:sections — 折りたたみセクションのヘッダ（クリックで開閉） */
   .twk-sect-btn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;
     appearance:none;border:0;background:transparent;cursor:default;
-    font:600 10px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;
+    font:600 11px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;
     letter-spacing:.06em;text-transform:uppercase;color:rgba(41,38,27,.45);
     padding:10px 0 0}
   .twk-sect-btn:first-child{padding-top:0}
   .twk-sect-btn:hover{color:rgba(41,38,27,.7)}
-  .twk-sect-chev{flex:0 0 auto;font-size:8px;line-height:1;color:rgba(41,38,27,.4);
+  .twk-sect-chev{flex:0 0 auto;font-size:9px;line-height:1;color:rgba(41,38,27,.4);
     transition:transform .15s}
   .twk-sect-btn[data-open="1"] .twk-sect-chev{transform:rotate(90deg)}
 
@@ -180,7 +180,7 @@ const __TWEAKS_STYLE = `
   .twk-presets-row{display:flex;gap:6px;align-items:center}
   .twk-presets-row .twk-field{flex:1 1 auto}
   .twk-presets-row .twk-btn{flex:0 0 auto}
-  .twk-presets-empty{font-size:11px;color:rgba(0,0,0,.45);padding:2px 0}
+  .twk-presets-empty{font-size:13px;color:rgba(0,0,0,.45);padding:2px 0}
 
   .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
     border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
@@ -209,12 +209,12 @@ const __TWEAKS_STYLE = `
   @media (max-width:480px){
     .twk-panel{width:calc(100vw - 24px);right:12px;bottom:12px;max-height:72vh}
     .twk-fab{right:calc(12px + env(safe-area-inset-right));
-      bottom:calc(12px + env(safe-area-inset-bottom));padding:12px 16px;font-size:13px}
+      bottom:calc(12px + env(safe-area-inset-bottom));padding:12px 16px;font-size:15px}
     .twk-hd{padding:12px 10px 12px 16px}
-    .twk-hd b{font-size:14px}
-    .twk-x{width:32px;height:32px;font-size:17px}
-    .twk-body{padding:2px 16px 16px;gap:14px;font-size:13px}
-    .twk-sect,.twk-sect-btn{font-size:11px}
+    .twk-hd b{font-size:16px}
+    .twk-x{width:32px;height:32px;font-size:18px}
+    .twk-body{padding:2px 16px 16px;gap:14px;font-size:16px}
+    .twk-sect,.twk-sect-btn{font-size:12px}
     .twk-sect-btn{padding-top:14px}
     .twk-sect-btn:first-child{padding-top:0}
     .twk-slider{height:6px;margin:9px 0}
@@ -635,12 +635,12 @@ function TweakRadio({ label, value, options, onChange }) {
 
   // Segments wrap mid-word once per-segment width runs out. The track is
   // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
-  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
-  // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
+  // to its own padding, and 14px system-ui averages ~7.7px/char — so 2
+  // options fit ~14 chars each, 3 fit ~8. Past that (or >3 options), fall
   // back to a dropdown rather than wrap.
   const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
   const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
-  const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
+  const fitsAsSegments = maxLen <= ({ 2: 14, 3: 8 }[options.length] ?? 0);
   if (!fitsAsSegments) {
     // <select> emits strings — map back to the original option value so the
     // fallback stays type-preserving (numbers, booleans) like the segment path.

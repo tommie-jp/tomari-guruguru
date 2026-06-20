@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   mergeIntoDefaults,
   effectiveDefaultsFrom,
@@ -6,6 +6,8 @@ import {
   serializePresets,
   parsePresetsImport,
   selectBuiltinPresets,
+  isHtmlFallback,
+  fetchBuiltinPresets,
   PRESETS_EXPORT_VERSION,
   panelPosStorageKey,
   loadPanelPos,
@@ -158,6 +160,86 @@ describe('selectBuiltinPresets', () => {
   it('オブジェクトでない入力には {}', () => {
     expect(selectBuiltinPresets(null, 'k')).toEqual({});
     expect(selectBuiltinPresets('x', 'k')).toEqual({});
+  });
+});
+
+describe('isHtmlFallback', () => {
+  it('Content-Type が HTML なら true', () => {
+    expect(isHtmlFallback('text/html; charset=utf-8', '{}')).toBe(true);
+  });
+
+  it('本文が < で始まれば true（Content-Type 無しでも検知）', () => {
+    expect(isHtmlFallback('', '<!DOCTYPE html>\n<html>')).toBe(true);
+    expect(isHtmlFallback(null, '  <html>')).toBe(true);
+  });
+
+  it('正常な JSON 応答は false', () => {
+    expect(isHtmlFallback('application/json', '{"presets":{}}')).toBe(false);
+  });
+
+  it('壊れた JSON（HTML でない）は false（本物の異常として扱う）', () => {
+    expect(isHtmlFallback('application/json', '{not json')).toBe(false);
+  });
+});
+
+describe('fetchBuiltinPresets', () => {
+  let fetchSpy;
+  let warnSpy;
+  let errorSpy;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    if (fetchSpy) fetchSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  function mockFetch({ ok = true, status = 200, contentType = 'application/json', body = '{}' }) {
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok,
+      status,
+      headers: { get: () => contentType },
+      text: async () => body,
+    });
+  }
+
+  it('正常な JSON 応答からプリセットを取り出す', async () => {
+    mockFetch({ body: JSON.stringify({ presets: { 標準: { a: 1 } } }) });
+    const out = await fetchBuiltinPresets('/', 'camera', null);
+    expect(out).toEqual({ 標準: { a: 1 } });
+    expect(fetchSpy).toHaveBeenCalledWith('/default-themes/camera.json');
+  });
+
+  it('HTTP 404 は {}（warn のみ、error は出さない）', async () => {
+    mockFetch({ ok: false, status: 404, contentType: 'text/html', body: '<!DOCTYPE html>' });
+    const out = await fetchBuiltinPresets('/', 'camera', null);
+    expect(out).toEqual({});
+    expect(warnSpy).toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('200 だが HTML フォールバック応答は {}（error は出さない）', async () => {
+    mockFetch({ ok: true, status: 200, contentType: 'text/html', body: '<!DOCTYPE html>\n<html></html>' });
+    const out = await fetchBuiltinPresets('/', 'index', null);
+    expect(out).toEqual({});
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('200 で本当に壊れた JSON は {}（error を出す）', async () => {
+    mockFetch({ ok: true, status: 200, contentType: 'application/json', body: '{not json' });
+    const out = await fetchBuiltinPresets('/', 'camera', null);
+    expect(out).toEqual({});
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('baseUrl を前置してパスを組み立てる', async () => {
+    mockFetch({ body: '{}' });
+    await fetchBuiltinPresets('/guruguru-avatar/', 'talk', null);
+    expect(fetchSpy).toHaveBeenCalledWith('/guruguru-avatar/default-themes/talk.json');
   });
 });
 

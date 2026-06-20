@@ -92,6 +92,27 @@ const AVATAR_DEFS = [
       suffix: ' 素材を元に ChatGPT で作成 ／ 非商用',
     },
   },
+  {
+    id: '04-nijika',
+    displayName: '虹夏',
+    // sheet 方式のみ（個別スライスは持たない）。camera は sheetUrls() しか参照しないので
+    // basePath/src() は未使用。doAvatarConvert.sh で slices2-sheets/<id>/ を生成する。
+    ext: 'webp',
+    rows: 5,
+    cols: 5,
+    sheets: DEFAULT_SHEETS,
+    // いらすとや素材を ChatGPT(画像生成)で派生させたもの。いらすとや規約＋OpenAI規約が重なり、
+    // 素材を主体とする再配布/販売・商用は高リスクなので非商用に限定する。
+    commercial: false,
+    credit:
+      'いらすとや素材を元に ChatGPT（画像生成）で作成。いらすとや利用規約に従う（商用利用・素材を主体とする再配布/販売は不可）',
+    attribution: {
+      prefix: 'キャラクター: ',
+      name: 'いらすとや',
+      url: 'https://www.irasutoya.com/p/terms.html',
+      suffix: ' 素材を元に ChatGPT で作成 ／ 非商用',
+    },
+  },
 ];
 
 // 1つの定義オブジェクトに参照ヘルパーを生やしてアバター設定オブジェクトを作る。

@@ -155,8 +155,21 @@ export function selectBuiltinPresets(data, expectedKey) {
   return sanitizePresets(unwrapPresetsEnvelope(data));
 }
 
+// 応答が JSON ではなく HTML（dev サーバーや SPA フォールバックの index.html）か。
+// 存在しない .json でも 200 で index.html を返すホストがあり、その場合 res.ok は
+// true のまま本文が HTML になる。Content-Type が HTML、または本文が '<' で始まれば
+// 「配布テーマ未配置」とみなす。壊れた JSON（'<' で始まらない）は false のまま
+// 本物の異常として扱い、呼び出し側で error ログに残す。
+export function isHtmlFallback(contentType, text) {
+  if (typeof contentType === 'string' && contentType.toLowerCase().includes('html')) {
+    return true;
+  }
+  return /^\s*</.test(text || '');
+}
+
 // public/default-themes/<page>.json を取得してビルトインプリセットを返す。
-// 404・ネットワーク不通・壊れた JSON・ページ不一致はすべて {}（無害に無効化）。
+// 404・ネットワーク不通・壊れた JSON・ページ不一致・HTML フォールバックは
+// すべて {}（無害に無効化）。
 export async function fetchBuiltinPresets(baseUrl, page, expectedKey) {
   const url = (baseUrl || '/') + 'default-themes/' + page + '.json';
   try {
@@ -167,7 +180,15 @@ export async function fetchBuiltinPresets(baseUrl, page, expectedKey) {
       console.warn(`[tweaks] 配布デフォルトテーマを読み込めません (HTTP ${res.status}): ${url}`);
       return {};
     }
-    return selectBuiltinPresets(JSON.parse(await res.text()), expectedKey);
+    const text = await res.text();
+    // dev サーバー（Vite）や SPA フォールバックのある静的ホストは、存在しない
+    // .json でも 200 で index.html を返す。これは「未配置」であって異常ではない
+    // ので、JSON.parse して error を出さず、HTML を検知して warn で無害に {}。
+    if (isHtmlFallback(res.headers.get('content-type'), text)) {
+      console.warn(`[tweaks] 配布デフォルトテーマは未配置です（HTML フォールバック応答）: ${url}`);
+      return {};
+    }
+    return selectBuiltinPresets(JSON.parse(text), expectedKey);
   } catch (err) {
     // ネットワーク不通や JSON パース失敗など「読めない」ケース。原因を添えて出す。
     console.error(`[tweaks] 配布デフォルトテーマの読み込みに失敗しました: ${url}`, err);

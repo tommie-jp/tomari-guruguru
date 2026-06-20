@@ -102,22 +102,28 @@ API キー取得・課金の前に、0円で「配管」と「実生成」を検
 > 出力モデルに無料で通る保証は弱い。$300 クレジットも Gemini API/AI Studio には使えない。
 > スクリプト自動化で確実に0円なら Pollinations / Cloudflare を優先する。
 
-### ③ 本番は gpt-image-1.5 / mini へ差し替え ＝ 有料・要本人確認
+### ③ 本番は gpt-image-2（既定）/ 1.5 / mini ＝ 有料・要本人確認
 
 実装済み（dry-run で配管 PASS）。`tools/gen_gptimage_sheets.py` ＋ `doGenGptImage.sh` が
 `docs/01_画像生成用プロンプト.txt` のワークフロー（キャラ参照＋テンプレ＋■最初の指示 →
-base A → 表情差分の連鎖編集 → A〜F）を `images.edit` で再現する。
+base A → 表情差分の連鎖編集 → A〜F）を `images.edit` で再現する。**既定は `gpt-image-2` で
+グレー背景の A〜F を出力し、透過処理は後処理で行う**（手動ワークフローの「背景はグレー」と一致）。
 
 ```bash
 ./doGenGptImage.sh <キャラ参照画像> <id> --dry-run --slice  # キー不要で配管検証(0円)
-./doGenGptImage.sh <キャラ参照画像> <id>                    # 本番(要 OPENAI_API_KEY)
-./doGenGptImage.sh <キャラ参照画像> <id> --mini             # 安価ドラフト
+./doGenGptImage.sh <キャラ参照画像> <id>                    # 既定: gpt-image-2 でグレー A〜F(透過は後処理)
+./doGenGptImage.sh <キャラ参照画像> <id> --mini             # 安価ドラフト(gpt-image-1-mini)
+./doGenGptImage.sh <キャラ参照画像> <id> --transparent      # gpt-image-1.5 で透過PNGを直接出力
+# 後処理(グレー→透過＋正規化): ./doAvatarConvert.sh <出力dir> <id>
 ```
 
-- 連鎖: A(base, n=3) → A から D(目閉じ)/B(口中間)/C(口開け)、D から E/F（浅い枝でドリフト
-  最小）。差分は「○○以外変更しない・全ポジションに適用」を付けて部分適用を防ぐ。
-- `background="transparent"` で透過 PNG を直接出力 → 手動の透過処理を概ね置換（破綻時は
-  `--opaque` でグレー出力 → slice のクロマ抜きにフォールバック）。
+- **モデルの対応**: Web「Images 2.0」＝ API `gpt-image-2`（5×5一発の追従が最良だが**透過非対応・
+  `input_fidelity` 不可**）。既定はこの `gpt-image-2`（グレー出力・透過は後処理）。透過を直接
+  出したいときは `--transparent`（`gpt-image-1.5`＝透過＋忠実度を両立する現行唯一）。
+- 連鎖: A(base, n=3) → A から D(目閉じ)/B(口中間)/C(口開け)、D から E/F（浅い枝でドリフト最小）。
+  差分は「○○以外変更しない・全ポジションに適用」を付けて部分適用を防ぐ。
+- 透過処理は既定 OFF（後処理で実施）。`--slice` を付けたときだけ自動で背景キー抜きして slice 検証
+  する。後処理は `doAvatarConvert.sh`（グレー背景キー抜き＋正規化 → `slices2-sheets/<id>`）が使える。
 - ⚠️ キャラ参照は**単体のキャラ画像1枚**を渡す（複数なら同一キャラの参照を入れたフォルダ）。
 - 4倍アップスケールは API 単体では不可（size 上限 1536）→ Real-ESRGAN 等で別途。
 
@@ -226,10 +232,11 @@ def generate_sheet(state, prompt, ref_path=None):
 
 ## 重要な注意（検証で確定）
 
-- **5×5 を1枚で正確に描くのは全 AI が苦手**。25方向の角度整合＋透過背景を1枚で安定生成
-  するのは困難。現実解は「1コマずつ生成 → 5×5 にパッキング」か、ローカル ComfyUI / A1111
-  （0円・RTX4060 級可）で IPAdapter＋ControlNet により角度・顔を制御する方式。プロンプト
-  だけの一発5×5はリトライ・検証必須。
+- **5×5 一発生成の格子整列はモデル依存**。Web の Images 2.0（＝ API `gpt-image-2`）は一発で
+  実用的に出るので、**本スクリプト既定は `gpt-image-2`（グレー出力・透過は後処理）**。透過を
+  直接出したいときは `--transparent`（`gpt-image-1.5`＝透過＋忠実度を両立する現行唯一）。1.5 は
+  整列が崩れ得るので base は `n=3` で候補生成 → 選別。無料の Pollinations/flux は5×5を正確に
+  描けない。`--slice` を付けたときだけ自動で背景キー抜きして slice 検証する。
 - **透過前提**。slice は前景アルファ前提（`alpha-threshold` / `component-mode`）なので、
   生成画像は `rembg` 等で背景除去してから流す。
 - **商用不可**。本プロジェクトのアセットは非商用（`ASSET_LICENSE.md`）。無料枠は
@@ -245,7 +252,7 @@ def generate_sheet(state, prompt, ref_path=None):
 - [ ] **②拡張**: 25方向を per-cell 生成（1コマずつ→パッキング）して、敷き詰めでなく実シートにする。
 - [ ] 生成→保存→slice を Python 1スクリプト（`generate_sheet()` 差し替え式）にまとめる。
 - [x] **③本番スクリプト**: `doGenGptImage.sh`（docs プロンプト準拠・連鎖編集）実装、dry-run PASS。
-- [ ] **③登録**: org verification を通し、`gpt-image-1-mini` で実生成・品質/費用を体感。
+- [ ] **③登録**: org verification を通し、既定の `gpt-image-2`（または `--mini`）で実生成・品質/費用を体感。
 - [ ] 1枚5×5が安定しないなら「1コマ生成→パッキング」or ローカル ComfyUI を検討。
 
 ## 参考リンク
