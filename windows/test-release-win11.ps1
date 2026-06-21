@@ -149,8 +149,17 @@ try {
   }
   throw
 }
-$asset = $rel.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
-if (-not $asset) { throw "リリース $($rel.tag_name) に .zip アセットが見つかりません。" }
+# これは Windows 実機テストなので、必ず win 版 zip を選ぶ。リリースには
+# linux/macOS の zip も含まれ、GitHub はアセットを名前順（linux < macos < win）で
+# 返すため、単純な「先頭 .zip」だと linux を掴んで start.bat が無くて失敗する。
+$asset = $rel.assets | Where-Object { $_.name -like '*-win-*.zip' } | Select-Object -First 1
+if (-not $asset) {
+  # 旧命名（プラットフォーム名なし）への後方互換: 他 OS 版を除いた .zip を拾う。
+  $asset = $rel.assets |
+    Where-Object { $_.name -like '*.zip' -and $_.name -notlike '*linux*' -and $_.name -notlike '*macos*' } |
+    Select-Object -First 1
+}
+if (-not $asset) { throw "リリース $($rel.tag_name) に Windows 版 (.zip) アセットが見つかりません。" }
 $sizeMB = [math]::Round($asset.size / 1MB, 1)
 Ok "最新版: $($rel.tag_name)  /  asset: $($asset.name)  (${sizeMB} MB)"
 

@@ -103,8 +103,12 @@ deploy_pages() {
 
   # 反映確認（CDN 反映に数秒かかることがあるので非致命的）
   echo "反映を確認中..."
-  code=$(curl -fsS -o /dev/null -w '%{http_code}' "${SITE_URL}camera.html" 2>/dev/null || echo "000")
-  echo "camera.html: HTTP $code"
+  # フォーク版のトップ（index.html＝カメラ/Pixi 版）で反映を確認する。
+  # camera.html は廃止済み（現行のエントリは index.html / camera2.html / tracking.html）。
+  # -f は付けない: 付けると 4xx でも非ゼロ終了し、-w の出力と '000' が連結して
+  # "404000" のような誤解を招く表示になるため。終了コードは || で個別に処理する。
+  code=$(curl -sS -o /dev/null -w '%{http_code}' "${SITE_URL}index.html" 2>/dev/null) || code="000"
+  echo "index.html: HTTP $code"
 
   echo "✓ デプロイ完了: $SITE_URL"
 }
