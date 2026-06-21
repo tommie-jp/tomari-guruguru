@@ -280,31 +280,34 @@ function TxQrButton({ url, subColor, inkColor, style }) {
 // 振り幅を校正する（中央=正面）。flash[dir] が 'ok'/'err' のときボタン上に ✓/✗ を出す。
 // スマホでも押しやすいよう各マスは最小 56px、文字は clamp で可変にする。
 function DirectionCross({ flash = {}, onDir, onCenter }) {
+  // デバッグHUDのグリッド風セル。通常は半透明、中央「正」は橙ハイライト、ok/err は緑/赤。
   const CELL = {
-    border: 'none', borderRadius: 12, cursor: 'pointer',
-    color: '#fff', fontWeight: 800, letterSpacing: '0.06em',
-    fontFamily: "'Zen Maru Gothic', sans-serif",
-    fontSize: 'clamp(15px, 4.2vmin, 19px)', minHeight: 56, padding: '10px 0',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.18)', transition: 'background 0.2s ease',
+    border: '1px solid rgba(255,255,255,0.14)', borderRadius: 5, cursor: 'pointer',
+    color: '#fff', fontWeight: 700, letterSpacing: '0.04em', fontFamily: 'inherit',
+    fontSize: 'clamp(13px, 3.6vmin, 16px)', minHeight: 40, padding: '7px 0',
+    transition: 'background 0.15s ease',
   };
-  const bgFor = (st) => (st === 'ok' ? '#46C26A' : st === 'err' ? '#D9534F' : '#E8923C');
+  const bgFor = (st, center) => (
+    st === 'ok' ? '#46C26A' : st === 'err' ? '#D9534F'
+      : center ? 'rgba(255,177,61,0.85)' : 'rgba(255,255,255,0.16)'
+  );
   const textFor = (st, label) => (st === 'ok' ? '✓' : st === 'err' ? '✗' : label);
-  const cell = (dir, label, area, onClick, title) => {
+  const cell = (dir, label, area, onClick, title, center = false) => {
     const st = flash[dir];
     return (
       <button type="button" onClick={onClick} title={title}
-        style={{ ...CELL, gridArea: area, background: bgFor(st) }}>{textFor(st, label)}</button>
+        style={{ ...CELL, gridArea: area, background: bgFor(st, center) }}>{textFor(st, label)}</button>
     );
   };
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+      display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4,
       gridTemplateAreas: '". up ." "left center right" ". down ."',
-      maxWidth: 240, margin: '6px auto 2px',
+      maxWidth: 168, margin: '2px auto',
     }}>
       {cell('up', '上', 'up', () => onDir('up'), '顔を上に向け切って押す（上端に校正）')}
       {cell('left', '左', 'left', () => onDir('left'), '顔を左に向け切って押す（左端に校正）')}
-      {cell('center', '正', 'center', onCenter, '向き・距離・目・かしげをまとめて校正（旧「校正」ボタン）')}
+      {cell('center', '正', 'center', onCenter, '向き・距離・目・かしげをまとめて校正', true)}
       {cell('right', '右', 'right', () => onDir('right'), '顔を右に向け切って押す（右端に校正）')}
       {cell('down', '下', 'down', () => onDir('down'), '顔を下に向け切って押す（下端に校正）')}
     </div>
@@ -456,6 +459,7 @@ function App() {
   // 逆向きは 'err' を一定時間出す。方向ごとに別タイマーで消す。
   const [dirFlash, setDirFlash] = useState({});
   const dirFlashTimersRef = useRef({});
+  const [showCalibDetail, setShowCalibDetail] = useState(false); // 向き校正パネルの説明を展開するか
   // スマホ用「反映先」トグル。ON のとき操作は local 層（この端末だけ・CEF へ送らない）。
   // PC は Shift キーでも同じ層に切り替わる（layerFor が OR で見る）。ref は effect から参照。
   const [localMode, setLocalMode] = useState(false);
@@ -1422,14 +1426,7 @@ function App() {
             fontVariantNumeric: 'tabular-nums', // 桁が変わっても幅が動かないよう等幅数字
           }}
         >
-          <div>row {cell.r} / col {cell.c}</div>
-          <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
-          <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
-          <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
-          <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
-          <div>size {faceScaleRef.current.toFixed(3)} / zoom {smoothStateRef.current.zoom.toFixed(2)}x</div>
-          <div>engine {status.engine || '—'}{engineNote}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginTop: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 14px)', gap: 3, marginBottom: 6 }}>
             {frames.map(({ r, c }) => (
               <div key={`d${r}-${c}`} style={{
                 width: 14, height: 14, borderRadius: 3,
@@ -1437,6 +1434,13 @@ function App() {
               }}></div>
             ))}
           </div>
+          <div>row {cell.r} / col {cell.c}</div>
+          <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
+          <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
+          <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
+          <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
+          <div>size {faceScaleRef.current.toFixed(3)} / zoom {smoothStateRef.current.zoom.toFixed(2)}x</div>
+          <div>engine {status.engine || '—'}{engineNote}</div>
         </DraggablePanel>
       ) : null}
 
@@ -1450,27 +1454,36 @@ function App() {
           onClose={() => setTweak('showCalib', false)}
           closeLabel="向き校正パネルを隠す"
           defaultStyle={{ top: 68, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
-          defaultWidth="min(260px, 84vw)"
+          defaultWidth="min(200px, 78vw)"
           style={{
             zIndex: 6,
-            background: 'rgba(252,250,247,0.97)', color: '#3c3026', borderRadius: 12,
-            padding: '8px 10px 10px', boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
-            fontFamily: "'Zen Maru Gothic', sans-serif",
+            background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 10,
+            padding: '7px 9px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
+            lineHeight: 1.45,
           }}
         >
-          <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ fontSize: 12, lineHeight: 1.5, color: '#6a5a48' }}>
-              「正」でまとめて校正（向き・距離・目・かしげ）→ 各方向へ顔を振り切って 上/左/右/下 を押す。
-              体は動かさず顔の向きだけ変えて押すと、その向きでの 位置ズレ・かしげ・ズーム・目 も
-              同時に補正します。デバッグの「グリッド表示」で到達点を見ながら調整できます。
-            </div>
+          <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross} />
-            <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
-              onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
-            <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
-              onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
-            <TweakButton label="上下左右の範囲をリセット" secondary onClick={resetRanges}></TweakButton>
-            <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
+            {/* 既定は十字ボタンのみ。＋で説明を展開（細かな数値調整は Tweaks「向き校正」へ集約）。 */}
+            <button
+              type="button"
+              onClick={() => setShowCalibDetail((v) => !v)}
+              title={showCalibDetail ? '説明を隠す' : '説明を表示'}
+              style={{
+                alignSelf: 'center', minWidth: 30, height: 22, padding: '0 9px',
+                border: '1px solid rgba(255,255,255,0.25)', borderRadius: 5,
+                background: 'rgba(255,255,255,0.10)', color: '#fff',
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer', lineHeight: 1,
+              }}
+            >{showCalibDetail ? '－' : '＋'}</button>
+            {showCalibDetail ? (
+              <div style={{ fontSize: 11, lineHeight: 1.55, color: 'rgba(255,255,255,0.82)' }}>
+                「正」でまとめて校正（向き・距離・目・かしげ）→ 各方向へ顔を振り切って 上/左/右/下 を押す。
+                体は動かさず顔の向きだけ変えて押すと、その向きでの 位置ズレ・かしげ・ズーム・目 も
+                同時に補正します。デバッグの「グリッド表示」で到達点を見ながら調整できます。
+                細かな数値調整は Tweaks「向き校正」から。
+              </div>
+            ) : null}
           </div>
         </DraggablePanel>
       ) : null}
@@ -1573,6 +1586,12 @@ function App() {
         <TweakSection label="向き校正" collapsible>
           <TweakToggle label="向き校正パネルを表示" value={t.showCalib}
             onChange={(v) => setTweak('showCalib', v)}></TweakToggle>
+          <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
+            onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
+          <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
+            onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
+          <TweakButton label="上下左右の範囲をリセット" secondary onClick={resetRanges}></TweakButton>
+          <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
         </TweakSection>
         <TweakSection label="反転" collapsible>
           <TweakToggle label="左右反転" value={t.invertX}
