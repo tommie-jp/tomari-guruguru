@@ -105,12 +105,12 @@ const AVATAR_DEFS = [
     // 素材を主体とする再配布/販売・商用は高リスクなので非商用に限定する。
     commercial: false,
     credit:
-      'いらすとや素材を元に ChatGPT（画像生成）で作成。いらすとや利用規約に従う（商用利用・素材を主体とする再配布/販売は不可）',
+      'ChatGPT（画像生成）で作成。（商用利用・素材を主体とする再配布/販売は不可）',
     attribution: {
       prefix: 'キャラクター: ',
-      name: 'いらすとや',
-      url: 'https://www.irasutoya.com/p/terms.html',
-      suffix: ' 素材を元に ChatGPT で作成 ／ 非商用',
+      name: 'ChatGPT 生成',
+      url: 'https://chatgpt.com/images',
+      suffix: 'ChatGPT で作成 ／ 非商用',
     },
   },
 ];
