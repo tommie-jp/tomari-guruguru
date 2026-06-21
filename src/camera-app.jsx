@@ -313,13 +313,12 @@ function DirectionCross({ flash = {}, onDir, onCenter }) {
 
 // パネルの表示/非表示をワンタップで切り替えるチップ列（Tweaks を開かずに各 HUD を出せる）。
 // on のチップは緑枠で強調。items=[{ key, label, on, toggle }]。
-function PanelToggles({ items, inkColor, subColor, style }) {
+function PanelToggles({ items, inkColor, subColor, style, children }) {
   return (
     <div style={{
       position: 'absolute', zIndex: 6, display: 'flex', gap: 6, flexWrap: 'wrap',
       alignItems: 'center', fontFamily: "'Zen Maru Gothic', sans-serif", ...style,
     }}>
-      <span style={{ fontSize: 11, fontWeight: 700, color: subColor, letterSpacing: '0.06em' }}>パネル</span>
       {items.map(({ key, label, on, toggle }) => (
         <button
           key={key}
@@ -328,13 +327,15 @@ function PanelToggles({ items, inkColor, subColor, style }) {
           aria-pressed={on}
           title={`${label}を${on ? '隠す' : '表示'}`}
           style={{
-            padding: '3px 9px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+            display: 'inline-flex', alignItems: 'center', lineHeight: 1,
+            padding: '4px 10px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
             border: `1.5px solid ${on ? '#46C26A' : 'rgba(127,127,127,0.45)'}`,
             background: on ? 'rgba(70,194,106,0.16)' : 'transparent',
-            color: on ? inkColor : subColor, fontSize: 12, fontWeight: 700, letterSpacing: '0.03em',
+            color: on ? inkColor : subColor, fontSize: 13, fontWeight: 700, letterSpacing: '0.03em',
           }}
         >{label}</button>
       ))}
+      {children}
     </div>
   );
 }
@@ -1040,12 +1041,8 @@ function App() {
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
   const subColor = dark ? 'rgba(255,248,238,0.45)' : 'rgba(60,48,38,0.45)';
 
-  // 狭い画面では下部の「反映先／リセット／移動比率」コントロールを小型化し、折り返して
-  // 左下にまとめる。右下 Tweaks ボタンの幅ぶんを空け、中央タイトル帯は少し上へ逃がす。
+  // 右下 Tweaks ボタンの幅ぶんを空け、中央タイトル帯は少し上へ逃がすのに使う。
   const isNarrow = useIsNarrow();
-  const ctl = isNarrow
-    ? { font: 15, pad: '6px 11px', gap: 6, dot: 9, slider: 64, mrFont: 14, mrPad: '5px 9px' }
-    : { font: 14, pad: '7px 12px', gap: 8, dot: 9, slider: 92, mrFont: 13, mrPad: '6px 10px' };
 
   // rx はカメラを持たないので、状態表示は中継リンクの接続有無にする。
   const statusText = isRx
@@ -1282,14 +1279,15 @@ function App() {
       }}>OBS受信側rx →</a>
       )}
 
-      {/* パネル表示トグル（左下・反映先コントロールの上）。Tweaks を開かずカメラ/デバッグ/
-          表情/向き校正の各 HUD をワンタップで出し入れできる。配信(obs)・rx では非表示。 */}
+      {/* 下部コントロール（左下）: 各 HUD のワンタップ表示トグル＋「反映先(OBS/ローカル)」を
+          1行にまとめ、文字/ボタンサイズを統一して折り返す。リセットは Tweaks に集約済み。
+          配信(obs)・rx では非表示。 */}
       {!obsMode && !isRx && (
       <PanelToggles
         inkColor={inkColor}
         subColor={subColor}
         style={{
-          bottom: isNarrow ? 'calc(52px + var(--sab))' : 'calc(60px + var(--sab))',
+          bottom: isNarrow ? 'calc(14px + var(--sab))' : 'calc(16px + var(--sab))',
           left: isNarrow ? 'calc(12px + var(--sal))' : 'calc(16px + var(--sal))',
           maxWidth: 'calc(100vw - 120px)',
         }}
@@ -1299,53 +1297,26 @@ function App() {
           { key: 'expr', label: '表情', on: t.showExpr, toggle: () => setTweak('showExpr', !t.showExpr) },
           { key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) },
         ]}
-      />
-      )}
-
-      {/* 「反映先」トグル＋リセット（左下）。ドラッグ移動・ズームを CEF へ送るか、この端末
-          だけにするかを切り替える。PC は Shift キーでも一時的に「この端末だけ」になる。
-          配信に映さないよう obsMode では非表示。rx は操作しないので非表示。 */}
-      {!obsMode && !isRx && (
-      <div style={{
-        position: 'absolute',
-        bottom: isNarrow ? 'calc(14px + var(--sab))' : 'calc(16px + var(--sab))',
-        left: isNarrow ? 'calc(12px + var(--sal))' : 'calc(16px + var(--sal))', zIndex: 6,
-        display: 'flex', flexWrap: 'wrap', gap: ctl.gap, alignItems: 'center',
-        // スマホは右下 Tweaks ボタン（約98px）に被らないよう左下に収め、はみ出しは折り返す。
-        maxWidth: isNarrow ? 'calc(100vw - 120px)' : 'none',
-        fontFamily: "'Zen Maru Gothic', sans-serif"
-      }}>
+      >
         <button
           type="button"
           onClick={() => setLocalMode((v) => !v)}
-          title="ドラッグ移動・ズームの反映先を切替（PC は Shift 併用でも『この端末だけ』）"
+          title="ドラッグ移動・ズームの反映先（OBS=rxへ送る / ローカル=この端末だけ。PC は Shift 併用でも『ローカル』）"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7,
-            padding: ctl.pad, borderRadius: 999, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 6, lineHeight: 1,
+            padding: '4px 10px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
             border: `1.5px solid ${localMode ? '#E8923C' : '#46C26A'}`,
             background: localMode ? 'rgba(232,146,60,0.14)' : 'rgba(70,194,106,0.12)',
-            color: inkColor, fontSize: ctl.font, fontWeight: 700, letterSpacing: '0.04em',
-            whiteSpace: 'nowrap',
+            color: inkColor, fontSize: 13, fontWeight: 700, letterSpacing: '0.03em',
           }}
         >
           <span style={{
-            width: ctl.dot, height: ctl.dot, borderRadius: '50%', display: 'inline-block',
+            width: 9, height: 9, borderRadius: '50%', display: 'inline-block',
             background: localMode ? '#E8923C' : '#46C26A',
           }}></span>
-          {localMode ? '反映先: この端末だけ' : '反映先: CEFへ送る'}
+          {localMode ? 'ローカル' : 'OBS'}
         </button>
-        <button
-          type="button"
-          onClick={resetUserTransform}
-          title="移動・ズームを中央／等倍に戻す"
-          style={{
-            padding: ctl.pad, borderRadius: 999, cursor: 'pointer',
-            border: `1.5px solid ${subColor}`, background: 'transparent',
-            color: subColor, fontSize: ctl.font, fontWeight: 700, letterSpacing: '0.04em',
-            whiteSpace: 'nowrap',
-          }}
-        >リセット</button>
-      </div>
+      </PanelToggles>
       )}
 
       {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。
