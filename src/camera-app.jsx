@@ -342,7 +342,7 @@ function PanelToggles({ items, inkColor, subColor, style }) {
 // 演出キュー: 音(tone は合成音フォールバック / sound にパスがあればそれを再生)とスタンプを束ねる。
 // 発火経路は 右端ボタン / 数字キー / ?cue= の3つ共通。後で effect/expression も同じ cue に足せる。
 const DEFAULT_CUES = [
-  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop', icon: '👋', effect: { glow: 4, glowColor: '#9FD8FF', ms: 600 }, gesture: 'nod' },
+  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop', icon: '👋', effect: { glow: 4, glowColor: '#9FD8FF', ms: 600 }, gesture: 'nod', place: 'above' },
   { id: 'clap',     label: '拍手',       key: '2', tone: 520, stamp: '👏', anim: 'pop' },
   { id: 'laugh',    label: 'わらい',     key: '3', tone: 720, stamp: '😆', anim: 'rise' },
   { id: 'sweat',    label: 'あせ',       key: '4', tone: 430, stamp: '💦', anim: 'rise' },
@@ -1162,9 +1162,9 @@ function App() {
       </div>
       </div>
 
-      {/* リアクション・スタンプ。アバターの頭上（キャラ上端付近）に表示。変形(zoom/tilt/drag)は
-          継承せず、charSize から頭上位置を算出（中央配置前提）。obsMode(配信)でも表示する。 */}
-      <CueStampLayer ref={cueStampRef} bottom={`calc(50% + ${view.charSize * 0.55}vmin)`}></CueStampLayer>
+      {/* リアクション・スタンプ。アバター本体(charRef)の実位置・サイズに毎フレーム追従
+          （顔追従/ドラッグ/ズームに連動）。place で 頭の上/頭にオーバーレイ を切替。obs でも表示。 */}
+      <CueStampLayer ref={cueStampRef} anchorRef={charRef}></CueStampLayer>
 
       {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。 */}
       {!obsMode && !isRx && t.sbButtons ? (

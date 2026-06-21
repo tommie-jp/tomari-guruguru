@@ -84,6 +84,13 @@ describe('normalizeCue', () => {
     expect(normalizeCue({ id: 'x', gesture: ' nod ' }).gesture).toBe('nod');
   });
 
+  it('place は above/over のみ、未指定や未知は既定の over', () => {
+    expect(normalizeCue({ id: 'x' }).place).toBe('over');
+    expect(normalizeCue({ id: 'x', place: 'above' }).place).toBe('above');
+    expect(normalizeCue({ id: 'x', place: 'over' }).place).toBe('over');
+    expect(normalizeCue({ id: 'x', place: 'somewhere' }).place).toBe('over');
+  });
+
   it('音だけ・スタンプだけ・両方ありを許容する', () => {
     expect(normalizeCue({ id: 'snd', tone: 440 })).toMatchObject({ tone: 440, stamp: null });
     expect(normalizeCue({ id: 'stp', stamp: '✨' })).toMatchObject({ tone: null, stamp: '✨' });

@@ -57,7 +57,8 @@ function normalizeEffect(raw) {
  * icon はボタン面に出す短い絵柄。stamp が長文のときに面が崩れないよう分離する。
  * effect は任意の演出エフェクト（グローのフラッシュ）。1ボタンで 音＋スタンプ＋発光 を束ねる。
  * gesture は任意の動き演出名（'nod'/'spin'/'shake' 等）。表示側が gestures.js で再生する。
- * @returns {{id,label,key,sound,tone,gain,stamp,anim,holdMs,icon,effect,gesture}|null}
+ * place はスタンプの配置（'above'=頭の上 / 'over'=頭にオーバーレイ）。既定は 'over'。
+ * @returns {{id,label,key,sound,tone,gain,stamp,anim,holdMs,icon,effect,gesture,place}|null}
  */
 export function normalizeCue(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -74,7 +75,8 @@ export function normalizeCue(raw) {
   const icon = typeof raw.icon === 'string' && raw.icon.trim() ? raw.icon.trim() : null;
   const effect = normalizeEffect(raw.effect);
   const gesture = typeof raw.gesture === 'string' && raw.gesture.trim() ? raw.gesture.trim() : null;
-  return { id, label, key, sound, tone, gain, stamp, anim, holdMs, icon, effect, gesture };
+  const place = raw.place === 'above' ? 'above' : 'over';
+  return { id, label, key, sound, tone, gain, stamp, anim, holdMs, icon, effect, gesture, place };
 }
 
 /**

@@ -4,13 +4,16 @@
 // Pixi には依存しないので talk 版（素の <img>）でも camera 版でも同じものが使える。
 // 透過背景のまま動くので OBS のオーバーレイにもそのまま乗る。
 //
+// 位置とサイズは「アバター要素(anchorRef)の実 getBoundingClientRect」から毎フレーム算出する。
+// → アバターが顔追従/ドラッグ/ズームでどこへ動いても、スタンプが追従し、
+//   表示サイズもアバターの描画幅に比例する（小さければ小さく、大きければ大きく）。
+// 配置 place: 'above'（頭の上）/ 'over'（頭にオーバーレイ）。cue 由来。
+//
 // 使い方:
+//   const charRef = useRef(null);   // アバター本体の要素
 //   const stampRef = useRef(null);
-//   <div style={{ position:'relative' }}>
-//     ...avatar...
-//     <CueStampLayer ref={stampRef} />
-//   </div>
-//   stampRef.current.pop({ stamp:'💢', anim:'shake', holdMs:1100 });
+//   <CueStampLayer ref={stampRef} anchorRef={charRef} />
+//   stampRef.current.pop({ stamp:'💢', anim:'shake', holdMs:1100, place:'over' });
 
 import React from 'react';
 
@@ -26,53 +29,93 @@ const ANIM_NAME = {
 // 連番キー＆軽いジッター（同じ場所に固まらないよう左右にばらす）用のカウンタ。
 let SEQ = 0;
 
+// 位置算出パラメータ（アバター rect に対する割合）。
+const OVER_SIZE = 0.34;   // 'over' の文字サイズ＝アバター幅 × これ
+const ABOVE_SIZE = 0.17;  // 'above' の文字サイズ＝アバター幅 × これ
+const HEAD_CENTER_Y = 0.30; // 'over' を乗せる頭の縦位置（ボックス上端からの割合）
+
+// アニメの移動量は em 単位（＝文字サイズ基準）にして、ズームで一緒に拡縮させる。
 const KEYFRAMES = `
 @keyframes cue-stamp-pop {
   0%   { transform: translate(-50%, 0) scale(0.3); opacity: 0; }
-  18%  { transform: translate(-50%, -6px) scale(1.18); opacity: 1; }
-  34%  { transform: translate(-50%, -4px) scale(1.0); opacity: 1; }
-  78%  { transform: translate(-50%, -4px) scale(1.0); opacity: 1; }
-  100% { transform: translate(-50%, -14px) scale(0.92); opacity: 0; }
+  18%  { transform: translate(-50%, -0.14em) scale(1.18); opacity: 1; }
+  34%  { transform: translate(-50%, -0.10em) scale(1.0); opacity: 1; }
+  78%  { transform: translate(-50%, -0.10em) scale(1.0); opacity: 1; }
+  100% { transform: translate(-50%, -0.34em) scale(0.92); opacity: 0; }
 }
 @keyframes cue-stamp-rise {
-  0%   { transform: translate(-50%, 10px) scale(0.6); opacity: 0; }
+  0%   { transform: translate(-50%, 0.24em) scale(0.6); opacity: 0; }
   16%  { transform: translate(-50%, 0) scale(1.05); opacity: 1; }
   70%  { opacity: 1; }
-  100% { transform: translate(-50%, -120px) scale(0.9); opacity: 0; }
+  100% { transform: translate(-50%, -2.6em) scale(0.9); opacity: 0; }
 }
 @keyframes cue-stamp-shake {
   0%   { transform: translate(-50%, 0) scale(0.3) rotate(0deg); opacity: 0; }
   14%  { transform: translate(-50%, 0) scale(1.15) rotate(0deg); opacity: 1; }
-  24%  { transform: translate(calc(-50% - 7px), 0) scale(1.05) rotate(-8deg); }
-  38%  { transform: translate(calc(-50% + 7px), 0) scale(1.05) rotate(8deg); }
-  52%  { transform: translate(calc(-50% - 5px), 0) scale(1.0) rotate(-5deg); }
-  66%  { transform: translate(calc(-50% + 4px), 0) scale(1.0) rotate(4deg); }
+  24%  { transform: translate(calc(-50% - 0.18em), 0) scale(1.05) rotate(-8deg); }
+  38%  { transform: translate(calc(-50% + 0.18em), 0) scale(1.05) rotate(8deg); }
+  52%  { transform: translate(calc(-50% - 0.13em), 0) scale(1.0) rotate(-5deg); }
+  66%  { transform: translate(calc(-50% + 0.10em), 0) scale(1.0) rotate(4deg); }
   80%  { transform: translate(-50%, 0) scale(1.0) rotate(0deg); opacity: 1; }
-  100% { transform: translate(-50%, -10px) scale(0.95) rotate(0deg); opacity: 0; }
+  100% { transform: translate(-50%, -0.26em) scale(0.95) rotate(0deg); opacity: 0; }
 }
 `;
 
 function CueStampLayerImpl(props, ref) {
-  // top / bottom のどちらかで縦位置を指定する。bottom を渡すと「下端基準」で配置し、
-  // アバターの頭上（キャラ上端）に貼り付けて上方向へ浮かせる用途に使う。
-  const { top = '8%', bottom } = props;
+  const { anchorRef } = props;
   const [items, setItems] = useState([]);
   const timers = useRef(new Set());
+  const itemEls = useRef(new Map()); // id → DOM ノード（位置を直書きする）
+
+  // 1つのスタンプ要素を、アバター rect から算出した位置・サイズへ当てる。
+  // ref コールバック（生成直後）と毎フレームの両方から呼ぶ。
+  const placeNode = useCallback((node) => {
+    if (!node) return;
+    const el = anchorRef && anchorRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    const cx = r.left + r.width / 2;
+    const above = node.dataset.place === 'above';
+    const jit = Number(node.dataset.jit) || 0;
+    const fontSize = r.width * (above ? ABOVE_SIZE : OVER_SIZE);
+    // above: 文字の下端がアバター上端に来るよう要素 top = 上端 - 文字高。
+    // over : 頭の縦位置に中心が来るよう要素 top = 中心 - 文字高/2。
+    const topY = above
+      ? r.top - fontSize
+      : r.top + r.height * HEAD_CENTER_Y - fontSize / 2;
+    node.style.fontSize = `${fontSize}px`;
+    node.style.left = `${cx + jit * fontSize}px`;
+    node.style.top = `${topY}px`;
+  }, [anchorRef]);
 
   const pop = useCallback((cue) => {
     if (!cue || !cue.stamp) return;
     const id = ++SEQ;
     const anim = ANIM_NAME[cue.anim] ? cue.anim : 'pop';
     const holdMs = Number.isFinite(cue.holdMs) ? cue.holdMs : 1100;
-    // 左右に ±28px ほどばらして連打しても重ならないようにする。
-    const jitter = ((id * 53) % 56) - 28;
-    setItems((prev) => [...prev, { id, glyph: cue.stamp, anim, holdMs, jitter }]);
+    const place = cue.place === 'above' ? 'above' : 'over';
+    // 文字サイズに対する相対ジッター（±0.3em 程度）。連打しても重ならないように。
+    const jit = (((id * 53) % 56) - 28) / 90;
+    setItems((prev) => [...prev, { id, glyph: cue.stamp, anim, holdMs, place, jit }]);
     const timer = setTimeout(() => {
       setItems((prev) => prev.filter((it) => it.id !== id));
       timers.current.delete(timer);
     }, holdMs + 60);
     timers.current.add(timer);
   }, []);
+
+  // 毎フレーム、生きているスタンプをアバターの現在位置・サイズへ追従させる。
+  React.useEffect(() => {
+    let raf;
+    function frame() {
+      raf = requestAnimationFrame(frame);
+      if (itemEls.current.size === 0) return;
+      itemEls.current.forEach((node) => placeNode(node));
+    }
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [placeNode]);
 
   // アンマウント時にタイマーを掃除（リーク防止）。
   React.useEffect(() => () => {
@@ -94,18 +137,24 @@ function CueStampLayerImpl(props, ref) {
       {items.map((it) => (
         <div
           key={it.id}
+          ref={(node) => {
+            const m = itemEls.current;
+            if (node) { m.set(it.id, node); placeNode(node); }
+            else m.delete(it.id);
+          }}
+          data-place={it.place}
+          data-jit={it.jit}
           style={{
             position: 'absolute',
-            left: `calc(50% + ${it.jitter}px)`,
-            ...(bottom != null ? { bottom } : { top }),
-            fontSize: 'clamp(34px, 8vmin, 90px)',
+            left: 0, top: 0,          // placeNode が毎フレーム上書き
+            fontSize: 1,              // placeNode が毎フレーム上書き
             lineHeight: 1,
             whiteSpace: 'nowrap',
             fontWeight: 800,
             color: '#fff',
-            textShadow: '0 2px 0 rgba(60,48,38,0.25), 0 0 10px rgba(255,255,255,0.55)',
-            WebkitTextStroke: '2px rgba(60,48,38,0.35)',
-            filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.18))',
+            textShadow: '0 0.04em 0 rgba(60,48,38,0.25), 0 0 0.18em rgba(255,255,255,0.55)',
+            WebkitTextStroke: '0.05em rgba(60,48,38,0.35)',
+            filter: 'drop-shadow(0 0.06em 0.14em rgba(0,0,0,0.18))',
             animation: `${ANIM_NAME[it.anim]} ${it.holdMs}ms cubic-bezier(.2,.9,.2,1) forwards`,
             willChange: 'transform, opacity',
           }}
