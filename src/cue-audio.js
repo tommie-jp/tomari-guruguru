@@ -16,6 +16,7 @@ export function createSoundboard() {
     out: null, // master GainNode（全体音量）
     buffers: new Map(), // id -> AudioBuffer
     master: 1,
+    unlocked: false, // iOS 無音バッファによるアンロック済みか
   };
 
   function ctx() {
@@ -33,6 +34,22 @@ export function createSoundboard() {
     // 戻り値は Promise だが、呼び出し側は待たなくてよい（fire-and-forget）。
     if (st.ctx && st.ctx.state === 'suspended') return st.ctx.resume();
     return Promise.resolve();
+  }
+
+  // iOS(WebKit) の自動再生制限対策。必ず「ユーザー操作のハンドラ内」で呼ぶこと。
+  // AudioContext を（無ければ操作内で）作成→resume し、無音バッファを1度鳴らして
+  // 完全にアンロックする。以降は play() が普通に鳴る。毎操作で呼んでも安全（軽い）。
+  function unlock() {
+    const c = ctx();
+    if (c.state === 'suspended') c.resume();
+    if (st.unlocked) return;
+    st.unlocked = true;
+    try {
+      const src = c.createBufferSource();
+      src.buffer = c.createBuffer(1, 1, 22050);
+      src.connect(st.out);
+      src.start(0);
+    } catch { /* noop */ }
   }
 
   function setMasterGain(g) {
@@ -124,6 +141,7 @@ export function createSoundboard() {
     loadUrl,
     assignFile,
     resume,
+    unlock,
     setMasterGain,
     has: (id) => st.buffers.has(id),
   };

@@ -999,6 +999,19 @@ function App() {
 
   // 演出: 全体音量を反映。
   useEffect(() => { cueBoard.setMasterGain(view.sbGain); }, [cueBoard, view.sbGain]);
+  // iOS(WebKit=iPhone の Chrome/Safari) 自動再生対策: 最初のユーザー操作で音声をアンロック。
+  // pointerdown は click より前に発火するので、ボタンを押し切る前に AudioContext が起きる。
+  useEffect(() => {
+    const unlock = () => { cueBoard.unlock(); };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('touchend', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchend', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [cueBoard]);
   // sound にパス/URL があるキューを先読み（無ければ tone で鳴るので 0 アセットでも可）。
   useEffect(() => {
     cueController.cues.forEach((c) => { if (c.sound) cueBoard.loadUrl(c.id, c.sound); });
