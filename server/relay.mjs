@@ -18,9 +18,16 @@
 //   node server/relay.mjs --cert cert.pem --key key.pem    # wss/https（mkcert / tailscale cert）
 //   RELAY_PORT=9000 node server/relay.mjs                  # 環境変数でも可（従来互換）
 //
-// 既定バインドは 127.0.0.1（同一PC・loopback）。Windows でファイアウォール・プロンプトを
-// 出さないため。LAN の別端末（iPhone 等）から繋ぐときだけ --host 0.0.0.0 を付ける。
-// 当面は認証なし（LAN 私設網に閉じる前提）。公開する場合は別途トークン等を足すこと。
+// 【ローカル/私設網での実行を前提とする】このサーバは認証・Origin 検証・ルーム分離を持た
+// ない。到達できる相手は誰でも他者のポーズ/設定フレームを盗聴でき、偽のフレームも注入できる
+// （流れるのは映像/音声ではなく数値ポーズのみなので、影響は描画の偽装・盗聴・DoS に限られ、
+// RCE ではない）。したがって運用は次のどちらかに限定する:
+//   (1) 同一PC の loopback（既定の 127.0.0.1。docs-camera/08 手順A）
+//   (2) Tailscale など ACL で閉じた私設網（docs-camera/08 手順B）
+// 既定バインドが 127.0.0.1 なのは、同一PC 用かつ Windows でファイアウォール・プロンプトを
+// 出さないため。別端末から繋ぐときだけ --host 0.0.0.0 を付ける（信頼できる私設網のみ）。
+// 公開インターネットや不特定多数の LAN へは晒さないこと。晒す必要があるなら、トークン認証・
+// ルーム ID・maxPayload 制限を実装してから行う（docs-camera/90-懸念事項.md 参照）。
 import { WebSocketServer } from 'ws';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';

@@ -1,7 +1,0 @@
-{
-  "main": "dist-exe/relay.cjs",
-  "output": "dist-exe/relay.blob",
-  "disableExperimentalSEAWarning": true,
-  "useSnapshot": false,
-  "useCodeCache": false
-}

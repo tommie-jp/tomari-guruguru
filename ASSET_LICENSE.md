@@ -32,7 +32,6 @@ tools/*.py
 
 ```text
 slices2/**
-.thumbnail
 01_画像指示例.png
 再生用トマリセリフ.wav
 uploads/**

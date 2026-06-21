@@ -1,6 +1,8 @@
 # ============================================================
-#  guruguru-relay.exe を生成する（Node SEA = Single Executable）。
-#  ★ Windows 上で実行すること（Windows の node.exe に blob を注入するため）。
+#  guruguru-relay.exe を生成する（Bun = bun build --compile）。
+#  Windows 単体で「Bun ランタイム同梱の単体 exe」を作る経路。
+#  ※ WSL/Linux/macOS が使えるなら ./doBuild.sh が win/linux/macOS の
+#     3 つを 1 台からクロスコンパイルするので、そちらが手軽。
 #  ★ このスクリプトはプロジェクト一式（package.json / server\ / node_modules）が
 #     必要。guruguru-avatar\windows\build-exe.ps1 に置いた状態で実行する。
 #     .ps1 だけを Downloads 等にコピーしても動かない（先に git clone / コピーが必要）。
@@ -10,7 +12,7 @@
 #    powershell -ExecutionPolicy Bypass -File windows\build-exe.ps1
 #
 #  出力: dist-exe\guruguru-relay.exe / dist-exe\dist-local\ / dist-exe\start.bat
-#        → dist-exe\ を丸ごと配布すれば、配布先に Node 不要で動く。
+#        → dist-exe\ を丸ごと配布すれば、配布先に Node も Bun も不要で動く。
 # ============================================================
 $ErrorActionPreference = 'Stop'
 
@@ -50,32 +52,39 @@ if (-not $root) {
 Set-Location $root
 Write-Host "[info] プロジェクト直下: $root"
 
-# Node 公式ビルドに埋め込まれている SEA 用のヒューズ文字列（固定値）
-$fuse = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'
-$exe  = 'dist-exe\guruguru-relay.exe'
+$exe = 'dist-exe\guruguru-relay.exe'
+
+# bun を解決（PATH → %USERPROFILE%\.bun\bin → 自動インストール）。
+function Resolve-Bun {
+  $c = Get-Command bun -ErrorAction SilentlyContinue
+  if ($c) { return $c.Source }
+  $local = Join-Path $env:USERPROFILE '.bun\bin\bun.exe'
+  if (Test-Path $local) { return $local }
+  Write-Host '[0/4] bun が無いのでインストールします (bun.sh)...'
+  powershell -NoProfile -Command "irm bun.sh/install.ps1 | iex"
+  if (Test-Path $local) { return $local }
+  throw 'bun のインストールに失敗しました。https://bun.sh を参照してください。'
+}
+$bun = Resolve-Bun
+Write-Host "[info] bun: $bun"
 
 if (-not (Test-Path 'node_modules')) {
-  Write-Host '[0/5] 依存をインストール (npm install) ...'
+  Write-Host '[1/4] 依存をインストール (npm install) ...'
   npm install
 }
 
-Write-Host '[1/5] 静的配信物をビルド (dist-local) ...'
+Write-Host '[2/4] 静的配信物をビルド (dist-local) ...'
 npm run build:local
 
-Write-Host '[2/5] サーバを単一CJSにバンドル + SEA blob を生成 ...'
-npm run build:sea-blob
-
-Write-Host '[3/5] node.exe を複製して土台にする ...'
-$node = (Get-Command node).Source
+Write-Host '[3/4] リレイサーバを単一 exe にコンパイル (bun --compile) ...'
 New-Item -ItemType Directory -Force -Path 'dist-exe' | Out-Null
-Copy-Item $node $exe -Force
+& $bun build --compile --minify --target=bun-windows-x64 server\relay.mjs --outfile $exe
+if (-not (Test-Path $exe)) { throw "exe の生成に失敗しました: $exe" }
+$size = (Get-Item $exe).Length
+if ($size -lt 20000000) { throw "exe が小さすぎます（size=$size）。ビルド失敗。" }
+Write-Host "  OK $exe (size=$size)"
 
-Write-Host '[4/5] blob を注入 (postject) ...'
-# 既存 exe へ NODE_SEA_BLOB リソースを書き込む。Authenticode 署名は外れる
-# （SmartScreen が「発行元不明」を出すことがあるが、実行はできる）。
-npx --yes postject $exe NODE_SEA_BLOB dist-exe\relay.blob --sentinel-fuse $fuse
-
-Write-Host '[5/5] 配布フォルダを組み立て ...'
+Write-Host '[4/4] 配布フォルダを組み立て ...'
 if (Test-Path 'dist-exe\dist-local') { Remove-Item -Recurse -Force 'dist-exe\dist-local' }
 Copy-Item -Recurse -Force 'dist-local' 'dist-exe\dist-local'
 
@@ -85,10 +94,10 @@ $startBat = @'
 cd /d "%~dp0"
 start "guruguru-relay" /min guruguru-relay.exe --web-root dist-local --port 8787 --host 127.0.0.1
 timeout /t 2 /nobreak >nul
-start "" "http://127.0.0.1:8787/camera.html?tx"
+start "" "http://127.0.0.1:8787/?tx"
 echo.
-echo  tx (send) : http://127.0.0.1:8787/camera.html?tx
-echo  rx (OBS)  : http://127.0.0.1:8787/camera.html?rx^&obs=1
+echo  tx (send) : http://127.0.0.1:8787/?tx
+echo  rx (OBS)  : http://127.0.0.1:8787/?rx
 echo.
 pause
 '@
@@ -97,4 +106,4 @@ Set-Content -Path 'dist-exe\start.bat' -Value $startBat -Encoding ascii
 Write-Host ''
 Write-Host '完成: dist-exe\ を丸ごと配布してください。'
 Write-Host '  - guruguru-relay.exe / dist-local\ / start.bat'
-Write-Host '  - 配布先での起動: start.bat をダブルクリック（Node 不要）'
+Write-Host '  - 配布先での起動: start.bat をダブルクリック（Node も Bun も不要）'
