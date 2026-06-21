@@ -1199,19 +1199,6 @@ function App() {
         textAlign: 'left', pointerEvents: 'none', whiteSpace: 'nowrap'
       }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 28px)', fontWeight: 700, color: inkColor, letterSpacing: '0.06em' }}>ぐるぐるアバター カメラ版</div>
-        <div style={{ fontSize: 'clamp(13px, 1.7vmin, 15px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
-        {/* アバター画像の帰属表示（registry の attribution を per-avatar 表示）。
-            01-tomari は原作ろてじん、02 はいらすとや素材＋ChatGPT 生成、のように出し分ける。
-            親は pointerEvents:none なので、リンクだけ auto にしてクリック可能にする。
-            配信オーバーレイ(obsMode)では他 UI と同様に非表示（このブロックごと !obsMode）。 */}
-        <div style={{ fontSize: 'clamp(12px, 1.5vmin, 14px)', color: subColor, marginTop: 4, letterSpacing: '0.04em' }}>
-          {avatar.attribution.prefix}<a
-            href={avatar.attribution.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: inkColor, textDecoration: 'none', fontWeight: 700, pointerEvents: 'auto' }}
-          >{avatar.attribution.name}</a>{avatar.attribution.suffix}
-        </div>
         <div style={{ fontSize: 'clamp(13px, 1.7vmin, 16px)', color: subColor, marginTop: 6, letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, display: 'inline-block' }}></span>
           {statusText}
@@ -1358,29 +1345,6 @@ function App() {
             whiteSpace: 'nowrap',
           }}
         >リセット</button>
-        {/* 移動比率: rx(CEF) の移動量 = tx の移動量 × この値（移動のみ・ズーム対象外）。 */}
-        <label
-          title="rx(CEF) の移動量 = tx の移動量 × この値（移動のみ・ズームは対象外）"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: ctl.mrPad, borderRadius: 999,
-            border: `1.5px solid ${subColor}`, background: 'transparent',
-            color: subColor, fontSize: ctl.mrFont, fontWeight: 700, letterSpacing: '0.04em',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span>移動比率</span>
-          <input
-            type="range"
-            min={MOVE_RATIO_MIN} max={MOVE_RATIO_MAX} step="0.1"
-            value={t.moveRatio ?? 1}
-            onChange={(e) => setTweak('moveRatio', Number(e.target.value))}
-            style={{ width: ctl.slider, accentColor: '#46C26A', cursor: 'pointer' }}
-          />
-          <span style={{ color: inkColor, fontVariantNumeric: 'tabular-nums', minWidth: 26, textAlign: 'right' }}>
-            ×{(t.moveRatio ?? 1).toFixed(1)}
-          </span>
-        </label>
       </div>
       )}
 
@@ -1391,7 +1355,7 @@ function App() {
       <div style={{
         position: 'absolute', bottom: 'calc(54px + var(--sab))',
         right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', fontSize: 12,
-        color: subColor, opacity: 0.65, letterSpacing: '0.04em', whiteSpace: 'nowrap',
+        color: inkColor, letterSpacing: '0.04em', whiteSpace: 'nowrap',
         textAlign: 'right', fontVariantNumeric: 'tabular-nums',
         pointerEvents: 'none', userSelect: 'none'
       }}>{isNarrow ? VERSION_LABEL_SHORT : VERSION_LABEL}</div>
@@ -1710,6 +1674,8 @@ function App() {
             onChange={(v) => setTweak('userZoomMax', v)}></TweakSlider>
           <TweakSlider label="ホイール感度" value={t.wheelZoomDial} min={0} max={100} step={1}
             onChange={(v) => setTweak('wheelZoomDial', v)}></TweakSlider>
+          <TweakSlider label="移動比率（tx→rx）" value={t.moveRatio ?? 1} min={MOVE_RATIO_MIN} max={MOVE_RATIO_MAX} step={0.1} unit="×"
+            onChange={(v) => setTweak('moveRatio', v)}></TweakSlider>
           <TweakButton label="表示（移動・ズーム）をリセット" secondary onClick={resetUserTransform}></TweakButton>
         </TweakSection>
         <TweakSection label="推論エンジン" collapsible>
