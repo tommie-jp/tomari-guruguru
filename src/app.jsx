@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { installMobileHardening } from './mobile-hardening.js';
 import { applyThemeColor } from './theme-color.js';
+import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -15,6 +16,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 }/*EDITMODE-END*/;
 
 const { rows: ROWS, cols: COLS } = charConfig;
+const GRID = { rows: ROWS, cols: COLS };
 const SRC = (r, c) => charConfig.src(charConfig.sheets.eyesOpen.close, r, c);
 const BLINK_SRC = (r, c) => charConfig.src(charConfig.sheets.eyesClosed.close, r, c);
 
@@ -31,6 +33,8 @@ function App() {
   const charRef = useRef(null);
   const target = useRef({ x: 0, y: 0 });   // -1..1
   const current = useRef({ x: 0, y: 0 });
+  const gestureRef = useRef(null);          // 再生中ジェスチャー { name, start, base }
+  const motionRef = useRef(null);           // ジェスチャーの回転/拡縮を直書きするラッパー
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
 
@@ -65,8 +69,21 @@ function App() {
       const k = tweaksRef.current.smoothing;
       current.current.x += (target.current.x - current.current.x) * k;
       current.current.y += (target.current.y - current.current.y) * k;
-      const c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
-      const r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
+      let c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
+      let r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
+      // ジェスチャー再生中は向き(r/c)と回転(transform)を一時的に上書きする。
+      // 平滑化(current)は裏で回り続けるので、終了時はライブ方向へぬるっと復帰する。
+      const g = gestureRef.current;
+      if (g) {
+        const s = sampleGesture(GESTURES[g.name], performance.now() - g.start, g.base, GRID);
+        if (s) {
+          r = s.cell.r; c = s.cell.c;
+          if (motionRef.current) motionRef.current.style.transform = gestureTransform(s);
+        } else {
+          gestureRef.current = null;
+          if (motionRef.current) motionRef.current.style.transform = '';
+        }
+      }
       if (r !== last.r || c !== last.c) {
         last = { r, c };
         setCell(last);
@@ -122,6 +139,16 @@ function App() {
     return arr;
   }, []);
 
+  // ジェスチャー演出を再生。再生開始時のライブセルを base に取り、相対キーの基準にする。
+  function playGesture(name) {
+    if (!GESTURES[name]) return;
+    const base = {
+      r: clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1),
+      c: clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1),
+    };
+    gestureRef.current = { name, start: performance.now(), base };
+  }
+
   const dark = t.bgColor === '#2B2926';
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
   const subColor = dark ? 'rgba(255,248,238,0.45)' : 'rgba(60,48,38,0.45)';
@@ -152,30 +179,32 @@ function App() {
           userSelect: 'none', touchAction: 'none'
         }}
       >
-        {frames.map(({ r, c }) => (
-          <img
-            key={`${r}-${c}`}
-            src={SRC(r, c)}
-            alt=""
-            draggable="false"
-            style={{
-              position: 'absolute', inset: 0, width: '100%', height: '100%',
-              opacity: r === cell.r && c === cell.c ? 1 : 0,
-              pointerEvents: 'none'
-            }}
-          ></img>
-        ))}
-        {blink ? (
-          <img
-            src={BLINK_SRC(cell.r, cell.c)}
-            alt=""
-            draggable="false"
-            style={{
-              position: 'absolute', inset: 0, width: '100%', height: '100%',
-              pointerEvents: 'none'
-            }}
-          ></img>
-        ) : null}
+        <div ref={motionRef} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
+          {frames.map(({ r, c }) => (
+            <img
+              key={`${r}-${c}`}
+              src={SRC(r, c)}
+              alt=""
+              draggable="false"
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                opacity: r === cell.r && c === cell.c ? 1 : 0,
+                pointerEvents: 'none'
+              }}
+            ></img>
+          ))}
+          {blink ? (
+            <img
+              src={BLINK_SRC(cell.r, cell.c)}
+              alt=""
+              draggable="false"
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                pointerEvents: 'none'
+              }}
+            ></img>
+          ) : null}
+        </div>
       </div>
 
       <div style={{
@@ -232,6 +261,12 @@ function App() {
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+        <TweakSection label="ジェスチャー"></TweakSection>
+        <div className="twk-presets-row" style={{ flexWrap: 'wrap', marginTop: 2 }}>
+          <TweakButton label="回転" onClick={() => playGesture('spin')}></TweakButton>
+          <TweakButton label="うなずく" onClick={() => playGesture('nod')}></TweakButton>
+          <TweakButton label="No" onClick={() => playGesture('shake')}></TweakButton>
+        </div>
         <TweakSection label="デバッグ"></TweakSection>
         <TweakToggle label="グリッド表示" value={t.showDebug}
           onChange={(v) => setTweak('showDebug', v)}></TweakToggle>

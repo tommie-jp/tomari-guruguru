@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { installMobileHardening } from './mobile-hardening.js';
 import { applyThemeColor } from './theme-color.js';
+import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
+import { createSoundboard } from './cue-audio.js';
+import { createCueController, isTypingTarget, parseCueParam } from './cue-system.js';
+import { CueStampLayer } from './cue-stamp.jsx';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -15,10 +19,13 @@ const TALK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "thHalf": 0.07,
   "thFull": 0.2,
   "release": 0.12,
-  "autoBlink": true
+  "autoBlink": true,
+  "sbGain": 1,
+  "sbButtons": true
 }/*EDITMODE-END*/;
 
 const { rows: ROWS, cols: COLS } = charConfig;
+const GRID = { rows: ROWS, cols: COLS };
 // シート: 目開け×口[とじ/中間/開け] = A/B/C, 目閉じ×口[とじ/中間/開け] = D/E/F
 const SHEETS = [
   charConfig.sheets.eyesOpen.close,   // A
@@ -31,6 +38,18 @@ const SHEETS = [
 const sheetFor = (eyesClosed, mouth) => SHEETS[(eyesClosed ? 3 : 0) + mouth];
 const SRC = (sheet, r, c) => charConfig.src(sheet, r, c);
 const BG_OPTIONS = ['#FFF8EE', '#FDEFEF', '#EEF4FB', '#2B2926'];
+
+// 演出キュー: 音（tone は合成音フォールバック / sound にパスがあればそれを再生）と
+// スタンプ（reaction）を1つに束ねる。発火経路は 数字キー / 右端ボタン / ?cue= の3つ共通。
+const DEFAULT_CUES = [
+  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop' },
+  { id: 'clap',     label: '拍手',       key: '2', tone: 520, stamp: '👏', anim: 'pop' },
+  { id: 'laugh',    label: 'わらい',     key: '3', tone: 720, stamp: '😆', anim: 'rise' },
+  { id: 'sweat',    label: 'あせ',       key: '4', tone: 430, stamp: '💦', anim: 'rise' },
+  { id: 'anger',    label: 'いかり',     key: '5', tone: 300, stamp: '💢', anim: 'shake' },
+  { id: 'sparkle',  label: 'キラキラ',   key: '6', tone: 880, stamp: '✨', anim: 'rise' },
+  { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop' },
+];
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
@@ -99,9 +118,21 @@ function App() {
   const audioElRef = useRef(null);
   const meterRef = useRef(null);
   const engine = useMemo(() => makeAudioEngine(), []);
+  const board = useMemo(() => createSoundboard(), []);
+  const stampRef = useRef(null);
+  const controller = useMemo(
+    () => createCueController(DEFAULT_CUES, (cue) => {
+      board.play(cue);
+      if (stampRef.current) stampRef.current.pop(cue);
+    }),
+    [board],
+  );
+  const [assigned, setAssigned] = useState(() => new Set());
   const target = useRef({ x: 0, y: 0 });
   const current = useRef({ x: 0, y: 0 });
   const env = useRef(0);
+  const gestureRef = useRef(null);          // 再生中ジェスチャー { name, start, base }
+  const motionRef = useRef(null);           // ジェスチャーの回転/拡縮を直書きするラッパー
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
 
@@ -109,6 +140,30 @@ function App() {
   useEffect(() => installMobileHardening(), []);
   // 背景色に合わせて theme-color（ブラウザ chrome / PWA ステータスバー）を追従させる。
   useEffect(() => { applyThemeColor(t.bgColor); }, [t.bgColor]);
+
+  // 演出（サウンドボード）: 全体音量を反映。
+  useEffect(() => { board.setMasterGain(t.sbGain); }, [board, t.sbGain]);
+  // sound にパス/URL があるキューを先読み（無ければ tone で鳴るので 0 アセットでも可）。
+  useEffect(() => {
+    controller.cues.forEach((c) => { if (c.sound) board.loadUrl(c.id, c.sound); });
+  }, [board, controller]);
+  // 数字キーでキュー発火（テキスト入力中・修飾キー併用は無視）。
+  useEffect(() => {
+    function onKey(e) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      controller.runByKey(e.key);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [controller]);
+  // ?cue=hello,clap で読み込み時に自動発火（OBS の CEF は自動再生が許可されている）。
+  useEffect(() => {
+    const { cues } = parseCueParam(window.location.search);
+    if (!cues.length) return;
+    board.resume();
+    cues.forEach((id) => controller.run(id));
+  }, [board, controller]);
 
   // マウス追従
   useEffect(() => {
@@ -140,8 +195,20 @@ function App() {
       const tw = tweaksRef.current;
       current.current.x += (target.current.x - current.current.x) * tw.smoothing;
       current.current.y += (target.current.y - current.current.y) * tw.smoothing;
-      const c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
-      const r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
+      let c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
+      let r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
+      // ジェスチャー再生中は向き(r/c)と回転(transform)を一時的に上書き。
+      const g = gestureRef.current;
+      if (g) {
+        const s = sampleGesture(GESTURES[g.name], now - g.start, g.base, GRID);
+        if (s) {
+          r = s.cell.r; c = s.cell.c;
+          if (motionRef.current) motionRef.current.style.transform = gestureTransform(s);
+        } else {
+          gestureRef.current = null;
+          if (motionRef.current) motionRef.current.style.transform = '';
+        }
+      }
       if (r !== last.r || c !== last.c) { last = { r, c }; setCell(last); }
       const raw = engine.level() * tw.micGain;
       if (raw > env.current) env.current += (raw - env.current) * 0.6;
@@ -222,12 +289,28 @@ function App() {
     setFileName(f.name);
   }
 
+  // 特定の音（例: こんにちは.mp3）をキューに割り当てる。その場限り（再読込で消える）。
+  async function assignCueFile(id, file) {
+    const ok = await board.assignFile(id, file);
+    if (ok) setAssigned((s) => new Set(s).add(id));
+  }
+
   const allFrames = useMemo(() => {
     const arr = [];
     for (const s of SHEETS) for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ s, r, c });
     return arr;
   }, []);
   const activeSheet = sheetFor(blink, mouth);
+
+  // ジェスチャー演出を再生。再生開始時のライブセルを base に取り、相対キーの基準にする。
+  function playGesture(name) {
+    if (!GESTURES[name]) return;
+    const base = {
+      r: clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1),
+      c: clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1),
+    };
+    gestureRef.current = { name, start: performance.now(), base };
+  }
 
   const dark = t.bgColor === '#2B2926';
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
@@ -250,14 +333,19 @@ function App() {
         maxWidth: 1200, maxHeight: 1200,
         userSelect: 'none', touchAction: 'none'
       }}>
-        {allFrames.map(({ s, r, c }) => (
-          <img key={`${s}${r}${c}`} src={SRC(s, r, c)} alt="" draggable="false" style={{
-            position: 'absolute', inset: 0, width: '100%', height: '100%',
-            opacity: s === activeSheet && r === cell.r && c === cell.c ? 1 : 0,
-            pointerEvents: 'none'
-          }}></img>
-        ))}
+        <div ref={motionRef} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
+          {allFrames.map(({ s, r, c }) => (
+            <img key={`${s}${r}${c}`} src={SRC(s, r, c)} alt="" draggable="false" style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              opacity: s === activeSheet && r === cell.r && c === cell.c ? 1 : 0,
+              pointerEvents: 'none'
+            }}></img>
+          ))}
+        </div>
       </div>
+
+      {/* リアクション・スタンプの透過オーバーレイ。bob/ジェスチャー変形の影響を受けないようステージ直下に置く。 */}
+      <CueStampLayer ref={stampRef} top="14%"></CueStampLayer>
 
       <div style={{ position: 'absolute', top: 'calc(3.5vh + var(--sat))', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 26px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター トーク版</div>
@@ -332,6 +420,29 @@ function App() {
         display: fileName ? 'block' : 'none', cursor: 'default'
       }}></audio>
 
+      {/* 演出ボタン列（右端中央）。配信キャプチャ時は Tweaks の「ボタンを表示」で隠せる。 */}
+      {t.sbButtons ? (
+        <div style={{
+          position: 'absolute', right: 'calc(16px + var(--sar))', top: '50%',
+          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 8
+        }}>
+          {controller.cues.map((c) => (
+            <button key={c.id} onClick={() => controller.run(c.id)} title={`${c.label}（キー: ${c.key || '-'}）`}
+              style={{
+                position: 'relative', width: 52, height: 48, fontSize: 22, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: panelBg, border: `1.5px solid ${lineColor}`, borderRadius: 12,
+                cursor: 'pointer', boxShadow: '0 4px 14px rgba(60,48,38,0.08)'
+              }}>
+              {c.stamp || c.label}
+              {c.key ? (
+                <span style={{ position: 'absolute', right: 3, bottom: 2, fontSize: 9, fontWeight: 700, color: subColor }}>{c.key}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <a href="guruguru.html" style={{
         position: 'absolute', top: 'calc(18px + var(--sat))', left: 'calc(18px + var(--sal))',
         fontSize: 13, fontWeight: 700,
@@ -360,6 +471,28 @@ function App() {
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
+        <TweakSection label="ジェスチャー"></TweakSection>
+        <div className="twk-presets-row" style={{ flexWrap: 'wrap', marginTop: 2 }}>
+          <TweakButton label="回転" onClick={() => playGesture('spin')}></TweakButton>
+          <TweakButton label="うなずく" onClick={() => playGesture('nod')}></TweakButton>
+          <TweakButton label="No" onClick={() => playGesture('shake')}></TweakButton>
+        </div>
+        <TweakSection label="演出（サウンドボード）"></TweakSection>
+        <TweakSlider label="演出の音量" value={t.sbGain} min={0} max={2} step={0.05}
+          onChange={(v) => setTweak('sbGain', v)}></TweakSlider>
+        <TweakToggle label="ボタンを表示" value={t.sbButtons}
+          onChange={(v) => setTweak('sbButtons', v)}></TweakToggle>
+        {controller.cues.map((c) => (
+          <label key={c.id} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, fontSize: 12, padding: '4px 0', cursor: 'pointer'
+          }}>
+            <span>{c.stamp} {c.label} {c.key ? `(${c.key})` : ''} {assigned.has(c.id) ? '🔊' : ''}</span>
+            <span style={{ opacity: 0.55 }}>音を割当…</span>
+            <input type="file" accept="audio/*" style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) assignCueFile(c.id, f); }} />
+          </label>
+        ))}
         <TweakSection label="テーマ"></TweakSection>
         <TweakPresets themes={themes}></TweakPresets>
         <TweakSection label="リセット"></TweakSection>
