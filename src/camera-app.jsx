@@ -7,7 +7,9 @@ import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
 import { computeStateFrame, createExprState } from './face/avatar-state';
 import { computeDirectionRange } from './face/direction-range';
-import { computeSlidePoseCompX, computeZoomPitchComp } from './face/calibrate-comp';
+import {
+  computeSlidePoseCompX, computeSlidePoseCompY, computeZoomPitchComp, computeTiltYawComp,
+} from './face/calibrate-comp';
 import { compensateScaleForMouth } from './face/mouth-compensated-scale';
 import { applyState, createSmoothState } from './face/apply-state';
 import { encodeStateFrame, decodeStateFrame } from './face/state-codec';
@@ -517,9 +519,13 @@ function App() {
 
   // 上下左右の校正: その向きに顔を振り切った姿勢で押す。1回の押下で
   //   ① 振り幅（片側レンジ rangeXxxDeg）が画面端(±1)に来るよう校正、
-  //   ② 左右は「向いたときの位置ズレ」(slidePoseCompX)、上下は「向いたときの
-  //      ズーム変化」(zoomPitchComp) も同時に校正する（顔の向きだけ変えて押す前提）。
-  // 逆向き・振り不足は computeDirectionRange が null を返すので ✗ を出して何も書かない。
+  //   ② その向きでの「見かけ上のズレ」を打ち消す＝アバターに余計な変化を出さない:
+  //      左右 → 位置ズレ(slidePoseCompX)・かしげ混入(tiltYawComp)、
+  //      上下 → ズーム変化(zoomPitchComp)・位置ズレ(slidePoseCompY)、
+  //      共通 → 目（向いて目が閉じたと誤検出しないよう開眼基準を必要なら引き上げる）。
+  //   （距離は左右では不変＝faceScale は高さ基準で yaw に強い。かしげは上下では混入しない。）
+  // 顔の向きだけ変えて（平行移動せず・距離を変えず）押す前提。逆向き・振り不足は
+  // computeDirectionRange が null を返すので ✗ を出して何も書かない。
   function calibrateDirection(dir) {
     const yaw = poseRef.current.yaw;
     const pitch = poseRef.current.pitch;
@@ -537,19 +543,29 @@ function App() {
       return;
     }
     const edits = { [res.key]: res.deg };
-    // 左右: 位置ズレ補正も同時に。鼻先のドリフトを打ち消す comp を逆算（無効なら据え置き）。
+    // 左右: 位置ズレ(slidePoseCompX) と かしげ混入(tiltYawComp) を打ち消す（無効なら据え置き）。
     if (dir === 'left' || dir === 'right') {
       const compX = computeSlidePoseCompX({ posX: posRef.current.x, yaw, invertSlide: t.invertSlide });
       if (compX != null) edits.slidePoseCompX = compX;
+      const compTilt = computeTiltYawComp({ roll: rollRef.current, yaw, biasRollRad: t.biasRollDeg * DEG });
+      if (compTilt != null) edits.tiltYawComp = compTilt;
     }
-    // 上下: ズーム補正も同時に。正面の基準サイズ（手動較正優先・無ければ自動基準）へ戻す。
-    // 実行時パイプラインに合わせ、口開き補正(zoomMouthComp)を先に通したサイズで逆算する
-    // （既定 zoomMouthComp=0 なら素通し。口を開けて押しても基準へ戻る comp を解く）。
+    // 上下: ズーム変化(zoomPitchComp) と 位置ズレ(slidePoseCompY) を打ち消す。
+    // ズームは実行時パイプラインに合わせ、口開き補正(zoomMouthComp)を先に通したサイズで逆算
+    // （既定 zoomMouthComp=0 なら素通し）。基準サイズは手動較正優先・無ければ自動基準。
     if (dir === 'up' || dir === 'down') {
       const baseline = t.zoomBaseline > 0 ? t.zoomBaseline : exprStateRef.current.autoBaseline;
       const szMouth = compensateScaleForMouth(faceScaleRef.current, mouthRef.current, t.zoomMouthComp);
       const compZ = computeZoomPitchComp({ faceScale: szMouth, pitch, baseline });
       if (compZ != null) edits.zoomPitchComp = compZ;
+      const compY = computeSlidePoseCompY({ posY: posRef.current.y, pitch, invertSlideY: t.invertSlideY });
+      if (compY != null) edits.slidePoseCompY = compY;
+    }
+    // 目: 向いた姿勢で目が閉じたと誤検出しないよう、開眼基準を今の値まで引き上げる（下げない）。
+    // 方向ごとに押すと積み上がるので、まばたき検出が潰れない範囲(0.9)で頭打ちにする。
+    const ec = eyesClosedRef.current;
+    if (Number.isFinite(ec) && ec > t.eyesOpenBias) {
+      edits.eyesOpenBias = Math.min(0.9, Math.round(ec * 100) / 100);
     }
     setTweak(edits);
     flashDir(dir, true);
@@ -1322,8 +1338,8 @@ function App() {
           <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 12, lineHeight: 1.5, color: '#6a5a48' }}>
               「正」でまとめて校正（向き・距離・目・かしげ）→ 各方向へ顔を振り切って 上/左/右/下 を押す。
-              体は動かさず顔の向きだけ変えると、左右は位置ズレ、上下はズーム変化も同時に補正します。
-              デバッグの「グリッド表示」で到達点を見ながら調整できます。
+              体は動かさず顔の向きだけ変えて押すと、その向きでの 位置ズレ・かしげ・ズーム・目 も
+              同時に補正します。デバッグの「グリッド表示」で到達点を見ながら調整できます。
             </div>
             <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross} />
             <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
