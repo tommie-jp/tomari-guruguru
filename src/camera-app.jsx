@@ -102,6 +102,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "bgColor": "#EEF4FB",
   "showDebug": false,
   "showExpr": false,
+  "showCalib": false,
   "cameraLabel": "",
   "facingMode": "user",
   "useWorker": true,
@@ -190,7 +191,7 @@ function wheelSensFromDial(dial) {
   return (d / 100) * WHEEL_SENS_MAX;
 }
 
-// 「校正」ボタンを押した後、ボタン上に確認表示（✓ 校正しました）を出す時間(ms)。
+// 十字校正ボタンを押した後、ボタン上に確認表示（✓ / ✗）を出す時間(ms)。
 // 校正は値の変化が控えめで効いたか分かりにくいため、短く効果を知らせる。
 const CALIBRATE_FEEDBACK_MS = 1400;
 
@@ -295,7 +296,7 @@ function DirectionCross({ flash = {}, onDir, onCenter }) {
     }}>
       {cell('up', '上', 'up', () => onDir('up'), '顔を上に向け切って押す（上端に校正）')}
       {cell('left', '左', 'left', () => onDir('left'), '顔を左に向け切って押す（左端に校正）')}
-      {cell('center', '正', 'center', onCenter, '今の向きを正面(中央)にする')}
+      {cell('center', '正', 'center', onCenter, '向き・距離・目・かしげをまとめて校正（旧「校正」ボタン）')}
       {cell('right', '右', 'right', () => onDir('right'), '顔を右に向け切って押す（右端に校正）')}
       {cell('down', '下', 'down', () => onDir('down'), '顔を下に向け切って押す（下端に校正）')}
     </div>
@@ -374,9 +375,6 @@ function App() {
   const showPreview = view.preview && !obsMode && !isRx; // 配信にカメラ枠を出さない
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
-  // 「校正」ボタン押下後のフィードバック表示（✓ を短時間出す）と、その消去タイマー。
-  const [justCalibrated, setJustCalibrated] = useState(false);
-  const calibTimerRef = useRef(null);
   // 十字（上/左/正/右/下）の校正ボタンごとのフィードバック。成功は 'ok'、振り不足や
   // 逆向きは 'err' を一定時間出す。方向ごとに別タイマーで消す。
   const [dirFlash, setDirFlash] = useState({});
@@ -510,9 +508,10 @@ function App() {
     }, CALIBRATE_FEEDBACK_MS);
   }
 
-  // 「正」ボタン: 今の向きを正面に（center 校正）＋フィードバック。
+  // 十字の「正」ボタン: 旧「校正」ボタンと同じ＝今の向き＝正面・距離＝基準・目＝まばたき
+  // なし・かしげ＝0 をまとめて取り直す。フィードバックは中央ボタン上に ✓ を出す。
   function calibrateCenterCross() {
-    calibrateCenter();
+    calibrateAll();
     flashDir('center', true);
   }
 
@@ -596,21 +595,17 @@ function App() {
     exprStateRef.current.autoBaseline = 0; // 自動基準も捨てて次の検出で取り直す
   }
 
-  // 「校正」ボタン: 今の向き＝正面・今の距離＝等倍の基準・今の目の大きさ＝まばたきなし、
-  // をワンタップでまとめて取り直す。個別校正をそのまま順に呼ぶだけ（計算を重複させない）。
-  // setTweak は関数更新でマージするので、続けて呼んでも取りこぼさず同フレームに反映される。
+  // 今の向き＝正面・今の距離＝等倍の基準・今の目の大きさ＝まばたきなし・かしげ＝0 を
+  // まとめて取り直す。個別校正をそのまま順に呼ぶだけ（計算を重複させない）。setTweak は
+  // 関数更新でマージするので、続けて呼んでも取りこぼさず同フレームに反映される。
   function calibrateAll() {
     calibrateCenter();   // 今の向きを正面に
     calibrateZoom();     // 今の距離を等倍の基準に
     calibrateEyesOpen(); // 今の目の大きさをまばたきなしに
     calibrateTilt();     // 今のかしげを正面(0)に
-    setJustCalibrated(true);
-    clearTimeout(calibTimerRef.current);
-    calibTimerRef.current = setTimeout(() => setJustCalibrated(false), CALIBRATE_FEEDBACK_MS);
   }
   // アンマウント時にフィードバック用タイマーを後始末する（解除後の setState を避ける）。
   useEffect(() => () => {
-    clearTimeout(calibTimerRef.current);
     Object.values(dirFlashTimersRef.current).forEach(clearTimeout);
   }, []);
 
@@ -1202,26 +1197,7 @@ function App() {
       }}>{isNarrow ? VERSION_LABEL_SHORT : VERSION_LABEL}</div>
       )}
 
-      {/* 「校正」ボタン（右下）。今の向きを正面・今の距離を等倍の基準・今の目の大きさを
-          まばたきなしに、ワンタップでまとめて取り直す。バージョン表記／Tweaks ボタンの
-          上に重ねて右下に積む。配信(obsMode)には出さず、カメラを持たない rx でも出さない。 */}
-      {!obsMode && !isRx && (
-      <button
-        type="button"
-        onClick={calibrateAll}
-        title="今の向きを正面・今の距離を基準・今の目の大きさをまばたきなしに、まとめて校正する"
-        style={{
-          position: 'absolute',
-          bottom: isNarrow ? 'calc(80px + var(--sab))' : 'calc(84px + var(--sab))',
-          right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', zIndex: 7,
-          padding: isNarrow ? '7px 15px' : '9px 18px', borderRadius: 999, cursor: 'pointer',
-          border: 'none', background: justCalibrated ? '#46C26A' : '#E8923C', color: '#fff',
-          fontSize: isNarrow ? 15 : 14, fontWeight: 800, letterSpacing: '0.08em',
-          boxShadow: '0 4px 14px rgba(0,0,0,0.22)', whiteSpace: 'nowrap',
-          fontFamily: "'Zen Maru Gothic', sans-serif", transition: 'background 0.25s ease',
-        }}
-      >{justCalibrated ? '✓ 校正しました' : '校正'}</button>
-      )}
+      {/* （旧「校正」ボタンは廃止。同機能は向き校正パネルの十字「正」ボタンに統合した。） */}
 
       {/* カメラ起動エラーの詳細。原因切り分け用に obsMode でも常に表示する
           （OBS ブラウザソース内で ?obs=1 のまま読めるように）。 */}
@@ -1326,6 +1302,40 @@ function App() {
         </DraggablePanel>
       ) : null}
 
+      {/* 向き校正パネル（独立した浮動パネル。デバッグHUDと同じく Tweaks のトグルで表示切替）。
+          掴んで移動でき、✕で隠せる（= showCalib を OFF）。カメラ前提なので rx/obs では出さない。
+          コントロールは [data-no-drag] でドラッグ開始を抑止し、タイトル帯だけで掴む。 */}
+      {!obsMode && !isRx && t.showCalib ? (
+        <DraggablePanel
+          id="calib"
+          onClose={() => setTweak('showCalib', false)}
+          closeLabel="向き校正パネルを隠す"
+          defaultStyle={{ top: 68, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
+          style={{
+            width: 'min(280px, 86vw)', zIndex: 6,
+            background: 'rgba(252,250,247,0.97)', color: '#3c3026', borderRadius: 12,
+            padding: '10px 12px 12px', boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+            fontFamily: "'Zen Maru Gothic', sans-serif",
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: '0.04em', paddingRight: 18, marginBottom: 6 }}>向き校正</div>
+          <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 12, lineHeight: 1.5, color: '#6a5a48' }}>
+              「正」でまとめて校正（向き・距離・目・かしげ）→ 各方向へ顔を振り切って 上/左/右/下 を押す。
+              体は動かさず顔の向きだけ変えると、左右は位置ズレ、上下はズーム変化も同時に補正します。
+              デバッグの「グリッド表示」で到達点を見ながら調整できます。
+            </div>
+            <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross} />
+            <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
+              onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
+            <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
+              onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
+            <TweakButton label="上下左右の範囲をリセット" secondary onClick={resetRanges}></TweakButton>
+            <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
+          </div>
+        </DraggablePanel>
+      ) : null}
+
       {!isRx && (!obsMode || panelOpen) && (
       <TweaksPanel closeOnOutsideClick={false}>
         {/* fork:sections — よく触る3つを上に集約し初期展開。残りは折りたたみ
@@ -1405,18 +1415,8 @@ function App() {
           ) : null}
         </TweakSection>
         <TweakSection label="向き校正" collapsible>
-          <div style={{ fontSize: 12, lineHeight: 1.5, color: '#6a5a48', margin: '2px 0 6px' }}>
-            まず「正」で正面 → 次に各方向へ顔を振り切って 上/左/右/下 を押す。
-            体は動かさず顔の向きだけ変えると、左右は位置ズレ、上下はズーム変化も同時に補正します。
-            デバッグの「グリッド表示」で到達点を見ながら調整できます。
-          </div>
-          <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross} />
-          <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
-            onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
-          <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
-            onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
-          <TweakButton label="上下左右の範囲をリセット" secondary onClick={resetRanges}></TweakButton>
-          <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
+          <TweakToggle label="向き校正パネルを表示" value={t.showCalib}
+            onChange={(v) => setTweak('showCalib', v)}></TweakToggle>
         </TweakSection>
         <TweakSection label="反転" collapsible>
           <TweakToggle label="左右反転" value={t.invertX}
