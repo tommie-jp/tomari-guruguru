@@ -22,6 +22,7 @@ import { applyThemeColor } from './theme-color.js';
 import { createSoundboard } from './cue-audio.js';
 import { createCueController, isTypingTarget, parseCueParam } from './cue-system.js';
 import { CueStampLayer } from './cue-stamp.jsx';
+import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -341,13 +342,13 @@ function PanelToggles({ items, inkColor, subColor, style }) {
 // 演出キュー: 音(tone は合成音フォールバック / sound にパスがあればそれを再生)とスタンプを束ねる。
 // 発火経路は 右端ボタン / 数字キー / ?cue= の3つ共通。後で effect/expression も同じ cue に足せる。
 const DEFAULT_CUES = [
-  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop', icon: '👋', effect: { glow: 4, glowColor: '#9FD8FF', ms: 600 } },
+  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop', icon: '👋', effect: { glow: 4, glowColor: '#9FD8FF', ms: 600 }, gesture: 'nod' },
   { id: 'clap',     label: '拍手',       key: '2', tone: 520, stamp: '👏', anim: 'pop' },
   { id: 'laugh',    label: 'わらい',     key: '3', tone: 720, stamp: '😆', anim: 'rise' },
   { id: 'sweat',    label: 'あせ',       key: '4', tone: 430, stamp: '💦', anim: 'rise' },
   { id: 'anger',    label: 'いかり',     key: '5', tone: 300, stamp: '💢', anim: 'shake', effect: { glow: 5, glowColor: '#FF6B6B', ms: 500 } },
-  { id: 'sparkle',  label: 'キラキラ',   key: '6', tone: 880, stamp: '✨', anim: 'rise', effect: { glow: 7, glowColor: '#FFE9A8', ms: 850 } },
-  { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop' },
+  { id: 'sparkle',  label: 'キラキラ',   key: '6', tone: 880, stamp: '✨', anim: 'rise', effect: { glow: 7, glowColor: '#FFE9A8', ms: 850 }, gesture: 'spin' },
+  { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop', gesture: 'shake' },
 ];
 
 function App() {
@@ -384,6 +385,8 @@ function App() {
   const cueSendRef = useRef(null); // relayApi.sendCue を後で差す（render 末で代入）
   const [cueFx, setCueFx] = useState(null); // 演出の一時エフェクト（グローのフラッシュ）
   const cueFxTimerRef = useRef(0);
+  const gesturePlayRef = useRef(null); // 再生中ジェスチャー { name, start, base }（描画ループが読む）
+  const gestureFxRef = useRef(null);   // 回転/拡縮を当てる中心原点ラッパー（顔追従と別レイヤー）
   const cueController = useMemo(
     () => createCueController(DEFAULT_CUES, (cue) => {
       cueBoard.play(cue);
@@ -393,6 +396,10 @@ function App() {
         clearTimeout(cueFxTimerRef.current);
         setCueFx(cue.effect);
         cueFxTimerRef.current = setTimeout(() => setCueFx(null), cue.effect.ms || 700);
+      }
+      // gesture 付きキューは うなずき/回転/いやいや を再生（描画ループが顔追従を一時上書き）。
+      if (cue.gesture && GESTURES[cue.gesture]) {
+        gesturePlayRef.current = { name: cue.gesture, start: performance.now(), base: null };
       }
       if (mode === 'tx' && cueSendRef.current) cueSendRef.current(cue.id);
     }),
@@ -757,10 +764,27 @@ function App() {
       }
     }
 
+    // ジェスチャー再生中は顔追従ポーズを一時上書き: セルを差し替え、回転/拡縮を専用ラッパーへ。
+    // 終了(null)で解放→ライブ追従へ戻る。送信フレームには触れない（rx へは cue id を別途転送）。
+    function applyGesture(out, now) {
+      const g = gesturePlayRef.current;
+      if (!g) return out;
+      if (g.base == null) g.base = out.cell;
+      const s = sampleGesture(GESTURES[g.name], now - g.start, g.base, { rows: ROWS, cols: COLS });
+      if (!s) {
+        gesturePlayRef.current = null;
+        if (gestureFxRef.current) gestureFxRef.current.style.transform = '';
+        return out;
+      }
+      if (gestureFxRef.current) gestureFxRef.current.style.transform = gestureTransform(s);
+      return { ...out, cell: s.cell };
+    }
+
     function tick(now) {
+      let out = null;
       if (mode === 'rx') {
         const frame = latestFrameRef.current;
-        if (frame) commit(applyState(frame, viewRef.current, smoothStateRef.current));
+        if (frame) out = applyState(frame, viewRef.current, smoothStateRef.current);
       } else {
         const tw = tweaksRef.current;
         // 送信する移動量だけ moveRatio 倍（rx が tx の比率倍動く）。tx 自身の表示は
@@ -776,8 +800,9 @@ function App() {
           lastSent = now;
           relayApi.sendState(encodeStateFrame(frame));
         }
-        commit(applyState(frame, tw, smoothStateRef.current));
+        out = applyState(frame, tw, smoothStateRef.current);
       }
+      if (out) commit(applyGesture(out, now));
       raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
@@ -1099,6 +1124,8 @@ function App() {
       >
       <div ref={zoomRef} style={{ willChange: 'transform' }}>
        <div ref={motionRef} style={{ willChange: 'transform', transformOrigin: `50% ${view.tiltPivotY}%` }}>
+        {/* ジェスチャー(回転/拡縮)用ラッパー。中心原点なので spin が中心で回る。顔追従(首元原点の tilt)とは別レイヤー。 */}
+        <div ref={gestureFxRef} style={{ willChange: 'transform' }}>
         <div
           ref={charRef}
           onPointerDown={() => setPressed(true)}
@@ -1129,6 +1156,7 @@ function App() {
             cell={cell}
             effects={effects}
           ></SpriteAvatar>
+        </div>
         </div>
        </div>
       </div>

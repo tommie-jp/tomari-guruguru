@@ -77,6 +77,13 @@ describe('normalizeCue', () => {
     expect(normalizeCue({ id: 'x', effect: { glow: 5, ms: 99999 } }).effect.ms).toBe(4000);
   });
 
+  it('gesture は動き演出名（文字列のみ、空/非文字列は null）', () => {
+    expect(normalizeCue({ id: 'x' }).gesture).toBeNull();
+    expect(normalizeCue({ id: 'x', gesture: '  ' }).gesture).toBeNull();
+    expect(normalizeCue({ id: 'x', gesture: 42 }).gesture).toBeNull();
+    expect(normalizeCue({ id: 'x', gesture: ' nod ' }).gesture).toBe('nod');
+  });
+
   it('音だけ・スタンプだけ・両方ありを許容する', () => {
     expect(normalizeCue({ id: 'snd', tone: 440 })).toMatchObject({ tone: 440, stamp: null });
     expect(normalizeCue({ id: 'stp', stamp: '✨' })).toMatchObject({ tone: null, stamp: '✨' });
