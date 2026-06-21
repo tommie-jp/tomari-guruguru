@@ -1134,8 +1134,9 @@ function App() {
       </div>
       </div>
 
-      {/* リアクション・スタンプ。アバターの変形(zoom/tilt/drag)を継承しないようステージ直下に置く。obsMode(配信)でも表示する。 */}
-      <CueStampLayer ref={cueStampRef} top="16%"></CueStampLayer>
+      {/* リアクション・スタンプ。アバターの頭上（キャラ上端付近）に表示。変形(zoom/tilt/drag)は
+          継承せず、charSize から頭上位置を算出（中央配置前提）。obsMode(配信)でも表示する。 */}
+      <CueStampLayer ref={cueStampRef} bottom={`calc(50% + ${view.charSize * 0.55}vmin)`}></CueStampLayer>
 
       {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。 */}
       {!obsMode && !isRx && t.sbButtons ? (

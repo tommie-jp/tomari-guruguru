@@ -53,7 +53,9 @@ const KEYFRAMES = `
 `;
 
 function CueStampLayerImpl(props, ref) {
-  const { top = '8%' } = props;
+  // top / bottom のどちらかで縦位置を指定する。bottom を渡すと「下端基準」で配置し、
+  // アバターの頭上（キャラ上端）に貼り付けて上方向へ浮かせる用途に使う。
+  const { top = '8%', bottom } = props;
   const [items, setItems] = useState([]);
   const timers = useRef(new Set());
 
@@ -95,7 +97,7 @@ function CueStampLayerImpl(props, ref) {
           style={{
             position: 'absolute',
             left: `calc(50% + ${it.jitter}px)`,
-            top: it.top || top,
+            ...(bottom != null ? { bottom } : { top }),
             fontSize: 'clamp(34px, 8vmin, 90px)',
             lineHeight: 1,
             whiteSpace: 'nowrap',
