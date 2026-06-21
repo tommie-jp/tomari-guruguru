@@ -119,7 +119,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "effDissolveAmount": 0,
   "effDissolveColor": "#7FE0FF",
   "sbGain": 1,
-  "sbButtons": true
+  "sbButtons": true,
+  "sbMuted": false
 }/*EDITMODE-END*/;
 
 // 表示する主な表情ブレンドシェイプ（MediaPipe FaceLandmarker のカテゴリ名）
@@ -998,7 +999,7 @@ function App() {
   }, [obsMode]);
 
   // 演出: 全体音量を反映。
-  useEffect(() => { cueBoard.setMasterGain(view.sbGain); }, [cueBoard, view.sbGain]);
+  useEffect(() => { cueBoard.setMasterGain(view.sbMuted ? 0 : view.sbGain); }, [cueBoard, view.sbGain, view.sbMuted]);
   // iOS(WebKit=iPhone の Chrome/Safari) 自動再生対策: 最初のユーザー操作で音声をアンロック。
   // pointerdown は click より前に発火するので、ボタンを押し切る前に AudioContext が起きる。
   useEffect(() => {
@@ -1319,6 +1320,7 @@ function App() {
           { key: 'debug', label: 'デバッグ', on: t.showDebug, toggle: () => setTweak('showDebug', !t.showDebug) },
           { key: 'expr', label: '表情', on: t.showExpr, toggle: () => setTweak('showExpr', !t.showExpr) },
           { key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) },
+          { key: 'sound', label: t.sbMuted ? '🔇 音OFF' : '🔊 音ON', on: !t.sbMuted, toggle: () => setTweak('sbMuted', !t.sbMuted) },
         ]}
       >
         <button
@@ -1558,6 +1560,8 @@ function App() {
             onChange={(v) => setTweak('effDissolveColor', v)}></TweakColor>
         </TweakSection>
         <TweakSection label="演出（サウンドボード）" collapsible>
+          <TweakToggle label="音を出す" value={!t.sbMuted}
+            onChange={(v) => setTweak('sbMuted', !v)}></TweakToggle>
           <TweakSlider label="演出の音量" value={t.sbGain} min={0} max={2} step={0.05}
             onChange={(v) => setTweak('sbGain', v)}></TweakSlider>
           <TweakToggle label="ボタンを表示" value={t.sbButtons}
