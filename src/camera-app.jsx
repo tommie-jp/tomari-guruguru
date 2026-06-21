@@ -1170,12 +1170,12 @@ function App() {
       {!obsMode && !isRx && t.sbButtons ? (
         <div style={{
           position: 'absolute', right: 'calc(14px + var(--sar))', top: '50%',
-          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 8, zIndex: 6
+          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: isNarrow ? 6 : 8, zIndex: 6
         }}>
           {cueController.cues.map((c) => (
             <button key={c.id} onClick={() => cueController.run(c.id)} title={`${c.label}（キー: ${c.key || '-'}）`}
               style={{
-                position: 'relative', width: 50, height: 46, fontSize: 21, lineHeight: 1,
+                position: 'relative', width: isNarrow ? 40 : 50, height: isNarrow ? 38 : 46, fontSize: isNarrow ? 18 : 21, lineHeight: 1,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)',
                 border: `1.5px solid ${dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)'}`,
@@ -1194,11 +1194,11 @@ function App() {
       {!obsMode && (
       <div style={{
         position: 'absolute',
-        bottom: isNarrow ? 'calc(84px + var(--sab))' : 'calc(4.5vh + var(--sab))',
-        left: 0, right: 0,
-        textAlign: 'center', pointerEvents: 'none'
+        top: 'calc(8px + var(--sat))',
+        left: 'calc(12px + var(--sal))', right: 'auto',
+        textAlign: 'left', pointerEvents: 'none', whiteSpace: 'nowrap'
       }}>
-        <div style={{ fontSize: 'clamp(20px, 2.6vmin, 28px)', fontWeight: 700, color: inkColor, letterSpacing: '0.18em' }}>ぐるぐるアバター カメラ版</div>
+        <div style={{ fontSize: 'clamp(18px, 2.4vmin, 28px)', fontWeight: 700, color: inkColor, letterSpacing: '0.06em' }}>ぐるぐるアバター カメラ版</div>
         <div style={{ fontSize: 'clamp(13px, 1.7vmin, 15px)', color: subColor, marginTop: 2, letterSpacing: '0.08em' }}>顔の向き・口の動きに合わせて同調するよ</div>
         {/* アバター画像の帰属表示（registry の attribution を per-avatar 表示）。
             01-tomari は原作ろてじん、02 はいらすとや素材＋ChatGPT 生成、のように出し分ける。
