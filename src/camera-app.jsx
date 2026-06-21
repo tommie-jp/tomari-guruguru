@@ -7,6 +7,8 @@ import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
 import { computeStateFrame, createExprState } from './face/avatar-state';
 import { computeDirectionRange } from './face/direction-range';
+import { computeSlidePoseCompX, computeZoomPitchComp } from './face/calibrate-comp';
+import { compensateScaleForMouth } from './face/mouth-compensated-scale';
 import { applyState, createSmoothState } from './face/apply-state';
 import { encodeStateFrame, decodeStateFrame } from './face/state-codec';
 import { useRelay } from './face/use-relay';
@@ -514,25 +516,44 @@ function App() {
     flashDir('center', true);
   }
 
-  // 上下左右の校正: その向きに顔を振り切った姿勢で押す。振り切った角度が
-  // ちょうど画面端(±1)に対応するよう、片側レンジ(rangeXxxDeg)を取り直す。
-  // 逆向き・振り不足は computeDirectionRange が null を返すので ✗ を出して書かない。
+  // 上下左右の校正: その向きに顔を振り切った姿勢で押す。1回の押下で
+  //   ① 振り幅（片側レンジ rangeXxxDeg）が画面端(±1)に来るよう校正、
+  //   ② 左右は「向いたときの位置ズレ」(slidePoseCompX)、上下は「向いたときの
+  //      ズーム変化」(zoomPitchComp) も同時に校正する（顔の向きだけ変えて押す前提）。
+  // 逆向き・振り不足は computeDirectionRange が null を返すので ✗ を出して何も書かない。
   function calibrateDirection(dir) {
+    const yaw = poseRef.current.yaw;
+    const pitch = poseRef.current.pitch;
     const res = computeDirectionRange({
-      yawRad: poseRef.current.yaw,
-      pitchRad: poseRef.current.pitch,
+      yawRad: yaw,
+      pitchRad: pitch,
       biasYawDeg: t.biasYawDeg,
       biasPitchDeg: t.biasPitchDeg,
       dir,
       sensitivity: t.sensitivity,
       minDeg: CALIBRATE_MIN_SWING_DEG,
     });
-    if (res) {
-      setTweak(res.key, res.deg);
-      flashDir(dir, true);
-    } else {
+    if (!res) {
       flashDir(dir, false);
+      return;
     }
+    const edits = { [res.key]: res.deg };
+    // 左右: 位置ズレ補正も同時に。鼻先のドリフトを打ち消す comp を逆算（無効なら据え置き）。
+    if (dir === 'left' || dir === 'right') {
+      const compX = computeSlidePoseCompX({ posX: posRef.current.x, yaw, invertSlide: t.invertSlide });
+      if (compX != null) edits.slidePoseCompX = compX;
+    }
+    // 上下: ズーム補正も同時に。正面の基準サイズ（手動較正優先・無ければ自動基準）へ戻す。
+    // 実行時パイプラインに合わせ、口開き補正(zoomMouthComp)を先に通したサイズで逆算する
+    // （既定 zoomMouthComp=0 なら素通し。口を開けて押しても基準へ戻る comp を解く）。
+    if (dir === 'up' || dir === 'down') {
+      const baseline = t.zoomBaseline > 0 ? t.zoomBaseline : exprStateRef.current.autoBaseline;
+      const szMouth = compensateScaleForMouth(faceScaleRef.current, mouthRef.current, t.zoomMouthComp);
+      const compZ = computeZoomPitchComp({ faceScale: szMouth, pitch, baseline });
+      if (compZ != null) edits.zoomPitchComp = compZ;
+    }
+    setTweak(edits);
+    flashDir(dir, true);
   }
   // 上下左右の振り幅を既定（≒従来の対称レンジ）へ戻す。1回の setTweak でまとめて反映する。
   function resetRanges() {
@@ -1386,6 +1407,7 @@ function App() {
         <TweakSection label="向き校正" collapsible>
           <div style={{ fontSize: 12, lineHeight: 1.5, color: '#6a5a48', margin: '2px 0 6px' }}>
             まず「正」で正面 → 次に各方向へ顔を振り切って 上/左/右/下 を押す。
+            体は動かさず顔の向きだけ変えると、左右は位置ズレ、上下はズーム変化も同時に補正します。
             デバッグの「グリッド表示」で到達点を見ながら調整できます。
           </div>
           <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross} />
