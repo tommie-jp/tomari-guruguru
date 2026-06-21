@@ -6,6 +6,7 @@ import { useFacePose } from './face/use-face-pose';
 import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
 import { computeStateFrame, createExprState } from './face/avatar-state';
+import { computeDirectionRange } from './face/direction-range';
 import { applyState, createSmoothState } from './face/apply-state';
 import { encodeStateFrame, decodeStateFrame } from './face/state-codec';
 import { useRelay } from './face/use-relay';
@@ -52,6 +53,10 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "sensitivity": 1.3,
   "biasYawDeg": -8,
   "biasPitchDeg": -10,
+  "rangeYawLeftDeg": 28.6,
+  "rangeYawRightDeg": 28.6,
+  "rangePitchUpDeg": 22.9,
+  "rangePitchDownDeg": 22.9,
   "invertX": true,
   "invertY": false,
   "preview": true,
@@ -68,6 +73,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "tiltPivotY": 72,
   "invertTilt": false,
   "tiltYawComp": 0,
+  "biasRollDeg": 0,
   "slideEnabled": true,
   "slideGain": 12,
   "slideMax": 30,
@@ -158,10 +164,10 @@ const SHADOW_FILTERS = [
 // 影レベルの最大値（SHADOW_FILTERS の最後のインデックス）。スライダー上限とクランプに使う。
 const SHADOW_MAX = SHADOW_FILTERS.length - 1;
 
-// 感度を頭の振り角(rad)に変換。感度が高いほど少ない首振りで端まで届く。
-const BASE_MAX_YAW = 0.5;
-const BASE_MAX_PITCH = 0.4;
 const DEG = Math.PI / 180;
+// 方向校正(上下左右)で受け付ける最小の振り角(度・物理角)。これ未満や逆向きは
+// 「ちゃんと振り向いていない」とみなして弾く（direction-range.js が判定）。
+const CALIBRATE_MIN_SWING_DEG = 5;
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
@@ -259,6 +265,41 @@ function TxQrButton({ url, subColor, inkColor, style }) {
   );
 }
 
+// 上下左右＋正面の十字校正ボタン。各方向に顔を振り切って押すと、その向きの
+// 振り幅を校正する（中央=正面）。flash[dir] が 'ok'/'err' のときボタン上に ✓/✗ を出す。
+// スマホでも押しやすいよう各マスは最小 56px、文字は clamp で可変にする。
+function DirectionCross({ flash = {}, onDir, onCenter }) {
+  const CELL = {
+    border: 'none', borderRadius: 12, cursor: 'pointer',
+    color: '#fff', fontWeight: 800, letterSpacing: '0.06em',
+    fontFamily: "'Zen Maru Gothic', sans-serif",
+    fontSize: 'clamp(15px, 4.2vmin, 19px)', minHeight: 56, padding: '10px 0',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.18)', transition: 'background 0.2s ease',
+  };
+  const bgFor = (st) => (st === 'ok' ? '#46C26A' : st === 'err' ? '#D9534F' : '#E8923C');
+  const textFor = (st, label) => (st === 'ok' ? '✓' : st === 'err' ? '✗' : label);
+  const cell = (dir, label, area, onClick, title) => {
+    const st = flash[dir];
+    return (
+      <button type="button" onClick={onClick} title={title}
+        style={{ ...CELL, gridArea: area, background: bgFor(st) }}>{textFor(st, label)}</button>
+    );
+  };
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+      gridTemplateAreas: '". up ." "left center right" ". down ."',
+      maxWidth: 240, margin: '6px auto 2px',
+    }}>
+      {cell('up', '上', 'up', () => onDir('up'), '顔を上に向け切って押す（上端に校正）')}
+      {cell('left', '左', 'left', () => onDir('left'), '顔を左に向け切って押す（左端に校正）')}
+      {cell('center', '正', 'center', onCenter, '今の向きを正面(中央)にする')}
+      {cell('right', '右', 'right', () => onDir('right'), '顔を右に向け切って押す（右端に校正）')}
+      {cell('down', '下', 'down', () => onDir('down'), '顔を下に向け切って押す（下端に校正）')}
+    </div>
+  );
+}
+
 function App() {
   const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
   // OBS ブラウザソース用ステージモード（背景透過＋UI 非表示）。
@@ -334,6 +375,10 @@ function App() {
   // 「校正」ボタン押下後のフィードバック表示（✓ を短時間出す）と、その消去タイマー。
   const [justCalibrated, setJustCalibrated] = useState(false);
   const calibTimerRef = useRef(null);
+  // 十字（上/左/正/右/下）の校正ボタンごとのフィードバック。成功は 'ok'、振り不足や
+  // 逆向きは 'err' を一定時間出す。方向ごとに別タイマーで消す。
+  const [dirFlash, setDirFlash] = useState({});
+  const dirFlashTimersRef = useRef({});
   // スマホ用「反映先」トグル。ON のとき操作は local 層（この端末だけ・CEF へ送らない）。
   // PC は Shift キーでも同じ層に切り替わる（layerFor が OR で見る）。ref は effect から参照。
   const [localMode, setLocalMode] = useState(false);
@@ -371,10 +416,15 @@ function App() {
   // 背景色に合わせて theme-color を追従させる。obs は背景 transparent（無効値）なので更新しない。
   useEffect(() => { if (!obsMode) applyThemeColor(view.bgColor); }, [obsMode, view.bgColor]);
 
-  // 顔向き → target への注入（マウス版の pointermove ハンドラの代わり）
+  // 顔向き → target への注入（マウス版の pointermove ハンドラの代わり）。
+  // 上下左右で別々の振り幅（方向校正で得た rangeXxxDeg）を rad に直し、感度で割る。
+  // 感度が高いほど少ない首振りで端まで届く（= maxXxx が小さくなる）。
+  const sens = t.sensitivity;
   const poseOptions = {
-    maxYaw: BASE_MAX_YAW / t.sensitivity,
-    maxPitch: BASE_MAX_PITCH / t.sensitivity,
+    maxYawRight: (t.rangeYawRightDeg * DEG) / sens,
+    maxYawLeft: (t.rangeYawLeftDeg * DEG) / sens,
+    maxPitchUp: (t.rangePitchUpDeg * DEG) / sens,
+    maxPitchDown: (t.rangePitchDownDeg * DEG) / sens,
     biasYaw: t.biasYawDeg * DEG,
     biasPitch: t.biasPitchDeg * DEG,
     invertX: t.invertX,
@@ -445,6 +495,64 @@ function App() {
     setTweak('biasPitchDeg', 0);
   }
 
+  // 十字校正ボタンのフィードバック（'ok' | 'err'）を方向ごとに一定時間出す。
+  function flashDir(dir, ok) {
+    setDirFlash((prev) => ({ ...prev, [dir]: ok ? 'ok' : 'err' }));
+    clearTimeout(dirFlashTimersRef.current[dir]);
+    dirFlashTimersRef.current[dir] = setTimeout(() => {
+      setDirFlash((prev) => {
+        const next = { ...prev };
+        delete next[dir];
+        return next;
+      });
+    }, CALIBRATE_FEEDBACK_MS);
+  }
+
+  // 「正」ボタン: 今の向きを正面に（center 校正）＋フィードバック。
+  function calibrateCenterCross() {
+    calibrateCenter();
+    flashDir('center', true);
+  }
+
+  // 上下左右の校正: その向きに顔を振り切った姿勢で押す。振り切った角度が
+  // ちょうど画面端(±1)に対応するよう、片側レンジ(rangeXxxDeg)を取り直す。
+  // 逆向き・振り不足は computeDirectionRange が null を返すので ✗ を出して書かない。
+  function calibrateDirection(dir) {
+    const res = computeDirectionRange({
+      yawRad: poseRef.current.yaw,
+      pitchRad: poseRef.current.pitch,
+      biasYawDeg: t.biasYawDeg,
+      biasPitchDeg: t.biasPitchDeg,
+      dir,
+      sensitivity: t.sensitivity,
+      minDeg: CALIBRATE_MIN_SWING_DEG,
+    });
+    if (res) {
+      setTweak(res.key, res.deg);
+      flashDir(dir, true);
+    } else {
+      flashDir(dir, false);
+    }
+  }
+  // 上下左右の振り幅を既定（≒従来の対称レンジ）へ戻す。1回の setTweak でまとめて反映する。
+  function resetRanges() {
+    setTweak({
+      rangeYawLeftDeg: TWEAK_DEFAULTS.rangeYawLeftDeg,
+      rangeYawRightDeg: TWEAK_DEFAULTS.rangeYawRightDeg,
+      rangePitchUpDeg: TWEAK_DEFAULTS.rangePitchUpDeg,
+      rangePitchDownDeg: TWEAK_DEFAULTS.rangePitchDownDeg,
+    });
+  }
+
+  // 今の首かしげ(roll)を「正面のかしげ(0)」として記録する。常に少し傾いて
+  // 写ってしまう人向け。以降はこの中立からのズレ分だけアバターがかしげる。
+  function calibrateTilt() {
+    setTweak('biasRollDeg', Math.round(rollRef.current / DEG));
+  }
+  function resetTilt() {
+    setTweak('biasRollDeg', 0);
+  }
+
   // いまの目の状態（開いている想定）を「まばたきなし」の基準にする。
   // 細目やカメラ角度で eyeBlink が開眼時でも高めに出る人向け。現在の値を
   // オフセットとして記録し、以降はこれを差し引いて閉じ具合を判定する。
@@ -474,12 +582,16 @@ function App() {
     calibrateCenter();   // 今の向きを正面に
     calibrateZoom();     // 今の距離を等倍の基準に
     calibrateEyesOpen(); // 今の目の大きさをまばたきなしに
+    calibrateTilt();     // 今のかしげを正面(0)に
     setJustCalibrated(true);
     clearTimeout(calibTimerRef.current);
     calibTimerRef.current = setTimeout(() => setJustCalibrated(false), CALIBRATE_FEEDBACK_MS);
   }
   // アンマウント時にフィードバック用タイマーを後始末する（解除後の setState を避ける）。
-  useEffect(() => () => clearTimeout(calibTimerRef.current), []);
+  useEffect(() => () => {
+    clearTimeout(calibTimerRef.current);
+    Object.values(dirFlashTimersRef.current).forEach(clearTimeout);
+  }, []);
 
   // ユーザー操作（移動・ズーム）2層の現在値を userRef に反映。操作 effect とボタンの共通経路。
   function applyUserTransform() {
@@ -844,7 +956,7 @@ function App() {
           顔追従の zoomRef/motionRef より外側なので、画面座標での平行移動＋全体スケールになる。 */}
       <div
         ref={userRef}
-        style={{ willChange: 'transform', touchAction: 'none', cursor: isRx ? 'default' : 'grab' }}
+        style={{ position: 'relative', zIndex: 1, willChange: 'transform', touchAction: 'none', cursor: isRx ? 'default' : 'grab' }}
       >
       <div ref={zoomRef} style={{ willChange: 'transform' }}>
        <div ref={motionRef} style={{ willChange: 'transform', transformOrigin: `50% ${view.tiltPivotY}%` }}>
@@ -1271,12 +1383,17 @@ function App() {
               onChange={(v) => setTweak('facingMode', v ? 'environment' : 'user')}></TweakToggle>
           ) : null}
         </TweakSection>
-        <TweakSection label="正面バイアス" collapsible>
+        <TweakSection label="向き校正" collapsible>
+          <div style={{ fontSize: 12, lineHeight: 1.5, color: '#6a5a48', margin: '2px 0 6px' }}>
+            まず「正」で正面 → 次に各方向へ顔を振り切って 上/左/右/下 を押す。
+            デバッグの「グリッド表示」で到達点を見ながら調整できます。
+          </div>
+          <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross} />
           <TweakSlider label="左右バイアス" value={t.biasYawDeg} min={-45} max={45} step={1} unit="°"
             onChange={(v) => setTweak('biasYawDeg', v)}></TweakSlider>
           <TweakSlider label="上下バイアス" value={t.biasPitchDeg} min={-45} max={45} step={1} unit="°"
             onChange={(v) => setTweak('biasPitchDeg', v)}></TweakSlider>
-          <TweakButton label="今の向きを正面にする" onClick={calibrateCenter}></TweakButton>
+          <TweakButton label="上下左右の範囲をリセット" secondary onClick={resetRanges}></TweakButton>
           <TweakButton label="正面をリセット" secondary onClick={resetCenter}></TweakButton>
         </TweakSection>
         <TweakSection label="反転" collapsible>
@@ -1300,6 +1417,10 @@ function App() {
             onChange={(v) => setTweak('invertTilt', v)}></TweakToggle>
           <TweakSlider label="左右向き補正" value={t.tiltYawComp} min={-1} max={1} step={0.05}
             onChange={(v) => setTweak('tiltYawComp', v)}></TweakSlider>
+          <TweakSlider label="かしげバイアス" value={t.biasRollDeg} min={-30} max={30} step={1} unit="°"
+            onChange={(v) => setTweak('biasRollDeg', v)}></TweakSlider>
+          <TweakButton label="今のかしげを正面(0)にする" onClick={calibrateTilt}></TweakButton>
+          <TweakButton label="かしげをリセット" secondary onClick={resetTilt}></TweakButton>
         </TweakSection>
         <TweakSection label="スライド" collapsible>
           <TweakToggle label="スライド追従（左右・上下）" value={t.slideEnabled}

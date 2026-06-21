@@ -76,6 +76,26 @@ describe('computeStateFrame', () => {
     expect(f.tilt).toBe(20);
   });
 
+  it('かしげバイアス: 今の roll を中立にすると tilt≒0 になる', () => {
+    // roll=0.3rad の姿勢を中立として記録（biasRollDeg=今の roll を整数度で）→ 差し引いて ~0。
+    // biasRollDeg は整数度なので残差は最大 0.5°程度（本番の Math.round と同じ挙動）。
+    const biasRollDeg = Math.round(0.3 / (Math.PI / 180));
+    const f = computeStateFrame(signals({ roll: 0.3 }), tweaks({ biasRollDeg }), createExprState(), 0);
+    const uncalibrated = computeStateFrame(signals({ roll: 0.3 }), tweaks(), createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(1); // 中立化されてほぼ 0
+    expect(Math.abs(f.tilt)).toBeLessThan(Math.abs(uncalibrated.tilt)); // 校正なしより小さい
+  });
+
+  it('かしげバイアス: 中立からのズレ分だけ tilt が出る', () => {
+    // 中立を 0.2rad に置き、今 0.2rad なら ~0、0.5rad なら差分だけかしげる。
+    const biasRollDeg = Math.round(0.2 / (Math.PI / 180));
+    const t = tweaks({ biasRollDeg, tiltGain: 1.0, tiltMax: 45 });
+    const neutral = computeStateFrame(signals({ roll: 0.2 }), t, createExprState(), 0);
+    const tilted = computeStateFrame(signals({ roll: 0.5 }), t, createExprState(), 0);
+    expect(Math.abs(neutral.tilt)).toBeLessThan(1);
+    expect(tilted.tilt).toBeGreaterThan(neutral.tilt + 5);
+  });
+
   it('左右向き補正OFF: 右を向く(yaw>0)と混入 roll でかしげる（症状の再現）', () => {
     const f = computeStateFrame(signals({ roll: 0.12, yaw: 0.4 }), tweaks({ tiltYawComp: 0 }), createExprState(), 0);
     expect(f.tilt).not.toBeCloseTo(0, 2);

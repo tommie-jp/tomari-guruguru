@@ -19,9 +19,18 @@ function clamp(v, a, b) {
 // 反応の強さは maxYaw / maxPitch（小さいほど少しの動きで端に届く=高感度）で調整。
 // biasYaw / biasPitch は「正面」とみなす中立オフセット（rad）。少し下や横を向いた
 // 自然な姿勢を正面(0)として扱いたいときに、その姿勢の生角度を入れる。
+//
+// 上下左右で振り幅が違う（人は「上」より「下」を向きやすい等）ので、片側ごとに
+// レンジを持てる: maxYawLeft/Right・maxPitchUp/Down。未指定(null)の側は対称な
+// maxYaw / maxPitch にフォールバックする（後方互換）。方向ごとの「校正」はこの
+// 片側レンジを書き換えて、振り切った姿勢がちょうど端(±1)に来るようにする。
 export const DEFAULT_POSE_OPTIONS = {
-  maxYaw: 0.5, // rad（約28度）で x=±1 に到達
-  maxPitch: 0.4, // rad（約23度）で y=±1 に到達
+  maxYaw: 0.5, // rad（約28度）で x=±1 に到達（左右共通のフォールバック）
+  maxPitch: 0.4, // rad（約23度）で y=±1 に到達（上下共通のフォールバック）
+  maxYawRight: null, // rad: 右に振り切る角。null なら maxYaw
+  maxYawLeft: null, // rad: 左に振り切る角。null なら maxYaw
+  maxPitchUp: null, // rad: 上に振り切る角。null なら maxPitch
+  maxPitchDown: null, // rad: 下に振り切る角。null なら maxPitch
   biasYaw: 0, // rad: この左右角を正面(x=0)とみなす
   biasPitch: 0, // rad: この上下角を正面(y=0)とみなす
   invertX: false, // 左右が逆に感じたら true
@@ -38,10 +47,21 @@ export const DEFAULT_POSE_OPTIONS = {
  * @returns {{ x: number, y: number, yaw: number, pitch: number, roll: number }}
  */
 export function poseFromMatrix(data, options = {}) {
-  const { maxYaw, maxPitch, biasYaw, biasPitch, invertX, invertY } = {
+  const {
+    maxYaw, maxPitch, maxYawRight, maxYawLeft, maxPitchUp, maxPitchDown,
+    biasYaw, biasPitch, invertX, invertY,
+  } = {
     ...DEFAULT_POSE_OPTIONS,
     ...options,
   };
+
+  // 片側レンジ（未指定なら左右/上下共通の maxYaw / maxPitch にフォールバック）。
+  // 0 や不正値で割ると NaN/Infinity が colX/rowY に伝播するので、極小値で底打ちする
+  // （手書きの localStorage/テーマで 0 が入っても正規化が壊れないように）。
+  const yawRight = (maxYawRight ?? maxYaw) || 1e-6;
+  const yawLeft = (maxYawLeft ?? maxYaw) || 1e-6;
+  const pitchUp = (maxPitchUp ?? maxPitch) || 1e-6;
+  const pitchDown = (maxPitchDown ?? maxPitch) || 1e-6;
 
   // 前方ベクトル（回転3x3の第3列）
   const fwdX = data[8];
@@ -54,10 +74,12 @@ export function poseFromMatrix(data, options = {}) {
   const yaw = Math.atan2(fwdX, depth); // 右を向くと符号が変わる
   const pitch = Math.atan2(fwdY, depth); // 上を向くと正（MediaPipe は y 上向き正）
 
-  // バイアスを引いて中立(正面)をずらしてから正規化する。
-  let x = (yaw - biasYaw) / maxYaw;
+  // バイアスを引いて中立(正面)をずらし、振った向きの側のレンジで正規化する。
+  const dyaw = yaw - biasYaw;
+  let x = dyaw >= 0 ? dyaw / yawRight : dyaw / yawLeft;
   // グリッドは r:0(上)→4(下) なので、上向き(pitch正)は y を負にする必要がある → 反転
-  let y = -(pitch - biasPitch) / maxPitch;
+  const dpitch = pitch - biasPitch;
+  let y = dpitch >= 0 ? -(dpitch / pitchUp) : -(dpitch / pitchDown);
 
   if (invertX) x = -x;
   if (invertY) y = -y;

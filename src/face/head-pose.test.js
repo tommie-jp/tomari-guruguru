@@ -73,3 +73,60 @@ describe('poseFromMatrix', () => {
     expect(poseFromMatrix(back).roll).toBeCloseTo(-a, 2);
   });
 });
+
+// 前方ベクトルを yaw(右が正)・pitch(上が正) から組み立てるヘルパ。
+// 片方ずつ振る前提（両方 0 でないときの depth は cos*cos の近似）。
+function fwdMatrix(yaw, pitch) {
+  const fwd = [Math.sin(yaw), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+  return matrix({ right: [1, 0, 0], up: [0, 1, 0], fwd });
+}
+
+describe('poseFromMatrix 非対称レンジ（上下左右で別々の振り幅）', () => {
+  it('右と左で別々のレンジが効く（右は浅く端へ・左は深く）', () => {
+    const opts = { maxYawRight: 0.2, maxYawLeft: 0.5 };
+    // 右に 0.2rad → 0.2/0.2 = 1（端）
+    expect(poseFromMatrix(fwdMatrix(0.2, 0), opts).x).toBeCloseTo(1, 2);
+    // 左に 0.2rad → -0.2/0.5 = -0.4（まだ端ではない）
+    expect(poseFromMatrix(fwdMatrix(-0.2, 0), opts).x).toBeCloseTo(-0.4, 2);
+  });
+
+  it('上と下で別々のレンジが効く（上は浅く端へ・下は深く）', () => {
+    const opts = { maxPitchUp: 0.2, maxPitchDown: 0.5 };
+    // 上向き(pitch正)は y を負に。0.2/0.2 = 1 → y=-1
+    expect(poseFromMatrix(fwdMatrix(0, 0.2), opts).y).toBeCloseTo(-1, 2);
+    // 下向き(pitch負)。0.2/0.5 = 0.4 → y=+0.4
+    expect(poseFromMatrix(fwdMatrix(0, -0.2), opts).y).toBeCloseTo(0.4, 2);
+  });
+
+  it('校正した振り切り角がちょうど端(±1)に対応する', () => {
+    const opts = { maxYawRight: 0.35, maxPitchDown: 0.45 };
+    expect(poseFromMatrix(fwdMatrix(0.35, 0), opts).x).toBeCloseTo(1, 2);
+    expect(poseFromMatrix(fwdMatrix(0, -0.45), opts).y).toBeCloseTo(1, 2);
+  });
+
+  it('後方互換: maxYaw/maxPitch だけ指定なら左右上下に共通で効く', () => {
+    const r = poseFromMatrix(fwdMatrix(0.25, 0), { maxYaw: 0.5 });
+    const l = poseFromMatrix(fwdMatrix(-0.25, 0), { maxYaw: 0.5 });
+    expect(r.x).toBeCloseTo(0.5, 2);
+    expect(l.x).toBeCloseTo(-0.5, 2);
+    const u = poseFromMatrix(fwdMatrix(0, 0.2), { maxPitch: 0.4 });
+    const d = poseFromMatrix(fwdMatrix(0, -0.2), { maxPitch: 0.4 });
+    expect(u.y).toBeCloseTo(-0.5, 2);
+    expect(d.y).toBeCloseTo(0.5, 2);
+  });
+
+  it('レンジが 0（壊れた保存値）でも NaN を出さず有限値に丸める', () => {
+    const p = poseFromMatrix(fwdMatrix(0.2, 0.2), { maxYawRight: 0, maxPitchUp: 0 });
+    expect(Number.isFinite(p.x)).toBe(true);
+    expect(Number.isFinite(p.y)).toBe(true);
+    expect(p.x).toBeGreaterThanOrEqual(-1);
+    expect(p.x).toBeLessThanOrEqual(1);
+  });
+
+  it('片側だけ指定したときは反対側は maxYaw/maxPitch にフォールバックする', () => {
+    // maxYawRight だけ上書き、左は maxYaw(0.5) のまま
+    const opts = { maxYaw: 0.5, maxYawRight: 0.25 };
+    expect(poseFromMatrix(fwdMatrix(0.25, 0), opts).x).toBeCloseTo(1, 2);
+    expect(poseFromMatrix(fwdMatrix(-0.25, 0), opts).x).toBeCloseTo(-0.5, 2);
+  });
+});
