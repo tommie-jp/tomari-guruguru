@@ -279,7 +279,7 @@ function TxQrButton({ url, subColor, inkColor, style }) {
 // 上下左右＋正面の十字校正ボタン。各方向に顔を振り切って押すと、その向きの
 // 振り幅を校正する（中央=正面）。flash[dir] が 'ok'/'err' のときボタン上に ✓/✗ を出す。
 // スマホでも押しやすいよう各マスは最小 56px、文字は clamp で可変にする。
-function DirectionCross({ flash = {}, onDir, onCenter }) {
+function DirectionCross({ flash = {}, onDir, onCenter, onToggleDetail, detailOpen }) {
   // デバッグHUDのグリッド風セル。通常は半透明、中央「正」は橙ハイライト、ok/err は緑/赤。
   const CELL = {
     border: '1px solid rgba(255,255,255,0.14)', borderRadius: 5, cursor: 'pointer',
@@ -302,7 +302,7 @@ function DirectionCross({ flash = {}, onDir, onCenter }) {
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: 'repeat(3, 44px)', gap: 4,
-      gridTemplateAreas: '". up ." "left center right" ". down ."',
+      gridTemplateAreas: '". up ." "left center right" "plus down ."',
       width: 140, margin: '0 auto',
     }}>
       {cell('up', '上', 'up', () => onDir('up'), '顔を上に向け切って押す（上端に校正）')}
@@ -310,6 +310,11 @@ function DirectionCross({ flash = {}, onDir, onCenter }) {
       {cell('center', '正', 'center', onCenter, '向き・距離・目・かしげをまとめて校正', true)}
       {cell('right', '右', 'right', () => onDir('right'), '顔を右に向け切って押す（右端に校正）')}
       {cell('down', '下', 'down', () => onDir('down'), '顔を下に向け切って押す（下端に校正）')}
+      {/* 左下の空セルに説明トグル（＋/－）を入れる。 */}
+      <button type="button" onClick={onToggleDetail} title={detailOpen ? '説明を隠す' : '説明を表示'}
+        style={{ ...CELL, gridArea: 'plus', background: 'rgba(255,255,255,0.10)', fontSize: 15 }}>
+        {detailOpen ? '－' : '＋'}
+      </button>
     </div>
   );
 }
@@ -460,6 +465,7 @@ function App() {
   const [dirFlash, setDirFlash] = useState({});
   const dirFlashTimersRef = useRef({});
   const [showCalibDetail, setShowCalibDetail] = useState(false); // 向き校正パネルの説明を展開するか
+  const [showDebugDetail, setShowDebugDetail] = useState(false); // デバッグパネルの数値を展開するか
   // スマホ用「反映先」トグル。ON のとき操作は local 層（この端末だけ・CEF へ送らない）。
   // PC は Shift キーでも同じ層に切り替わる（layerFor が OR で見る）。ref は effect から参照。
   const [localMode, setLocalMode] = useState(false);
@@ -1434,13 +1440,24 @@ function App() {
               }}></div>
             ))}
           </div>
-          <div>row {cell.r} / col {cell.c}</div>
-          <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
-          <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
-          <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
-          <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
-          <div>size {faceScaleRef.current.toFixed(3)} / zoom {smoothStateRef.current.zoom.toFixed(2)}x</div>
-          <div>engine {status.engine || '—'}{engineNote}</div>
+          {/* 既定はグリッドのみ。＋で row などの数値を展開（向き校正パネルと同様）。 */}
+          <button type="button" onClick={() => setShowDebugDetail((v) => !v)} title={showDebugDetail ? '値を隠す' : '値を表示'}
+            style={{
+              minWidth: 28, height: 20, padding: '0 8px', border: '1px solid rgba(255,255,255,0.25)',
+              borderRadius: 4, background: 'rgba(255,255,255,0.10)', color: '#fff',
+              fontFamily: 'inherit', fontSize: 13, cursor: 'pointer', lineHeight: 1,
+            }}>{showDebugDetail ? '－' : '＋'}</button>
+          {showDebugDetail ? (
+            <div style={{ marginTop: 4 }}>
+              <div>row {cell.r} / col {cell.c}</div>
+              <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
+              <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
+              <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
+              <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
+              <div>size {faceScaleRef.current.toFixed(3)} / zoom {smoothStateRef.current.zoom.toFixed(2)}x</div>
+              <div>engine {status.engine || '—'}{engineNote}</div>
+            </div>
+          ) : null}
         </DraggablePanel>
       ) : null}
 
@@ -1463,19 +1480,9 @@ function App() {
           }}
         >
           <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross} />
-            {/* 既定は十字ボタンのみ。＋で説明を展開（細かな数値調整は Tweaks「向き校正」へ集約）。 */}
-            <button
-              type="button"
-              onClick={() => setShowCalibDetail((v) => !v)}
-              title={showCalibDetail ? '説明を隠す' : '説明を表示'}
-              style={{
-                alignSelf: 'center', minWidth: 30, height: 22, padding: '0 9px',
-                border: '1px solid rgba(255,255,255,0.25)', borderRadius: 5,
-                background: 'rgba(255,255,255,0.10)', color: '#fff',
-                fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer', lineHeight: 1,
-              }}
-            >{showCalibDetail ? '－' : '＋'}</button>
+            {/* ＋は十字グリッドの左下セルに統合（押すと説明を展開／－で隠す）。 */}
+            <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross}
+              onToggleDetail={() => setShowCalibDetail((v) => !v)} detailOpen={showCalibDetail} />
             {showCalibDetail ? (
               <div style={{ fontSize: 11, lineHeight: 1.55, color: 'rgba(255,255,255,0.82)' }}>
                 「正」でまとめて校正（向き・距離・目・かしげ）→ 各方向へ顔を振り切って 上/左/右/下 を押す。
