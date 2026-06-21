@@ -19,10 +19,11 @@ const { useRef, useState, useEffect } = React;
  * @param {()=>object} [o.getConfig]          tx: need-config への応答に使う現在の tweaks
  * @param {(frame:Array<number>)=>void} [o.onState]  rx: 状態フレーム受信
  * @param {(tweaks:object)=>void} [o.onConfig]       rx: config 受信
- * @returns {{ sendState:(f:Array<number>)=>void, sendConfig:(t:object)=>void,
+ * @param {(id:string)=>void} [o.onCue]              rx: 演出キュー受信（tx の発火を再生）
+ * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string)=>void,
  *            peer:{connected:boolean,count:number}, linkUp:boolean }}
  */
-export function useRelay(mode, { relayUrl, getConfig, onState, onConfig } = {}) {
+export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue } = {}) {
   const clientRef = useRef(null);
   // CEF（consumer）の接続状態。tx の画面表示用。
   const [peer, setPeer] = useState({ connected: false, count: 0 });
@@ -31,7 +32,7 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig } = {}) 
 
   // 最新の closure を ref に保持（再接続を起こさずに中身だけ差し替える）。
   const cbRef = useRef({});
-  cbRef.current = { getConfig, onState, onConfig };
+  cbRef.current = { getConfig, onState, onConfig, onCue };
 
   useEffect(() => {
     if (mode === 'local') {
@@ -44,6 +45,7 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig } = {}) 
       role: mode,
       onState: mode === 'rx' ? (f) => cbRef.current.onState?.(f) : undefined,
       onConfig: mode === 'rx' ? (t) => cbRef.current.onConfig?.(t) : undefined,
+      onCue: mode === 'rx' ? (id) => cbRef.current.onCue?.(id) : undefined,
       onNeedConfig: mode === 'tx'
         ? () => {
             const cfg = cbRef.current.getConfig?.();
@@ -65,6 +67,7 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig } = {}) 
   return {
     sendState(frame) { clientRef.current?.sendState(frame); },
     sendConfig(tweaks) { clientRef.current?.sendConfig(tweaks); },
+    sendCue(id) { clientRef.current?.sendCue(id); },
     peer,
     linkUp,
   };

@@ -4,6 +4,7 @@
 //   - 状態フレーム: JSON 配列 [...]（state-codec の encode/decode 済み）
 //   - それ以外: JSON オブジェクト { type, ... }
 //       config        : { type:'config', tweaks }     producer→consumer（設定配布）
+//       cue           : { type:'cue', id }             producer→consumer（演出トリガ転送）
 //       need-config   : { type:'need-config' }         server→producer（CEF 接続時の要求）
 //       peer          : { type:'peer', ... }           server→producer（CEF 接続/切断の通知）
 //
@@ -19,15 +20,16 @@ const MAX_BACKOFF_MS = 8000;
  * @param {'tx'|'rx'} o.role  役割（サーバが producer/consumer を振り分ける）
  * @param {(frame:Array<number>)=>void} [o.onState]    状態フレーム受信（rx 用）
  * @param {(tweaks:object)=>void} [o.onConfig]         config 受信（rx 用）
+ * @param {(id:string)=>void} [o.onCue]                cue 受信（rx 用・演出トリガ）
  * @param {()=>void} [o.onNeedConfig]                  config 要求受信（tx 用）
  * @param {(msg:object)=>void} [o.onPeer]              接続通知受信（tx 用）
  * @param {(s:{connected:boolean})=>void} [o.onStatus] 自身の接続状態変化
  * @param {(url:string)=>WebSocket} [o.makeSocket]     テスト用の差し替え口
- * @returns {{ sendState:(f:Array<number>)=>void, sendConfig:(t:object)=>void, close:()=>void }}
+ * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string)=>void, close:()=>void }}
  */
 export function createRelayClient(o) {
   const {
-    url, role, onState, onConfig, onNeedConfig, onPeer, onStatus,
+    url, role, onState, onConfig, onCue, onNeedConfig, onPeer, onStatus,
     makeSocket = (u) => new WebSocket(u),
   } = o;
 
@@ -58,6 +60,7 @@ export function createRelayClient(o) {
       }
       switch (msg && msg.type) {
         case 'config': onConfig?.(msg.tweaks); break;
+        case 'cue': onCue?.(msg.id); break;
         case 'need-config': onNeedConfig?.(); break;
         case 'peer': onPeer?.(msg); break;
         default: break;
@@ -88,6 +91,7 @@ export function createRelayClient(o) {
   return {
     sendState(frame) { rawSend(JSON.stringify(frame)); },
     sendConfig(tweaks) { rawSend(JSON.stringify({ type: 'config', tweaks })); },
+    sendCue(id) { rawSend(JSON.stringify({ type: 'cue', id })); },
     close() {
       closed = true;
       clearTimeout(reconnectTimer);

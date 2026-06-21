@@ -59,6 +59,21 @@ describe('createRelayClient', () => {
     expect(onPeer).toHaveBeenCalledWith({ type: 'peer', event: 'connect', count: 1 });
   });
 
+  it('cue は onCue に id を渡す（演出のリレー転送）', () => {
+    const onCue = vi.fn();
+    const { get } = setup({ onCue });
+    get().open();
+    get().recv({ type: 'cue', id: 'hello' });
+    expect(onCue).toHaveBeenCalledWith('hello');
+  });
+
+  it('sendCue は {type:cue,id} を送る', () => {
+    const { client, get } = setup();
+    get().open();
+    client.sendCue('clap');
+    expect(JSON.parse(get().sent[0])).toEqual({ type: 'cue', id: 'clap' });
+  });
+
   it('壊れた JSON は無視して落ちない', () => {
     const onState = vi.fn();
     const { get } = setup({ onState });

@@ -378,14 +378,17 @@ function App() {
   const [cameras, setCameras] = useState([]);
   const view = isRx ? rxConfig : t;
   // 演出（サウンドボード＋リアクションスタンプ）。発火は ボタン/数字キー/?cue= 共通。
+  // tx では発火を relay 経由で rx(OBS) にも転送し、本番オーバーレイに演出を出す。
   const cueBoard = useMemo(() => createSoundboard(), []);
   const cueStampRef = useRef(null);
+  const cueSendRef = useRef(null); // relayApi.sendCue を後で差す（render 末で代入）
   const cueController = useMemo(
     () => createCueController(DEFAULT_CUES, (cue) => {
       cueBoard.play(cue);
       if (cueStampRef.current) cueStampRef.current.pop(cue);
+      if (mode === 'tx' && cueSendRef.current) cueSendRef.current(cue.id);
     }),
-    [cueBoard],
+    [cueBoard, mode],
   );
   // 表示アバター。?avatar=<id> があれば最優先（OBS シーン固定）、無ければ tweaks の値。
   // URL は起動時固定なので一度だけ解析する。未知 id は getAvatar が既定へフォールバック。
@@ -532,7 +535,10 @@ function App() {
     getConfig: () => tweaksRef.current,
     onState: (arr) => { latestFrameRef.current = decodeStateFrame(arr); },
     onConfig: (cfg) => setRxConfig((prev) => ({ ...prev, ...cfg })),
+    onCue: (id) => cueController.run(id), // rx: tx から来た演出をこの端末(OBS)で再生
   });
+  // tx の発火を rx へ転送するための送信口。毎レンダー最新の sendCue を ref に差す。
+  cueSendRef.current = relayApi.sendCue;
 
   // tx: 設定が変わったら CEF へ config を送る（数秒ごとの再送はしない＝変更時のみ）。
   useEffect(() => {
