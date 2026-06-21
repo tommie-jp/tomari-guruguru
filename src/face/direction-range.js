@@ -50,5 +50,9 @@ export function computeDirectionRange({
   // 逆向き（負）・振り不足（minDeg 未満）は校正失敗。
   if (!(swingDeg >= minDeg)) return null;
 
-  return { key: spec.key, deg: Math.round(swingDeg * sensitivity) };
+  // floor で切り捨て、レンジを「振り角ちょうど以下」にする。こうすると校正した姿勢で
+  // x(または y) が必ず ±1 以上（クランプで端）に届く＝デバッグ表示が確実に 1.00 になる。
+  // round だと端数の丸め上げで maxYaw が大きくなり、振り切っても 0.99 止まりになり得る。
+  // 1e-6 は浮動小数の誤差（例: 20° が 19.9999… になり floor で 19 へ落ちる）を吸収する分。
+  return { key: spec.key, deg: Math.floor(swingDeg * sensitivity + 1e-6) };
 }

@@ -3,11 +3,19 @@
 // computeTiltYawComp / computeSlidePoseComp* が出す値を computeStateFrame に通して確認する。
 import { describe, it, expect } from 'vitest';
 import { computeStateFrame, createExprState } from './avatar-state';
+import { poseFromMatrix } from './head-pose';
+import { computeDirectionRange } from './direction-range';
 import {
   computeTiltYawComp, computeSlidePoseCompX, computeSlidePoseCompY,
 } from './calibrate-comp';
 
 const DEG = Math.PI / 180;
+
+// 前方ベクトルを yaw(右+)・pitch(上+) から組む 4x4(列優先)。
+function fwdMatrix(yaw, pitch) {
+  const f = [Math.sin(yaw), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+  return [1, 0, 0, 0, 0, 1, 0, 0, f[0], f[1], f[2], 0, 0, 0, 0, 1];
+}
 
 // computeStateFrame が読む tweak 一式（必要な項目だけ・既定は補正OFF相当）。
 function tweaks(over = {}) {
@@ -88,5 +96,39 @@ describe('方向校正 → 実行時パイプラインの往復', () => {
     const t = tweaks({ slidePoseCompY: comp, invertSlideY: false });
     const f = computeStateFrame(signals({ posY: pose.posY, pitch: pose.pitch }), t, createExprState(), 0);
     expect(Math.abs(f.slideY)).toBeLessThan(0.5); // ~0vh
+  });
+});
+
+// 方向校正 → 顔向き(x/y)の往復。右/左/上/下で校正すると、その姿勢が画面端(±1)に届く
+// （= デバッグパネルの x/y が ±1.00、列/行が端になる）ことを端から端まで確認する。
+describe('方向校正 → 向き(x)が画面端(±1)に届く', () => {
+  const sens = 1.3;
+  const biasYawDeg = -8;
+
+  function xAfterCalib(dir, yaw) {
+    const res = computeDirectionRange({
+      yawRad: yaw, pitchRad: 0, biasYawDeg, biasPitchDeg: 0, dir, sensitivity: sens,
+    });
+    // camera-app と同じく poseOptions の片側レンジを組む（感度で割る）。
+    const maxYawRight = res.key === 'rangeYawRightDeg' ? (res.deg * DEG) / sens : 1;
+    const maxYawLeft = res.key === 'rangeYawLeftDeg' ? (res.deg * DEG) / sens : 1;
+    // invertX は端の符号だけなので大きさ確認のため false。biasYaw は度→rad。
+    const pose = poseFromMatrix(fwdMatrix(yaw, 0), {
+      maxYawRight, maxYawLeft, biasYaw: biasYawDeg * DEG, invertX: false,
+    });
+    return pose.x;
+  }
+
+  it('右ボタン: 右を向いた姿勢の x が右端(=1.00)になる', () => {
+    expect(xAfterCalib('right', 0.5)).toBe(1); // クランプで厳密に 1.00
+  });
+
+  it('左ボタン: 左を向いた姿勢の x が左端(=-1.00)になる', () => {
+    expect(xAfterCalib('left', -0.5)).toBe(-1);
+  });
+
+  it('別の振り角でも、その姿勢が端(±1)に届く（floor 切り捨てで 0.99 止まりにしない）', () => {
+    expect(xAfterCalib('right', 0.33)).toBe(1);
+    expect(xAfterCalib('right', 0.7)).toBe(1);
   });
 });
