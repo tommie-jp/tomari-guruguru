@@ -67,6 +67,16 @@ describe('normalizeCue', () => {
     expect(normalizeCue({ id: 'x', icon: ' 👋 ' }).icon).toBe('👋');
   });
 
+  it('effect は glow フラッシュを正規化（glow>0 のみ有効、ms はクランプ）', () => {
+    expect(normalizeCue({ id: 'x' }).effect).toBeNull();
+    expect(normalizeCue({ id: 'x', effect: {} }).effect).toBeNull();
+    expect(normalizeCue({ id: 'x', effect: { glow: 0 } }).effect).toBeNull();
+    expect(normalizeCue({ id: 'x', effect: { glow: 6, glowColor: '#FFE08A', ms: 700 } }).effect)
+      .toEqual({ glow: 6, glowColor: '#FFE08A', ms: 700 });
+    expect(normalizeCue({ id: 'x', effect: { glow: 5 } }).effect).toEqual({ glow: 5, glowColor: null, ms: 700 });
+    expect(normalizeCue({ id: 'x', effect: { glow: 5, ms: 99999 } }).effect.ms).toBe(4000);
+  });
+
   it('音だけ・スタンプだけ・両方ありを許容する', () => {
     expect(normalizeCue({ id: 'snd', tone: 440 })).toMatchObject({ tone: 440, stamp: null });
     expect(normalizeCue({ id: 'stp', stamp: '✨' })).toMatchObject({ tone: null, stamp: '✨' });

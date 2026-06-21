@@ -341,12 +341,12 @@ function PanelToggles({ items, inkColor, subColor, style }) {
 // 演出キュー: 音(tone は合成音フォールバック / sound にパスがあればそれを再生)とスタンプを束ねる。
 // 発火経路は 右端ボタン / 数字キー / ?cue= の3つ共通。後で effect/expression も同じ cue に足せる。
 const DEFAULT_CUES = [
-  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop', icon: '👋' },
+  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop', icon: '👋', effect: { glow: 4, glowColor: '#9FD8FF', ms: 600 } },
   { id: 'clap',     label: '拍手',       key: '2', tone: 520, stamp: '👏', anim: 'pop' },
   { id: 'laugh',    label: 'わらい',     key: '3', tone: 720, stamp: '😆', anim: 'rise' },
   { id: 'sweat',    label: 'あせ',       key: '4', tone: 430, stamp: '💦', anim: 'rise' },
-  { id: 'anger',    label: 'いかり',     key: '5', tone: 300, stamp: '💢', anim: 'shake' },
-  { id: 'sparkle',  label: 'キラキラ',   key: '6', tone: 880, stamp: '✨', anim: 'rise' },
+  { id: 'anger',    label: 'いかり',     key: '5', tone: 300, stamp: '💢', anim: 'shake', effect: { glow: 5, glowColor: '#FF6B6B', ms: 500 } },
+  { id: 'sparkle',  label: 'キラキラ',   key: '6', tone: 880, stamp: '✨', anim: 'rise', effect: { glow: 7, glowColor: '#FFE9A8', ms: 850 } },
   { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop' },
 ];
 
@@ -382,14 +382,23 @@ function App() {
   const cueBoard = useMemo(() => createSoundboard(), []);
   const cueStampRef = useRef(null);
   const cueSendRef = useRef(null); // relayApi.sendCue を後で差す（render 末で代入）
+  const [cueFx, setCueFx] = useState(null); // 演出の一時エフェクト（グローのフラッシュ）
+  const cueFxTimerRef = useRef(0);
   const cueController = useMemo(
     () => createCueController(DEFAULT_CUES, (cue) => {
       cueBoard.play(cue);
       if (cueStampRef.current) cueStampRef.current.pop(cue);
+      // effect 付きキューは一定時間だけグローを強める（音＋スタンプ＋発光の複合演出）。
+      if (cue.effect) {
+        clearTimeout(cueFxTimerRef.current);
+        setCueFx(cue.effect);
+        cueFxTimerRef.current = setTimeout(() => setCueFx(null), cue.effect.ms || 700);
+      }
       if (mode === 'tx' && cueSendRef.current) cueSendRef.current(cue.id);
     }),
     [cueBoard, mode],
   );
+  useEffect(() => () => clearTimeout(cueFxTimerRef.current), []); // アンマウント時にタイマ掃除
   // 表示アバター。?avatar=<id> があれば最優先（OBS シーン固定）、無ければ tweaks の値。
   // URL は起動時固定なので一度だけ解析する。未知 id は getAvatar が既定へフォールバック。
   const avatarParam = useMemo(
@@ -991,11 +1000,15 @@ function App() {
   // エフェクト設定（view 由来）→ SpriteAvatar へ。値が変わったときだけ新オブジェクトを作り
   // 参照を安定させる（毎レンダーで setEffect が走るのを防ぐ）。
   const effects = useMemo(() => ({
-    glow: { enabled: view.effGlow, strength: view.effGlowStrength, color: view.effGlowColor },
+    // cueFx 中はグローを一時的に上書き（発火フラッシュ）。通常時は view の設定を使う。
+    glow: cueFx && cueFx.glow
+      ? { enabled: true, strength: cueFx.glow, color: cueFx.glowColor || view.effGlowColor }
+      : { enabled: view.effGlow, strength: view.effGlowStrength, color: view.effGlowColor },
     dissolve: { enabled: view.effDissolve, amount: view.effDissolveAmount, color: view.effDissolveColor },
   }), [
     view.effGlow, view.effGlowStrength, view.effGlowColor,
     view.effDissolve, view.effDissolveAmount, view.effDissolveColor,
+    cueFx,
   ]);
 
   const dark = view.bgColor === '#2B2926';
