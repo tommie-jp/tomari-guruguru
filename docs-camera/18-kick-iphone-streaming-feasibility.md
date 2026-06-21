@@ -46,6 +46,49 @@ iPhone で kick.com にライブ配信するとき、通常のカメラ映像の
 
 ## 現実的にできる構成
 
+4 つの構成（A〜D）の映像の流れを、ソースから Kick RTMP までで示す。
+
+```plantuml
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+[Kick RTMP\nrtmp(s)://ingest] as KICK
+
+package "A: iPhone 単体（自撮り同時=不可）" {
+  [本プロジェクト アバター画面\n(Safari 全画面・顔推定)] as A_AV
+  [ReplayKit 画面ブロードキャスト\nLarix Screencaster / HaishinKit] as A_CAST
+  A_AV --> A_CAST : 画面キャプチャ
+}
+
+package "B: 2 台＋PRISM（自撮り同時=可）" {
+  [iPhone 1\n本プロジェクト アバター] as B_AV
+  [iPhone 2\n自撮り] as B_SELF
+  [PRISM\nRTMP Overlay 合成\n(同一 WiFi・音声 1 ソース)] as B_PRISM
+  B_AV --> B_PRISM
+  B_SELF --> B_PRISM
+}
+
+package "C: PC＋OBS（自撮り同時=可・最も安定）" {
+  [カメラ（自撮り）] as C_CAM
+  [本プロジェクト アバター] as C_AV
+  [PC OBS\nカメラ＋アバター合成] as C_OBS
+  C_CAM --> C_OBS
+  C_AV --> C_OBS
+}
+
+package "D: PRISM 内蔵 VTuber（iPhone 単体・別キャラ）" {
+  [PRISM VTuber\n(2D/3D VRM・前面カメラ顔トラッキング)\n※guruguru キャラは使えない] as D_VT
+}
+
+A_CAST --> KICK : RTMP
+B_PRISM --> KICK : RTMP
+C_OBS --> KICK : RTMP 直送
+D_VT --> KICK : Custom RTMP
+@enduml
+```
+
 - **A**: アバター画面を ReplayKit 画面ブロードキャスト → Kick RTMP
   - アバター: 本プロジェクト / 自撮り同時: 不可 / iPhone 単体: 可
   - 補足: Larix Screencaster / HaishinKit 系

@@ -12,6 +12,27 @@
 - 顔トラッキングは OBS 内蔵ブラウザ(CEF)の中で動く（カメラを CEF が掴む）。
 - **最重要**: OBS を `--enable-media-stream` 付きで起動しないとカメラが使えない（後述）。
 
+```plantuml
+@startuml
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+[Web カメラ] as cam
+node "OBS Studio\n(--enable-media-stream で起動)" {
+  [内蔵ブラウザ CEF] as cef
+  [合成・配信パイプライン] as compose
+}
+[index.html?obs=1\n(ステージモード\n背景透過＋UI 非表示)] as stage
+[配信オーバーレイ\n(アバターのみ)] as overlay
+
+cam --> cef : getUserMedia\n(カメラを CEF が掴む)
+cef --> stage : 顔トラッキング
+stage --> compose : 透過アバター映像
+compose --> overlay
+@enduml
+```
+
 ## ステージモードの URL パラメータ
 
 `index.html` は URL パラメータで配信用の見た目に切り替わる（通常表示は無変更）。
