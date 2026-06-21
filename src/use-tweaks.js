@@ -25,6 +25,11 @@ function isPlainObject(v) {
   return v != null && typeof v === 'object' && !Array.isArray(v);
 }
 
+// 自前プロパティか（__proto__ 等の継承キーを名前解決から除外するため）。
+function hasOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 // saved を defaults に上書きマージして新しいオブジェクトを返す。defaults に
 // 無いキーは捨てる（前方互換: 後から tweak 項目が増えても古い保存値で壊れない）。
 // saved がオブジェクトでなければ defaults のコピーをそのまま返す。
@@ -45,6 +50,51 @@ export function mergeIntoDefaults(saved, defaults) {
 export function effectiveDefaultsFrom(builtins, defaults) {
   const first = isPlainObject(builtins) ? Object.keys(builtins)[0] : undefined;
   return first ? mergeIntoDefaults(builtins[first], defaults) : { ...defaults };
+}
+
+// ── fork:default-theme ── ユーザー指定デフォルトテーマの解決 ──────────────────
+// builtins とユーザー presets を重ねた名前空間（user 優先）から defaultName を
+// 解決する。指定が解決できれば「その名前」、無ければ従来どおり builtins 先頭、
+// それも無ければ null を返す。effectiveDefaultsFrom と優先順位を合わせる。
+
+// 解決されるテーマ「名」を返す（UI の現在テーマ追従用）。値は resolveDefaultValues。
+export function resolveDefaultName(builtins, presets, defaultName) {
+  const all = {
+    ...(isPlainObject(builtins) ? builtins : {}),
+    ...(isPlainObject(presets) ? presets : {}),
+  };
+  if (defaultName && hasOwn(all, defaultName) && isPlainObject(all[defaultName])) return defaultName;
+  const first = isPlainObject(builtins) ? Object.keys(builtins)[0] : undefined;
+  return first || null;
+}
+
+// 解決されたテーマ「値」を defaults にマージして返す。指定が解決できなければ
+// 従来の effectiveDefaultsFrom（builtins 先頭→無ければ defaults コピー）に委譲。
+export function resolveDefaultValues(builtins, presets, defaults, defaultName) {
+  const all = {
+    ...(isPlainObject(builtins) ? builtins : {}),
+    ...(isPlainObject(presets) ? presets : {}),
+  };
+  if (defaultName && hasOwn(all, defaultName) && isPlainObject(all[defaultName])) {
+    return mergeIntoDefaults(all[defaultName], defaults);
+  }
+  return effectiveDefaultsFrom(builtins, defaults);
+}
+
+// 2つの tweak 値オブジェクトが同じか（浅い比較）。現在値が適用中テーマと一致
+// するか＝「未保存変更（dirty）」判定に使う。NaN も Object.is で安全に比較する。
+// 注意: 値が配列/オブジェクトだと参照比較になる（同値でも別参照なら false）。
+// 現状の tweak 値は数値・文字列・真偽のみなので問題ないが、将来 tweak に配列を
+// 入れる場合は等値比較を1段足すこと。
+export function shallowEqualValues(a, b) {
+  if (!isPlainObject(a) || !isPlainObject(b)) return a === b;
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) {
+    if (!Object.is(a[k], b[k])) return false;
+  }
+  return true;
 }
 
 // 保存値を defaults に上書きマージして返す。defaults に無いキーは捨て、
@@ -106,6 +156,44 @@ export function savePresets(key, presets) {
   }
 }
 
+// ── fork:default-theme / active-theme ── テーマ「名」1つの永続化 ──────────────
+// デフォルト指定テーマと、いま適用中のテーマの2つを、それぞれ別キーにテーマ名
+// （生文字列1つ）で保存する。値マップ（:presets）とは分け、空/空白は removeItem
+// ＝未指定として扱う。読み書き不可（プライベートモード等）は黙ってフォールバック。
+
+// 起動シードと「デフォルトに戻す」が参照する、ユーザー指定デフォルトテーマ名。
+export function defaultThemeStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':defaultTheme';
+}
+
+// いま画面に適用中のテーマ名。リロードをまたいで「現在のテーマ」を表示するため。
+export function activeThemeStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':activeTheme';
+}
+
+// テーマ名（文字列1つ）を読む。未保存・空白のみ・読取不可は null。saveThemeName が
+// trim して保存するのに合わせ、読み出しも trim して返す（往復で対称・キー照合が確実）。
+export function loadThemeName(key) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    const n = typeof raw === 'string' ? raw.trim() : '';
+    return n || null;
+  } catch {
+    return null;
+  }
+}
+
+// テーマ名を保存する。空・空白のみ・null は removeItem（＝指定解除）。
+export function saveThemeName(key, name) {
+  try {
+    const n = typeof name === 'string' ? name.trim() : '';
+    if (n) window.localStorage.setItem(key, n);
+    else window.localStorage.removeItem(key);
+  } catch {
+    /* 読み書き不可（プライベートモード等）では黙って諦める（アプリは継続動作） */
+  }
+}
+
 // エクスポート用 JSON 文字列。app/version のエンベロープを付け、別アプリの
 // JSON を取り違えてインポートしても弾けるようにする。読みやすく整形して返す。
 export function serializePresets(presets, page) {
@@ -138,6 +226,50 @@ export function parsePresetsImport(text) {
     throw new Error('テーマが1件も見つかりませんでした');
   }
   return presets;
+}
+
+// ── fork:per-file ── 1テーマ=1ファイルの書き出し／読み込み ────────────────────
+// 「人に1テーマだけ渡す」主動線。bundle（全テーマまとめ）と区別できるよう、
+// エンベロープに themeName と theme（単一テーマの値）を持たせる。page は bundle
+// と同じく tweaksStorageKey 値（例 tomari-tweaks:camera.html）を入れて形式を揃える。
+
+// 単一テーマをエクスポート用 JSON にする。values が壊れていても安全に {} を入れる。
+export function serializeTheme(name, values, page) {
+  return JSON.stringify({
+    app: 'tomari-tweaks',
+    version: PRESETS_EXPORT_VERSION,
+    page: page || null,
+    themeName: String(name == null ? '' : name),
+    theme: isPlainObject(values) ? values : {},
+  }, null, 2);
+}
+
+// インポート文字列を解析してプリセットマップ {名前:値} を返す。per-file
+// （{themeName, theme}）と bundle/素マップの両方を1入力で受ける（後方互換）。
+// per-file は themeName を名前にした1件だけにする。どちらも有効テーマが0件なら
+// 例外を投げる（呼び出し側で握る）。JSON として読めない場合も例外。
+export function parseThemesImport(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('JSON として読み込めませんでした');
+  }
+  // per-file 形式: themeName(文字列) を持てば per-file 意図とみなす。theme が壊れて
+  // いれば bundle に落とさず、原因が分かる専用メッセージで投げる（誤誘導を防ぐ）。
+  if (isPlainObject(data) && typeof data.themeName === 'string') {
+    if (!isPlainObject(data.theme)) {
+      throw new Error('テーマ本体（theme）が不正です');
+    }
+    const name = data.themeName.trim();
+    const presets = sanitizePresets(name ? { [name]: data.theme } : {});
+    if (Object.keys(presets).length === 0) {
+      throw new Error('テーマが1件も見つかりませんでした');
+    }
+    return presets;
+  }
+  // bundle / 素マップは従来パーサに委譲（完全な後方互換）。
+  return parsePresetsImport(text);
 }
 
 // ── ビルトイン（配布デフォルト）テーマ ───────────────────────────────────────
@@ -294,4 +426,26 @@ export function tweaksExportFilename(date) {
   const d = p2(date.getDate());
   const hhmm = p2(date.getHours()) + p2(date.getMinutes());
   return `guruguru-avatar-tweaks-${y}-${mo}-${d}-${hhmm}.json`;
+}
+
+// ── fork:per-file ── テーマ名をファイル名に安全化する純関数 ───────────────────
+// 先頭末尾の空白と . を除去し、OS 禁止文字・空白・ハイフンを _ に置換する。60 文字
+// に切り詰め、空になれば 'theme'。日本語名はそのまま残す。順序が重要（除去→置換）。
+export function safeThemeName(name) {
+  let s = String(name == null ? '' : name);
+  // 先に前後の空白・. を除去する（置換で _ 化される前に削るため、順序が重要）。
+  s = s.trim().replace(/^\.+|\.+$/g, '').trim();
+  // OS 禁止文字・空白・ハイフンをまとめて _ に置換する（ファイル名として安全に）。
+  s = s.replace(/[\\/:*?"<>| -]/g, '_');
+  // 残った空白（連続含む）を _ に。禁止文字クラスとは別に確実に潰す。
+  s = s.replace(/\s+/g, '_');
+  // コードポイント単位で 60 に切る（サロゲートペア＝絵文字を途中で割らない）。
+  s = [...s].slice(0, 60).join('');
+  return s || 'theme';
+}
+
+// 単一テーマ書き出しのファイル名。形式は guruguru-avatar-theme-<安全化名>.json。
+// 日付は付けない（中身がテーマ名で分かるため）。
+export function themeExportFilename(name) {
+  return `guruguru-avatar-theme-${safeThemeName(name)}.json`;
 }

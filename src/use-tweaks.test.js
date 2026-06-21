@@ -2,13 +2,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   mergeIntoDefaults,
   effectiveDefaultsFrom,
+  resolveDefaultName,
+  resolveDefaultValues,
+  shallowEqualValues,
   sanitizePresets,
   serializePresets,
   parsePresetsImport,
+  serializeTheme,
+  parseThemesImport,
   selectBuiltinPresets,
   isHtmlFallback,
   fetchBuiltinPresets,
   PRESETS_EXPORT_VERSION,
+  defaultThemeStorageKey,
+  activeThemeStorageKey,
+  loadThemeName,
+  saveThemeName,
   panelPosStorageKey,
   loadPanelPos,
   savePanelPos,
@@ -18,6 +27,8 @@ import {
   loadSectionState,
   saveSectionState,
   tweaksExportFilename,
+  safeThemeName,
+  themeExportFilename,
 } from './use-tweaks.js';
 
 describe('mergeIntoDefaults', () => {
@@ -70,6 +81,103 @@ describe('effectiveDefaultsFrom', () => {
   it('ビルトインが不正でも defaults のコピー', () => {
     expect(effectiveDefaultsFrom(null, { a: 1 })).toEqual({ a: 1 });
     expect(effectiveDefaultsFrom('x', { a: 1 })).toEqual({ a: 1 });
+  });
+});
+
+describe('resolveDefaultName', () => {
+  const builtins = { A: { x: 1 }, B: { x: 2 } };
+  const presets = { 自作: { x: 9 } };
+
+  it('指定デフォルトが解決できればその名前を返す（ユーザー）', () => {
+    expect(resolveDefaultName(builtins, presets, '自作')).toBe('自作');
+  });
+
+  it('指定デフォルトが解決できればその名前を返す（ビルトイン）', () => {
+    expect(resolveDefaultName(builtins, presets, 'B')).toBe('B');
+  });
+
+  it('指定なしなら builtins の先頭', () => {
+    expect(resolveDefaultName(builtins, presets, null)).toBe('A');
+  });
+
+  it('指定が存在しなければ builtins 先頭にフォールバック', () => {
+    expect(resolveDefaultName(builtins, presets, '消えたテーマ')).toBe('A');
+  });
+
+  it('builtins が空で指定も無ければ null', () => {
+    expect(resolveDefaultName({}, {}, null)).toBeNull();
+    expect(resolveDefaultName({}, {}, 'x')).toBeNull();
+  });
+
+  it('builtins が空でも presets の指定は解決できる', () => {
+    expect(resolveDefaultName({}, presets, '自作')).toBe('自作');
+  });
+
+  it('継承プロパティ名(__proto__)は解決名にせず先頭フォールバック', () => {
+    expect(resolveDefaultName({ A: { x: 1 } }, {}, '__proto__')).toBe('A');
+    expect(resolveDefaultName({}, {}, '__proto__')).toBeNull();
+  });
+});
+
+describe('resolveDefaultValues', () => {
+  const defaults = { x: 0, y: 'd' };
+  const builtins = { A: { x: 1 }, B: { x: 2 } };
+  const presets = { 自作: { x: 9 } };
+
+  it('指定デフォルト（ユーザー）を defaults にマージして返す', () => {
+    expect(resolveDefaultValues(builtins, presets, defaults, '自作')).toEqual({ x: 9, y: 'd' });
+  });
+
+  it('指定デフォルト（ビルトイン）を defaults にマージして返す', () => {
+    expect(resolveDefaultValues(builtins, presets, defaults, 'B')).toEqual({ x: 2, y: 'd' });
+  });
+
+  it('同名はユーザー優先で解決する', () => {
+    const b = { 夜: { x: 1 } };
+    const p = { 夜: { x: 5 } };
+    expect(resolveDefaultValues(b, p, defaults, '夜')).toEqual({ x: 5, y: 'd' });
+  });
+
+  it('指定なしは builtins 先頭（effectiveDefaultsFrom と同じ）', () => {
+    expect(resolveDefaultValues(builtins, presets, defaults, null)).toEqual({ x: 1, y: 'd' });
+  });
+
+  it('指定が存在しなければ builtins 先頭にフォールバック', () => {
+    expect(resolveDefaultValues(builtins, presets, defaults, '無い')).toEqual({ x: 1, y: 'd' });
+  });
+
+  it('builtins も指定も無ければ defaults のコピー', () => {
+    const out = resolveDefaultValues({}, {}, defaults, null);
+    expect(out).toEqual({ x: 0, y: 'd' });
+    expect(out).not.toBe(defaults);
+  });
+
+  it('継承プロパティ名(__proto__)はフォールバックし resolveDefaultName と一致', () => {
+    expect(resolveDefaultValues({ A: { x: 1 } }, {}, defaults, '__proto__')).toEqual({ x: 1, y: 'd' });
+    expect(resolveDefaultValues({}, {}, defaults, '__proto__')).toEqual({ x: 0, y: 'd' });
+  });
+});
+
+describe('shallowEqualValues', () => {
+  it('同じキー・値なら true', () => {
+    expect(shallowEqualValues({ a: 1, b: 'x' }, { a: 1, b: 'x' })).toBe(true);
+  });
+
+  it('値が違えば false', () => {
+    expect(shallowEqualValues({ a: 1 }, { a: 2 })).toBe(false);
+  });
+
+  it('キー数が違えば false', () => {
+    expect(shallowEqualValues({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+  });
+
+  it('NaN 同士は等しい（Object.is）', () => {
+    expect(shallowEqualValues({ a: NaN }, { a: NaN })).toBe(true);
+  });
+
+  it('オブジェクトでなければ === 比較にフォールバック', () => {
+    expect(shallowEqualValues(null, null)).toBe(true);
+    expect(shallowEqualValues(null, {})).toBe(false);
   });
 });
 
@@ -129,6 +237,72 @@ describe('parsePresetsImport', () => {
   it('テーマが1件も無ければ例外', () => {
     expect(() => parsePresetsImport(JSON.stringify({ presets: {} }))).toThrow();
     expect(() => parsePresetsImport(JSON.stringify({ bad: 5 }))).toThrow();
+  });
+});
+
+describe('serializeTheme', () => {
+  it('単一テーマのエンベロープ（themeName/theme）を作る', () => {
+    const json = serializeTheme('夜', { a: 1 }, 'tomari-tweaks:camera.html');
+    const obj = JSON.parse(json);
+    expect(obj).toEqual({
+      app: 'tomari-tweaks',
+      version: PRESETS_EXPORT_VERSION,
+      page: 'tomari-tweaks:camera.html',
+      themeName: '夜',
+      theme: { a: 1 },
+    });
+  });
+
+  it('bundle と区別できるよう presets キーを持たない', () => {
+    const obj = JSON.parse(serializeTheme('t', { a: 1 }, 'p'));
+    expect('presets' in obj).toBe(false);
+    expect('themeName' in obj).toBe(true);
+  });
+
+  it('値が壊れていても theme は {} になる', () => {
+    expect(JSON.parse(serializeTheme('t', null, 'p')).theme).toEqual({});
+  });
+
+  it('page 未指定は null', () => {
+    expect(JSON.parse(serializeTheme('t', { a: 1 })).page).toBeNull();
+  });
+});
+
+describe('parseThemesImport', () => {
+  it('per-file（themeName/theme）を1件のマップにする', () => {
+    const text = serializeTheme('夜', { a: 1 }, 'p');
+    expect(parseThemesImport(text)).toEqual({ 夜: { a: 1 } });
+  });
+
+  it('per-file の themeName は trim する', () => {
+    const text = JSON.stringify({ themeName: '  夜  ', theme: { a: 1 } });
+    expect(parseThemesImport(text)).toEqual({ 夜: { a: 1 } });
+  });
+
+  it('bundle 形式も従来どおり取り込む（後方互換）', () => {
+    const text = serializePresets({ t1: { a: 1 }, t2: { b: 2 } }, 'p');
+    expect(parseThemesImport(text)).toEqual({ t1: { a: 1 }, t2: { b: 2 } });
+  });
+
+  it('素のマップも取り込む（後方互換）', () => {
+    const text = JSON.stringify({ t1: { a: 1 } });
+    expect(parseThemesImport(text)).toEqual({ t1: { a: 1 } });
+  });
+
+  it('per-file で themeName が空なら例外', () => {
+    const text = JSON.stringify({ themeName: '   ', theme: { a: 1 } });
+    expect(() => parseThemesImport(text)).toThrow();
+  });
+
+  it('per-file で theme が不正なら専用メッセージで例外（bundle に落とさない）', () => {
+    expect(() => parseThemesImport(JSON.stringify({ themeName: 'x', theme: null })))
+      .toThrow('テーマ本体（theme）が不正です');
+    expect(() => parseThemesImport(JSON.stringify({ themeName: 'x', theme: [1] })))
+      .toThrow('テーマ本体（theme）が不正です');
+  });
+
+  it('JSON として読めなければ例外', () => {
+    expect(() => parseThemesImport('{not json')).toThrow();
   });
 });
 
@@ -397,5 +571,103 @@ describe('tweaksExportFilename', () => {
   it('深夜0時0分も 0000 になる', () => {
     const d = new Date(2026, 11, 31, 0, 0); // 2026-12-31 00:00
     expect(tweaksExportFilename(d)).toBe('guruguru-avatar-tweaks-2026-12-31-0000.json');
+  });
+});
+
+// デフォルト指定テーマ／適用中テーマの「名前1つ」の永続化。値マップ（:presets）
+// とは別キーに置き、空/空白は removeItem＝未指定として扱う。
+describe('テーマ名（default/active）の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('キーは :defaultTheme / :activeTheme を付ける', () => {
+    expect(defaultThemeStorageKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:defaultTheme');
+    expect(activeThemeStorageKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:activeTheme');
+  });
+
+  it('save した名前を load で取り戻せる', () => {
+    saveThemeName(defaultThemeStorageKey('k'), '夜');
+    expect(loadThemeName(defaultThemeStorageKey('k'))).toBe('夜');
+  });
+
+  it('未保存なら null', () => {
+    expect(loadThemeName(defaultThemeStorageKey('k'))).toBeNull();
+  });
+
+  it('空・空白のみ・null は removeItem（未指定）', () => {
+    saveThemeName(defaultThemeStorageKey('k'), '夜');
+    saveThemeName(defaultThemeStorageKey('k'), '');
+    expect(loadThemeName(defaultThemeStorageKey('k'))).toBeNull();
+    saveThemeName(defaultThemeStorageKey('k'), '夜');
+    saveThemeName(defaultThemeStorageKey('k'), '   ');
+    expect(loadThemeName(defaultThemeStorageKey('k'))).toBeNull();
+    saveThemeName(defaultThemeStorageKey('k'), '夜');
+    saveThemeName(defaultThemeStorageKey('k'), null);
+    expect(loadThemeName(defaultThemeStorageKey('k'))).toBeNull();
+  });
+
+  it('default と active は独立して保存される', () => {
+    saveThemeName(defaultThemeStorageKey('k'), 'A');
+    saveThemeName(activeThemeStorageKey('k'), 'B');
+    expect(loadThemeName(defaultThemeStorageKey('k'))).toBe('A');
+    expect(loadThemeName(activeThemeStorageKey('k'))).toBe('B');
+  });
+
+  it('前後空白付きの生値も trim して返す（save と対称）', () => {
+    store.set(defaultThemeStorageKey('k'), '  yoru  ');
+    expect(loadThemeName(defaultThemeStorageKey('k'))).toBe('yoru');
+  });
+});
+
+// 単一テーマ書き出しのファイル名（guruguru-avatar-theme-<安全化名>.json）。
+describe('safeThemeName / themeExportFilename', () => {
+  it('日本語名はそのまま残す', () => {
+    expect(safeThemeName('なめらか')).toBe('なめらか');
+  });
+
+  it('OS 禁止文字は _ に置換する', () => {
+    expect(safeThemeName('a/b:c')).toBe('a_b_c');
+    expect(safeThemeName('a\\b*c?')).toBe('a_b_c_');
+  });
+
+  it('空白は _ に、先頭末尾の空白と . は除去する', () => {
+    expect(safeThemeName('  配信用 夜  ')).toBe('配信用_夜');
+    expect(safeThemeName('..hidden.')).toBe('hidden');
+  });
+
+  it('空・null は theme にフォールバック', () => {
+    expect(safeThemeName('')).toBe('theme');
+    expect(safeThemeName(null)).toBe('theme');
+    expect(safeThemeName('   ')).toBe('theme');
+  });
+
+  it('60文字に切り詰める', () => {
+    expect(safeThemeName('あ'.repeat(100))).toBe('あ'.repeat(60));
+  });
+
+  it('サロゲートペア（絵文字）を途中で割らない', () => {
+    const out = safeThemeName('x' + '😀'.repeat(40));
+    expect([...out].length).toBeLessThanOrEqual(60);
+    // 末尾に孤立サロゲートが残らない＝encodeURIComponent が throw しない。
+    expect(() => encodeURIComponent(out)).not.toThrow();
+  });
+
+  it('themeExportFilename は guruguru-avatar-theme-<名前>.json', () => {
+    expect(themeExportFilename('夜')).toBe('guruguru-avatar-theme-夜.json');
+    expect(themeExportFilename('a/b')).toBe('guruguru-avatar-theme-a_b.json');
   });
 });
