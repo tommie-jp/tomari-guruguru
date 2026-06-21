@@ -301,9 +301,9 @@ function DirectionCross({ flash = {}, onDir, onCenter }) {
   };
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4,
+      display: 'grid', gridTemplateColumns: 'repeat(3, 44px)', gap: 4,
       gridTemplateAreas: '". up ." "left center right" ". down ."',
-      width: 'min(132px, 100%)', margin: '0 auto',
+      width: 140, margin: '0 auto',
     }}>
       {cell('up', '上', 'up', () => onDir('up'), '顔を上に向け切って押す（上端に校正）')}
       {cell('left', '左', 'left', () => onDir('left'), '顔を左に向け切って押す（左端に校正）')}
@@ -1453,13 +1453,13 @@ function App() {
           title="向き校正"
           onClose={() => setTweak('showCalib', false)}
           closeLabel="向き校正パネルを隠す"
+          resizable={false}
           defaultStyle={{ top: 68, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
-          defaultWidth="min(150px, 58vw)"
           style={{
             zIndex: 6,
             background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 10,
             padding: '7px 9px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
-            lineHeight: 1.45,
+            lineHeight: 1.45, maxWidth: 'min(220px, 82vw)',
           }}
         >
           <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
