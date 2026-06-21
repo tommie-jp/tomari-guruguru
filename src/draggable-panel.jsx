@@ -1,31 +1,35 @@
 import React from 'react';
 import {
   loadPanelPos, savePanelPos, clearPanelPos, clampPanelPos,
+  loadPanelSize, savePanelSize, clearPanelSize, clampPanelSize,
 } from './use-tweaks.js';
 
-// fork: ドラッグで移動できる汎用パネル枠（本家 scaffold には無い追加）。
-// カメラ版の HUD（カメラプレビュー / デバッグ / 表情係数）を掴んで動かし、
-// ✕で隠せるようにするために導入した。設計の要点:
+// fork: ドラッグで移動・リサイズできる汎用パネル枠（本家 scaffold には無い追加）。
+// カメラ版の HUD（カメラプレビュー / デバッグ / 表情係数 / 向き校正）を掴んで動かし、
+// 端をつまんでサイズを変え、✕で隠せるようにするために導入した。設計の要点:
 //
 //  - 操作: マウス・タッチ・ペンの全部対応（pointer events + touch-action:none）。
-//  - 掴む面: パネル全体。[data-no-drag] を付けた要素（✕ボタン）の上では開始しない。
-//  - ✕: onClose を呼ぶ。呼び出し側で該当トグルを false にして隠す想定
-//        （= Tweaks のトグルと state を共有し、そこから再表示できる）。
-//  - ダブルクリック: 既定位置に戻す（localStorage の保存もクリア）。
-//  - 永続化: ドラッグ終了時に {left, top} を localStorage へ（ページ × id 単位）。
+//  - 掴む面: パネル全体。[data-no-drag] を付けた要素（タイトル帯の✕や中のコントロール）
+//    の上では開始しない。右下のリサイズグリップ上でもドラッグせず CSS resize に委ねる。
+//  - タイトル帯: title を渡すと上部に「タイトル＋✕」の帯を出す（掴む手がかりにもなる）。
+//  - ✕: onClose を呼ぶ。呼び出し側で該当トグルを false にして隠す想定。
+//  - ダブルクリック: 既定の位置・サイズに戻す（localStorage の保存もクリア）。
+//  - 永続化: 位置はドラッグ終了時、サイズはユーザーがグリップで変えたとき localStorage へ
+//    （ページ × id 単位）。サイズは React 管理外（inline style）で持ち、毎フレーム再描画の
+//    パネルでも上書きされないよう imperative に当てる（中身だけの再描画と競合させない）。
 //  - リサイズ: 画面が縮んでパネルが外へ出たら内側へ再クランプ。
 //
 // 位置モデルは left/top（px・position:fixed）に統一する。初期位置は呼び出し側が
-// defaultStyle（例 {top:16,left:16} や {top:68,right:12}）で“アンカー”を渡し、
-// 初回レンダーの実測矩形を left/top に変換して以降はそれを基準にする。これで
-// right/bottom 基準の既定でもドラッグへ素直に移行できる。
+// defaultStyle（例 {top:16,left:16}）で“アンカー”を渡し、初回レンダーの実測矩形を
+// left/top に変換して以降はそれを基準にする。初期サイズは defaultWidth（CSS 文字列か px）。
 //
-// disabled: カメラプレビューのように「映像は検出のため常時マウントしたいが、
-// 非表示のときはドラッグ枠を出したくない」ケース向け。disabled の間は位置管理も
-// ドラッグも止め、呼び出し側 style（画面外 1px など）にそのまま委ねる。要素の
-// 同一性は保つので <video> のストリームは貼り直されない。
+// disabled: カメラプレビューのように「映像は検出のため常時マウントしたいが、非表示のときは
+// 枠を出したくない」ケース向け。disabled の間は位置・サイズ管理もドラッグも止め、呼び出し側
+// style にそのまま委ねる。要素の同一性は保つので <video> のストリームは貼り直されない。
 
 const PAD = 8;
+const GRIP = 20; // 右下のリサイズグリップとみなす範囲(px)。ここではドラッグを開始しない。
+const MIN_PANEL = { width: 100, height: 48 }; // リサイズ最小サイズ。clampPanelSize と CSS の両方で使う。
 
 function viewport() {
   return { width: window.innerWidth, height: window.innerHeight };
@@ -35,6 +39,9 @@ function DraggablePanel({
   id,
   onClose,
   closeLabel = 'このパネルを隠す',
+  title,
+  resizable = true,
+  defaultWidth,
   className,
   style,
   defaultStyle,
@@ -45,6 +52,7 @@ function DraggablePanel({
   const [pos, setPos] = React.useState(null); // {left, top}。null=既定アンカーで配置中
   const posRef = React.useRef(null);          // 最新位置（move ハンドラから参照）
   const defaultRef = React.useRef(null);       // 初回実測の既定位置（ダブルクリック復帰用）
+  const userResizedRef = React.useRef(false);  // グリップを掴んだら true（以降サイズを保存）
 
   const sizeOf = React.useCallback(() => {
     const el = ref.current;
@@ -56,11 +64,24 @@ function DraggablePanel({
     [sizeOf],
   );
 
-  // 初期位置: 保存値があれば復元、無ければ実測の既定を採用。disabled の間は何もしない。
+  // 初期サイズ＆位置。サイズは inline style に imperative で当てる（React 管理外）。
   React.useLayoutEffect(() => {
     if (disabled) return;
     const el = ref.current;
     if (!el) return;
+    // サイズ: 保存があれば画面内に収めて適用、無ければ defaultWidth を初期幅に（高さは中身なり）。
+    // 既に inline サイズがある（適用済み／ユーザーがリサイズ済み）ときは触らない＝再描画で巻き戻さない。
+    if (resizable && !el.style.width && !el.style.height) {
+      const saved = loadPanelSize(id);
+      if (saved) {
+        const s = clampPanelSize(saved, viewport(), PAD, MIN_PANEL);
+        el.style.width = `${s.width}px`;
+        el.style.height = `${s.height}px`;
+      } else if (defaultWidth) {
+        el.style.width = defaultWidth;
+      }
+    }
+    // 位置
     if (posRef.current) { setPos(posRef.current); return; }
     const r = el.getBoundingClientRect();
     const def = clamp({ left: r.left, top: r.top });
@@ -69,7 +90,26 @@ function DraggablePanel({
     const init = saved ? clamp(saved) : def;
     posRef.current = init;
     setPos(init);
-  }, [disabled, id, clamp]);
+  }, [disabled, id, resizable, defaultWidth, clamp]);
+
+  // リサイズ永続化。ユーザーが右下グリップを掴んだ後だけ保存する（中身だけの再描画では保存しない）。
+  React.useEffect(() => {
+    if (disabled || !resizable) return undefined;
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    let timer;
+    const ro = new ResizeObserver(() => {
+      if (!userResizedRef.current) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        if (w > 0 && h > 0) savePanelSize(id, { width: w, height: h });
+      }, 250);
+    });
+    ro.observe(el);
+    return () => { clearTimeout(timer); ro.disconnect(); };
+  }, [disabled, resizable, id]);
 
   // リサイズで画面外に出たら内側へ戻す。
   React.useEffect(() => {
@@ -84,10 +124,27 @@ function DraggablePanel({
   }, [disabled, clamp]);
 
   const onPointerDown = (e) => {
-    // ✕ などドラッグさせたくない要素の上では開始しない。
+    // ✕・中のコントロールなどドラッグさせたくない要素の上では開始しない。
     if (e.target.closest && e.target.closest('[data-no-drag]')) return;
     const el = ref.current;
     if (!el) return;
+    // 右下のリサイズグリップ上ではドラッグせず、CSS resize に委ねる。掴んでいる間だけ
+    // サイズ保存を有効化し、離したら最終サイズを確定保存して latch を外す（以降の中身
+    // リフローで勝手にサイズを上書き保存しないため）。
+    if (resizable && !disabled) {
+      const r = el.getBoundingClientRect();
+      if (e.clientX > r.right - GRIP && e.clientY > r.bottom - GRIP) {
+        userResizedRef.current = true;
+        const onUp = () => {
+          const w = el.offsetWidth;
+          const h = el.offsetHeight;
+          if (w > 0 && h > 0) savePanelSize(id, { width: w, height: h });
+          userResizedRef.current = false;
+        };
+        window.addEventListener('pointerup', onUp, { once: true });
+        return;
+      }
+    }
     e.preventDefault();
     const start = posRef.current || { left: el.offsetLeft, top: el.offsetTop };
     const sx = e.clientX, sy = e.clientY;
@@ -108,22 +165,33 @@ function DraggablePanel({
     el.addEventListener('pointercancel', up);
   };
 
-  // 既定位置へ戻す（保存もクリア）。
+  // 既定の位置・サイズへ戻す（保存もクリア）。
   const onResetPos = () => {
     clearPanelPos(id);
+    clearPanelSize(id);
+    userResizedRef.current = false;
+    const el = ref.current;
+    if (el) { el.style.width = ''; el.style.height = ''; }
     const def = defaultRef.current;
     if (def) { posRef.current = def; setPos(def); }
   };
 
-  // disabled のときは呼び出し側 style にそのまま委ね、ドラッグ枠を出さない。
+  // disabled のときは呼び出し側 style にそのまま委ね、枠を出さない。
   const place = disabled
     ? null
     : (pos
       ? { left: pos.left, top: pos.top, right: 'auto', bottom: 'auto' }
       : defaultStyle);
+  // resizable: CSS resize を有効化。overflow は呼び出し側指定があれば尊重（無ければ auto）。
+  // 幅・高さは inline(imperative)で管理するので React の style には含めない。
+  const resizeStyle = (resizable && !disabled)
+    ? { resize: 'both', overflow: (style && style.overflow) || 'auto', minWidth: MIN_PANEL.width, minHeight: MIN_PANEL.height }
+    : {};
   const finalStyle = disabled
     ? style
-    : { position: 'fixed', cursor: 'move', touchAction: 'none', ...style, ...place };
+    : { position: 'fixed', cursor: 'move', touchAction: 'none', ...style, ...resizeStyle, ...place };
+
+  const showHeader = !disabled && (title || onClose);
 
   return (
     <div
@@ -133,24 +201,34 @@ function DraggablePanel({
       onPointerDown={disabled ? undefined : onPointerDown}
       onDoubleClick={disabled ? undefined : onResetPos}
     >
-      {/* ✕ は常にマウント（index 固定で children の再マウントを防ぐ）。disabled 時は隠す。 */}
-      {onClose && (
-        <button
-          type="button"
-          data-no-drag
-          aria-label={closeLabel}
-          title={closeLabel}
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute', top: 4, right: 4, width: 20, height: 20,
-            display: disabled ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 0, border: 0, borderRadius: '50%', cursor: 'pointer', zIndex: 2,
-            background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 12, lineHeight: 1,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-          }}
-        >✕</button>
+      {/* タイトル帯（掴む手がかり＋✕）。disabled 時は出さない。 */}
+      {showHeader && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 6, marginBottom: title ? 5 : 0, cursor: 'move',
+        }}>
+          <span style={{
+            fontWeight: 700, fontSize: 11, letterSpacing: '0.05em',
+            opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{title || ''}</span>
+          {onClose && (
+            <button
+              type="button"
+              data-no-drag
+              aria-label={closeLabel}
+              title={closeLabel}
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              style={{
+                flexShrink: 0, width: 18, height: 18,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: 0, border: 0, borderRadius: '50%', cursor: 'pointer',
+                background: 'rgba(127,127,127,0.28)', color: 'inherit', fontSize: 11, lineHeight: 1,
+              }}
+            >✕</button>
+          )}
+        </div>
       )}
       {children}
     </div>

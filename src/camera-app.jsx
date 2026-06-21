@@ -305,6 +305,34 @@ function DirectionCross({ flash = {}, onDir, onCenter }) {
   );
 }
 
+// パネルの表示/非表示をワンタップで切り替えるチップ列（Tweaks を開かずに各 HUD を出せる）。
+// on のチップは緑枠で強調。items=[{ key, label, on, toggle }]。
+function PanelToggles({ items, inkColor, subColor, style }) {
+  return (
+    <div style={{
+      position: 'absolute', zIndex: 6, display: 'flex', gap: 6, flexWrap: 'wrap',
+      alignItems: 'center', fontFamily: "'Zen Maru Gothic', sans-serif", ...style,
+    }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: subColor, letterSpacing: '0.06em' }}>パネル</span>
+      {items.map(({ key, label, on, toggle }) => (
+        <button
+          key={key}
+          type="button"
+          onClick={toggle}
+          aria-pressed={on}
+          title={`${label}を${on ? '隠す' : '表示'}`}
+          style={{
+            padding: '3px 9px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+            border: `1.5px solid ${on ? '#46C26A' : 'rgba(127,127,127,0.45)'}`,
+            background: on ? 'rgba(70,194,106,0.16)' : 'transparent',
+            color: on ? inkColor : subColor, fontSize: 12, fontWeight: 700, letterSpacing: '0.03em',
+          }}
+        >{label}</button>
+      ))}
+    </div>
+  );
+}
+
 function App() {
   const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
   // OBS ブラウザソース用ステージモード（背景透過＋UI 非表示）。
@@ -953,13 +981,15 @@ function App() {
           disabled の間も <video> は同一要素のままなのでカメラ映像は貼り直されない。 */}
       <DraggablePanel
         id="preview"
+        title="カメラ"
         disabled={!showPreview}
         onClose={() => setTweak('preview', false)}
         closeLabel="カメラ映像を隠す"
         defaultStyle={{ top: 16, left: 16 }}
+        defaultWidth="min(160px, 34vw)"
         style={showPreview ? {
-          zIndex: 5, borderRadius: 12, overflow: 'hidden', background: '#000',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          zIndex: 5, borderRadius: 10, overflow: 'hidden', background: '#000', color: '#fff',
+          padding: '4px 5px 5px', boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
         } : {
           position: 'absolute', width: 1, height: 1, opacity: 0,
           pointerEvents: 'none', overflow: 'hidden',
@@ -970,7 +1000,7 @@ function App() {
           playsInline
           muted
           style={showPreview ? {
-            display: 'block', width: 'min(160px, 34vw)', height: 'auto',
+            display: 'block', width: '100%', height: 'auto', borderRadius: 6,
             transform: 'scaleX(-1)', // 鏡像（自撮り表示）
           } : {
             width: '100%', height: '100%',
@@ -1131,6 +1161,26 @@ function App() {
       }}>OBS受信側rx →</a>
       )}
 
+      {/* パネル表示トグル（左下・反映先コントロールの上）。Tweaks を開かずカメラ/デバッグ/
+          表情/向き校正の各 HUD をワンタップで出し入れできる。配信(obs)・rx では非表示。 */}
+      {!obsMode && !isRx && (
+      <PanelToggles
+        inkColor={inkColor}
+        subColor={subColor}
+        style={{
+          bottom: isNarrow ? 'calc(52px + var(--sab))' : 'calc(60px + var(--sab))',
+          left: isNarrow ? 'calc(12px + var(--sal))' : 'calc(16px + var(--sal))',
+          maxWidth: 'calc(100vw - 120px)',
+        }}
+        items={[
+          { key: 'preview', label: 'カメラ', on: t.preview, toggle: () => setTweak('preview', !t.preview) },
+          { key: 'debug', label: 'デバッグ', on: t.showDebug, toggle: () => setTweak('showDebug', !t.showDebug) },
+          { key: 'expr', label: '表情', on: t.showExpr, toggle: () => setTweak('showExpr', !t.showExpr) },
+          { key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) },
+        ]}
+      />
+      )}
+
       {/* 「反映先」トグル＋リセット（左下）。ドラッグ移動・ズームを CEF へ送るか、この端末
           だけにするかを切り替える。PC は Shift キーでも一時的に「この端末だけ」になる。
           配信に映さないよう obsMode では非表示。rx は操作しないので非表示。 */}
@@ -1256,18 +1306,18 @@ function App() {
       {!obsMode && t.showExpr ? (
         <DraggablePanel
           id="expr"
+          title="表情係数"
           onClose={() => setTweak('showExpr', false)}
           closeLabel="表情係数パネルを隠す"
           defaultStyle={{ top: 68, right: 12 }}
+          defaultWidth="min(200px, 50vw)"
           style={{
-            width: 'min(220px, 52vw)',
-            background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
-            padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
-            zIndex: 6, lineHeight: 1.4,
-            maxHeight: 'calc(100vh - 84px)', overflow: 'hidden',
+            background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 10,
+            padding: '7px 9px', fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            zIndex: 6, lineHeight: 1.35,
+            maxHeight: 'calc(100vh - 84px)', overflow: 'auto',
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: '0.04em', paddingRight: 18 }}>表情係数</div>
           {exprValues.length === 0 ? (
             <div style={{ opacity: 0.6 }}>顔を検出すると表示</div>
           ) : exprValues.map(({ label, value }) => (
@@ -1291,16 +1341,19 @@ function App() {
       {!obsMode && t.showDebug ? (
         <DraggablePanel
           id="debug"
+          title="デバッグ"
           onClose={() => setTweak('showDebug', false)}
           closeLabel="デバッグ表示を隠す"
           defaultStyle={{ top: 16, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
+          defaultWidth="210px"
           style={{
-            background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: 10,
-            padding: '10px 12px', fontSize: 13, fontFamily: 'ui-monospace, monospace',
-            lineHeight: 1.5,
+            background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 10,
+            padding: '7px 9px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
+            lineHeight: 1.45, whiteSpace: 'nowrap',
+            fontVariantNumeric: 'tabular-nums', // 桁が変わっても幅が動かないよう等幅数字
           }}
         >
-          <div style={{ paddingRight: 18 }}>row {cell.r} / col {cell.c}</div>
+          <div>row {cell.r} / col {cell.c}</div>
           <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
           <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
           <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
@@ -1324,18 +1377,19 @@ function App() {
       {!obsMode && !isRx && t.showCalib ? (
         <DraggablePanel
           id="calib"
+          title="向き校正"
           onClose={() => setTweak('showCalib', false)}
           closeLabel="向き校正パネルを隠す"
           defaultStyle={{ top: 68, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
+          defaultWidth="min(260px, 84vw)"
           style={{
-            width: 'min(280px, 86vw)', zIndex: 6,
+            zIndex: 6,
             background: 'rgba(252,250,247,0.97)', color: '#3c3026', borderRadius: 12,
-            padding: '10px 12px 12px', boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+            padding: '8px 10px 10px', boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
             fontFamily: "'Zen Maru Gothic', sans-serif",
           }}
         >
-          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: '0.04em', paddingRight: 18, marginBottom: 6 }}>向き校正</div>
-          <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ fontSize: 12, lineHeight: 1.5, color: '#6a5a48' }}>
               「正」でまとめて校正（向き・距離・目・かしげ）→ 各方向へ顔を振り切って 上/左/右/下 を押す。
               体は動かさず顔の向きだけ変えて押すと、その向きでの 位置ズレ・かしげ・ズーム・目 も

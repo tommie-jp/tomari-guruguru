@@ -23,6 +23,11 @@ import {
   savePanelPos,
   clearPanelPos,
   clampPanelPos,
+  clampPanelSize,
+  panelSizeStorageKey,
+  loadPanelSize,
+  savePanelSize,
+  clearPanelSize,
   sectionStateKey,
   loadSectionState,
   saveSectionState,
@@ -449,6 +454,32 @@ describe('clampPanelPos', () => {
   });
 });
 
+describe('clampPanelSize', () => {
+  const VP = { width: 1000, height: 800 };
+  const MIN = { width: 100, height: 48 };
+
+  it('範囲内のサイズはそのまま返す', () => {
+    expect(clampPanelSize({ width: 220, height: 160 }, VP, 8, MIN))
+      .toEqual({ width: 220, height: 160 });
+  });
+
+  it('最小サイズ未満は最小に引き上げる', () => {
+    expect(clampPanelSize({ width: 10, height: 10 }, VP, 8, MIN))
+      .toEqual({ width: 100, height: 48 });
+  });
+
+  it('画面(から pad*2)を超えるサイズは画面内へ収める', () => {
+    // maxW = 1000-16 = 984, maxH = 800-16 = 784
+    expect(clampPanelSize({ width: 9999, height: 9999 }, VP, 8, MIN))
+      .toEqual({ width: 984, height: 784 });
+  });
+
+  it('既定の pad(8)・最小(100x48) が効く', () => {
+    expect(clampPanelSize({ width: 0, height: 0 }, VP))
+      .toEqual({ width: 100, height: 48 });
+  });
+});
+
 // localStorage を使うヘルパー群。node 環境（jsdom 無し）なので最小の
 // window.localStorage を注入してテストする。
 describe('パネル位置の永続化', () => {
@@ -502,6 +533,56 @@ describe('パネル位置の永続化', () => {
     savePanelPos('preview', { left: 5, top: 6 }, 'k');
     clearPanelPos('preview', 'k');
     expect(loadPanelPos('preview', 'k')).toBeNull();
+  });
+});
+
+// パネルサイズ（リサイズ）の永続化。位置と同じ store モックで検証する。
+describe('パネルサイズの永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('panelSizeStorageKey は位置とは別キー（:panelsize:）で id ごとに分ける', () => {
+    expect(panelSizeStorageKey('debug', 'tomari-tweaks:camera'))
+      .toBe('tomari-tweaks:camera:panelsize:debug');
+  });
+
+  it('save したサイズを load で取り戻せる（余分なキーは捨てる）', () => {
+    savePanelSize('debug', { width: 300, height: 240, junk: 9 }, 'k');
+    expect(loadPanelSize('debug', 'k')).toEqual({ width: 300, height: 240 });
+  });
+
+  it('未保存なら null', () => {
+    expect(loadPanelSize('nope', 'k')).toBeNull();
+  });
+
+  it('壊れた JSON は null', () => {
+    store.set(panelSizeStorageKey('debug', 'k'), '{ broken');
+    expect(loadPanelSize('debug', 'k')).toBeNull();
+  });
+
+  it('非正・非数のサイズは null（不正値は中身なりへ）', () => {
+    store.set(panelSizeStorageKey('a', 'k'), JSON.stringify({ width: 0, height: 100 }));
+    expect(loadPanelSize('a', 'k')).toBeNull();
+    store.set(panelSizeStorageKey('b', 'k'), JSON.stringify({ width: 'x', height: 100 }));
+    expect(loadPanelSize('b', 'k')).toBeNull();
+  });
+
+  it('clear で消すと load は null に戻る', () => {
+    savePanelSize('debug', { width: 300, height: 240 }, 'k');
+    clearPanelSize('debug', 'k');
+    expect(loadPanelSize('debug', 'k')).toBeNull();
   });
 });
 

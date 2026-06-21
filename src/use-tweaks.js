@@ -384,6 +384,58 @@ export function clampPanelPos(pos, viewport, size, pad = 8) {
   };
 }
 
+// ── パネルサイズ（リサイズ）の永続化 ─────────────────────────────────────────
+// 位置(panelpos)と同様、ページ × パネル id 単位で {width, height}(px) を覚える。
+// 読み書き不可・壊れ・非正値は null（＝サイズ未指定＝中身なりのサイズにフォールバック）。
+export function panelSizeStorageKey(id, explicit) {
+  return tweaksStorageKey(explicit) + ':panelsize:' + id;
+}
+
+export function loadPanelSize(id, explicit) {
+  try {
+    const raw = window.localStorage.getItem(panelSizeStorageKey(id, explicit));
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (isPlainObject(o) && o.width > 0 && o.height > 0
+        && Number.isFinite(o.width) && Number.isFinite(o.height)) {
+      return { width: o.width, height: o.height };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePanelSize(id, size, explicit) {
+  try {
+    window.localStorage.setItem(
+      panelSizeStorageKey(id, explicit),
+      JSON.stringify({ width: size.width, height: size.height }),
+    );
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める */
+  }
+}
+
+export function clearPanelSize(id, explicit) {
+  try {
+    window.localStorage.removeItem(panelSizeStorageKey(id, explicit));
+  } catch {
+    /* 読み書き不可でも無視（中身なりのサイズに戻るだけ） */
+  }
+}
+
+// パネルサイズを画面内に収める純関数（DOM 非依存・テスト容易）。最小サイズを保ちつつ、
+// 画面から pad を引いた範囲に収める（巨大保存値や画面回転でも掴める状態を保証）。
+export function clampPanelSize(size, viewport, pad = 8, min = { width: 100, height: 48 }) {
+  const maxW = Math.max(min.width, viewport.width - pad * 2);
+  const maxH = Math.max(min.height, viewport.height - pad * 2);
+  return {
+    width: Math.min(maxW, Math.max(min.width, size.width)),
+    height: Math.min(maxH, Math.max(min.height, size.height)),
+  };
+}
+
 // ── fork:sections ── 折りたたみセクションの開閉状態（{ ラベル: 開いているか }）。
 // tweaks 値とは別キーに保存する。値に混ぜると mergeIntoDefaults で落ち、テーマ
 // export を汚し、resetTweaks で消えてしまうため、UI クロームとして分離する。
