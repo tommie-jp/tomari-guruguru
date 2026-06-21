@@ -4,8 +4,8 @@
 #
 #   ./doDeploy.sh [all]     Pages デプロイ → Windows zip リリースの両方（既定）
 #   ./doDeploy.sh pages     GitHub Pages へデプロイのみ
-#   ./doDeploy.sh win       Windows 版リレイサーバを GitHub Release として配置のみ
-#                           （guruguru-relay.exe + dist-local + start.bat を zip 化して upload）
+#   ./doDeploy.sh win       リレイサーバを GitHub Release として配置のみ
+#                           （win/linux/macOS の zip をビルドして upload。実機テストは Windows）
 #
 # 注意: gh は --repo 無指定だと upstream(rotejin) を見て 403 になるので必ず --repo を付ける。
 #
@@ -34,12 +34,12 @@ doDeploy.sh — デプロイ/リリースのエントリポイント
   all     pages → win を続けて実行（既定）。途中で失敗したら止まる（set -e）。
   pages   origin/$BRANCH を対象に $WORKFLOW を workflow_dispatch で起動し、
           完了まで監視して $SITE_URL の反映を確認する。
-  win     ./doBuild.sh で配布 zip（guruguru-relay.exe + dist-local + start.bat）を
-          作り、tag 'win-v<version>' の GitHub Release として upload する
-          （既存リリースならアセットを --clobber で上書き）。
+  win     ./doBuild.sh で win/linux/macOS の配布 zip を作り、tag 'win-v<version>' の
+          GitHub Release として upload する（既存リリースならアセットを --clobber で
+          上書き）。実機 E2E は Windows 版についてのみ行う。
 
 環境変数:
-  win のビルド設定（WINNODE = 土台にする Windows 版 node.exe）は ./doBuild.sh を参照。
+  win のビルド設定（BUN = 使用する bun のパス）は ./doBuild.sh を参照。
 
 関連:
   ./doBuild.sh             zip をビルドするだけ（アップロードしない）
@@ -115,18 +115,25 @@ deploy_pages() {
 release_windows() {
   require_gh
 
-  local VERSION TAG ZIP notes
+  local VERSION TAG ZIP LINUX_ZIP MAC_ZIP notes
   VERSION="$(node -p "require('./package.json').version")"
   TAG="win-v${VERSION}"
   ZIP="dist-exe/guruguru-avatar-win-v${VERSION}.zip"
+  LINUX_ZIP="dist-exe/guruguru-avatar-linux-v${VERSION}.zip"
+  MAC_ZIP="dist-exe/guruguru-avatar-macos-v${VERSION}.zip"
 
   echo "== ビルド (./doBuild.sh) =="
   ./doBuild.sh
   [ -f "$ZIP" ] || { echo "エラー: zip が見つかりません: $ZIP"; exit 1; }
 
-  echo "== GitHub Release にアップロード (tag=$TAG) =="
+  # アップロード対象（win は必須、linux/macOS は存在すれば同梱）。
+  local assets=("$ZIP")
+  [ -f "$LINUX_ZIP" ] && assets+=("$LINUX_ZIP")
+  [ -f "$MAC_ZIP" ] && assets+=("$MAC_ZIP")
+
+  echo "== GitHub Release にアップロード (tag=$TAG, assets=${#assets[@]}) =="
   notes="$(cat <<NOTES
-単一 Windows PC で OBS 用の tx/rx を動かすための、中継 + 静的配信の単体実行ファイルです（Node 不要）。
+OBS 用の tx/rx を動かすための、中継 + 静的配信の単体実行ファイルです（Node も Bun も不要・ランタイム同梱）。win / linux / macOS(arm64) を同梱。
 
 実行確認は Windows 11 でのみ行っています。
 
@@ -141,13 +148,13 @@ NOTES
 )"
   if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
     echo "  既存 Release にアセットを上書きアップロード..."
-    gh release upload "$TAG" "$ZIP" --repo "$REPO" --clobber
+    gh release upload "$TAG" "${assets[@]}" --repo "$REPO" --clobber
     echo "  Release の説明を更新..."
     gh release edit "$TAG" --repo "$REPO" --notes "$notes"
   else
     echo "  新規 Release を作成..."
-    gh release create "$TAG" "$ZIP" --repo "$REPO" --target "$BRANCH" \
-      --title "Windows リレイサーバ v${VERSION}" --notes "$notes"
+    gh release create "$TAG" "${assets[@]}" --repo "$REPO" --target "$BRANCH" \
+      --title "リレイサーバ v${VERSION}" --notes "$notes"
   fi
   echo "✓ Release: https://github.com/$REPO/releases/tag/$TAG"
 

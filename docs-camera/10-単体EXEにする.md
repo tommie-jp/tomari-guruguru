@@ -1,94 +1,140 @@
-# 単体 EXE にする（Node 不要で配る）
+# 単体バイナリにする（Node も Bun も不要で配る）
 
-配布先に Node.js を入れたくないとき、中継 + 静的配信を `guruguru-relay.exe` 1つに固めて、
-`dist-local\`（配信物）と `start.bat` を添えて配る。仕組みは
-**Node SEA（Single Executable Applications）**＋ **postject**。`ws` は esbuild で exe に同梱し、
-`dist-local`（index.html / assets / mediapipe）は exe の隣に置いて `--web-root` で配る。
+配布先に Node.js も Bun も入れたくないとき、中継 + 静的配信を 1 つのバイナリに固めて、
+`dist-local\`（配信物）と起動スクリプトを添えて配る。仕組みは **Bun の単一実行バイナリ**
+（`bun build --compile`）。ランタイム（Bun）がバイナリに同梱されるため、配布先には何も
+インストール不要で動く。`dist-local`（index.html / assets / mediapipe）はバイナリの隣に置いて
+`--web-root` で配る。
 
-通常の運用（Node を入れて使う）は [09-Windowsで動かす.md](09-Windowsで動かす.md) を参照。EXE 化は
-「Node を入れない配布」をしたいときだけでよい。
+旧来の Node SEA（Single Executable Applications）＋ postject による方式は廃止した。Bun では
+`bun build --compile` の 1 コマンドで完結し、しかも **1 台の Linux/WSL から Windows / Linux /
+macOS の 3 ターゲットをクロスコンパイルできる**（旧 SEA のように Windows 上で作る必要はない）。
+
+通常の運用（Node を入れて使う）は [09-Windowsで動かす.md](09-Windowsで動かす.md) を参照。
+バイナリ化は「ランタイムを入れない配布」をしたいときだけでよい。
 
 ## 前提
 
-- **ビルドは Windows 上で行う**（Windows の `node.exe` に blob を注入するため、別 OS では作れない）。
-- Node.js は **20 以上**（SEA 対応版）。`node -v` で確認。
+- **1 台からクロスコンパイルできる**。Windows 上で作る必要はない（WSL/Linux 1 台で
+  win / linux / macOS の 3 つを生成できる）。
+- ビルドには **Bun** が要る（`bun --version` で確認）。無い場合は
+  `curl -fsSL https://bun.sh/install | bash`（Windows は後述の `build-exe.ps1` が自動取得）。
+- `dist-local` のビルドに **Node** を使う（開発機側の前提。配布先には不要）。
 
 ## かんたんビルド
 
-`guruguru-avatar\` フォルダで PowerShell:
+経路は 2 つ。WSL/Linux が使えるなら `doBuild.sh` が手軽。
+
+### 1) doBuild.sh（3 ターゲット一括・クロスコンパイル）
+
+`guruguru-avatar\` フォルダで:
+
+```bash
+./doBuild.sh
+```
+
+これで「dist-local ビルド → 3 ターゲットへクロスコンパイル → linux 版を実起動スモーク →
+win / linux / macOS の 3 つの配布 zip 化」までを 1 台で行う。bun は PATH か `~/.bun/bin` から
+解決する（`BUN=/path/to/bun ./doBuild.sh` で上書き可）。
+
+```plantuml
+@startuml
+skinparam shadowing false
+start
+:dist-local ビルド\n(npm run build:local);
+:3 ターゲットへクロスコンパイル\n(bun build --compile);
+fork
+  :win\nguruguru-relay.exe;
+fork again
+  :linux\nguruguru-relay-linux-x64;
+fork again
+  :macOS\nguruguru-relay-macos-arm64;
+end fork
+:linux 版を実起動スモーク\n(HTTP 200 を確認);
+:win / linux / macOS の\n3 つの配布 zip 化;
+stop
+@enduml
+```
+
+出力は `dist-exe\` に揃う:
+
+- `guruguru-relay.exe` … Windows 版（中継 + 静的配信・ランタイム同梱・単体動作）
+- `guruguru-relay-linux-x64` … Linux 版
+- `guruguru-relay-macos-arm64` … macOS (Apple Silicon) 版
+- `dist-local\` … 配信物（index.html ほか）
+- `start.bat` / `start.sh` / `start.command` … 各 OS の起動用
+- `README.txt` … 配布先向けの説明
+- `guruguru-avatar-{win,linux,macos}-v<version>.zip` … 各 OS の配布 zip
+
+配布先には、対応する zip を渡して「すべて展開」してもらい、起動スクリプトを実行するだけ。
+
+### 2) windows/build-exe.ps1（Windows 単体）
+
+WSL が無く Windows 上だけで作りたい場合。`guruguru-avatar\` フォルダで PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File windows\build-exe.ps1
 ```
 
-これで次が `dist-exe\` に揃う:
-
-- `guruguru-relay.exe` … 中継 + 静的配信（Node 同梱・単体動作）
-- `dist-local\` … 配信物（index.html ほか）
-- `start.bat` … 起動用（exe を起動 → 送信側ブラウザを開く → rx URL 表示）
-
-`dist-exe\` を丸ごとコピーして配布し、配布先では **`start.bat` をダブルクリック**するだけ。
-
-## WSL2(Ubuntu) から作る・試す場合
-
-WSL2 は **interop で Windows の `.exe` を実行できる**ので、Windows を別途操作せずに
-WSL のシェルだけで「ビルド → 実行確認」までできる（実証済み）。土台に **Windows 版
-`node.exe`** を使う点だけ守ればよい（`/mnt/c/Program Files/nodejs/node.exe`）。
-
-```bash
-WINNODE="/mnt/c/Program Files/nodejs/node.exe"
-FUSE=NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
-npm run build:local && npm run build:sea-blob
-cp "$WINNODE" dist-exe/guruguru-relay.exe
-chmod u+rw dist-exe/guruguru-relay.exe          # /mnt/c の node.exe は読取専用なので付与
-npx postject dist-exe/guruguru-relay.exe NODE_SEA_BLOB dist-exe/relay.blob --sentinel-fuse "$FUSE"
-# 実行（interop で Windows プロセスになる）。web-root は Windows パスで渡す:
-./dist-exe/guruguru-relay.exe --web-root "$(wslpath -w "$PWD/dist-local")" --port 8787 --host 127.0.0.1
-```
-
-動作確認は **Windows 側から**行う（WSL が NAT ネットワークだと WSL 側からは Windows の
-`127.0.0.1` に届かないため）。例: `powershell.exe -Command "(iwr -UseBasicParsing
-http://127.0.0.1:8787/index.html).StatusCode"` が `200`。停止は
-`taskkill.exe /F /IM guruguru-relay.exe`。
+bun が無ければ bun.sh から自動インストールし、`bun build --compile --target=bun-windows-x64`
+で Windows 版 exe を作る。出力は `dist-exe\guruguru-relay.exe` / `dist-exe\dist-local\` /
+`dist-exe\start.bat`。`dist-exe\` を丸ごと配布すれば、配布先では **`start.bat` をダブルクリック**
+するだけで動く（Node も Bun も不要）。
 
 ## 中身（手動でやる場合）
 
-`build-exe.ps1` がやっていることは以下と同じ:
+ビルドの本体は `bun build --compile` の 1 行。3 ターゲットそれぞれ次の通り:
 
-```powershell
-# 1. 静的配信物
+```bash
+# 1. 静的配信物（dist-local）を先に作っておく
 npm run build:local
-# 2. サーバを単一CJSにバンドル(ws 同梱) → SEA blob を生成
-npm run build:sea-blob
-# 3. node.exe を複製
-Copy-Item (Get-Command node).Source dist-exe\guruguru-relay.exe -Force
-# 4. blob を注入
-npx postject dist-exe\guruguru-relay.exe NODE_SEA_BLOB dist-exe\relay.blob `
-  --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+
+# 2. リレイサーバを単一バイナリにコンパイル（ターゲットごとに 1 行）
+bun build --compile --minify --target=bun-windows-x64 server/relay.mjs --outfile dist-exe/guruguru-relay.exe
+bun build --compile --minify --target=bun-linux-x64    server/relay.mjs --outfile dist-exe/guruguru-relay-linux-x64
+bun build --compile --minify --target=bun-darwin-arm64 server/relay.mjs --outfile dist-exe/guruguru-relay-macos-arm64
 ```
 
-`build:sea-blob` は `esbuild` で `server/relay.mjs` を CJS に束ね（`server/sea-config.json` 参照）、
-`node --experimental-sea-config` で blob 化する。Node 組み込み（http/https/fs/path）は外部のまま、
-`ws` だけが exe に入る。
+npm スクリプトでも同じことができる:
+
+```bash
+npm run build:relay         # 3 ターゲット一括
+npm run build:relay:win     # bun-windows-x64 のみ
+npm run build:relay:linux   # bun-linux-x64 のみ
+npm run build:relay:macos   # bun-darwin-arm64 のみ
+```
+
+`server/relay.mjs` / `server/static.mjs` は無改造で **Node でも Bun でも動く**。開発時に
+ソースから起動するだけなら `npm run relay`（= `node server/relay.mjs`）がそのまま使える。
 
 ## 起動と接続
 
-`start.bat` は内部で次を実行する（ポートを変えたいときはここを編集）:
+起動コマンドは従来どおり。Windows なら `start.bat` が内部で次を実行する
+（ポートを変えたいときはここを編集）:
 
 ```bat
 guruguru-relay.exe --web-root dist-local --port 8787 --host 127.0.0.1
 ```
+
+Linux / macOS は `start.sh` / `start.command` が同様に各バイナリを起動する。
 
 - 送信側(tx): `http://127.0.0.1:8787/?tx`（Edge/Chrome）
 - OBS 受信側(rx): `http://127.0.0.1:8787/?rx`（OBS のブラウザソース。rx は既定で透過＋UI 非表示）
 
 LAN の別端末からも繋ぐなら `--host 0.0.0.0`（要ファイアウォール許可）。
 
+## WSL から作る・試す場合
+
+WSL/Linux なら **linux 版バイナリをその場で実起動して検証できる**（`doBuild.sh` の
+スモークテストがこれを自動で行い、HTTP 200 を確認する）。Windows 版 exe を WSL の interop
+で動かすことも引き続き可能。
+
 ## 注意
 
-- **SmartScreen 警告**: blob を注入すると Node の署名が外れるため、初回起動で「発行元不明」が
+- **SmartScreen 警告**: コード署名をしていないため、Windows の初回起動で「発行元不明」が
   出ることがある。「詳細情報」→「実行」で起動できる（社内/個人配布なら通常これで十分）。
-- **exe サイズ**: Node 本体を含むため数十 MB になる。これは SEA の仕様。
-- **更新時**: コードや配信物を変えたら `build-exe.ps1` を再実行して `dist-exe\` を作り直す。
-- **postject が無い**: 初回は `npx` が自動取得する。社内ネット制限がある場合は
-  `npm i -g postject` で事前に入れておく。
+  macOS 初回は Gatekeeper が出たら右クリック→「開く」で許可する。
+- **バイナリのサイズ**: ランタイム（Bun）を同梱するため数十 MB になる。これは単一実行
+  バイナリの仕様。
+- **更新時**: コードや配信物を変えたら `doBuild.sh`（または `build-exe.ps1`）を再実行して
+  `dist-exe\` を作り直す。

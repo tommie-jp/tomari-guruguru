@@ -1,7 +1,8 @@
 # Windows リレイサーバの使い方（OBS向け）
 
 OBS で「ぐるぐるアバター」を透過オーバーレイ表示するための、Windows 用リリース zip
-（`guruguru-relay.exe` + `dist-local` + `start.bat`）の使い方。**Node.js のインストールは不要**。
+（`guruguru-relay.exe` + `dist-local` + `start.bat`）の使い方。ランタイムは exe に同梱されているので、
+**Node も Bun もインストール不要**。
 すべて `localhost` で動くので TLS もファイアウォール開放も要らない。
 
 - ダウンロード: [リリースページ](https://github.com/tommie-jp/guruguru-avatar/releases/latest)
@@ -74,7 +75,7 @@ RX -> U : アバターが追従表示
    | ファイル | 役割 |
    | --- | --- |
    | `start.bat` | 起動用（これを実行する） |
-   | `guruguru-relay.exe` | 中継 + 配信サーバ（Node 同梱・単体で動く） |
+   | `guruguru-relay.exe` | 中継 + 配信サーバ（ランタイム同梱・単体で動く） |
    | `dist-local\` | 配信物（アバターのページ・画像） |
 
 ## 2. start.bat を実行する
