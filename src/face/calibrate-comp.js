@@ -71,10 +71,11 @@ export function computeSlidePoseCompY({ posY, pitch, invertSlideY, minPitchRad =
  * @param {number} p.yaw           今の生 yaw(rad)
  * @param {number} [p.biasRollRad=0] かしげ中立(rad)。straight 姿勢の roll を引く
  * @param {number} [p.minYawRad=0.087] 補正を解くのに必要な最小 yaw(rad, 約5°)
- * @param {number} [p.maxComp=1] スライダー範囲(±1)に合わせた頭打ち
+ * @param {number} [p.maxComp=4] 頭打ち。横向き(プロファイル)では roll が大きく yaw が 0.7 で
+ *   頭打ちのため comp=roll/0.7 が 1 を超える。±1 だと飽和して傾きが残るので広めに取る。
  * @returns {number|null} tiltYawComp（0.01刻み, 符号付き）。振り不足・不正は null
  */
-export function computeTiltYawComp({ roll, yaw, biasRollRad = 0, minYawRad = 0.087, maxComp = 1 }) {
+export function computeTiltYawComp({ roll, yaw, biasRollRad = 0, minYawRad = 0.087, maxComp = 4 }) {
   if (!Number.isFinite(roll) || !Number.isFinite(yaw)) return null;
   const a = clamp(yaw, -MAX_ANGLE_RAD, MAX_ANGLE_RAD);
   if (Math.abs(a) < minYawRad) return null; // 振り不足

@@ -43,6 +43,17 @@ describe('方向校正 → 実行時パイプラインの往復', () => {
     expect(f.tilt).toBeCloseTo(0, 1); // かしげ ~0°
   });
 
+  it('横向き(プロファイル)で roll が大きくても、校正後はかしげが 0 になる（±1 飽和の回帰）', () => {
+    // 右を向き切った姿勢: yaw=0.7(クランプ端)・roll=0.95 の大きな混入。
+    // 旧 ±1 クランプでは comp=1 で飽和し tilt≈0.25rad(≈18°)残っていた。
+    const pose = { yaw: 0.7, roll: 0.95 };
+    const comp = computeTiltYawComp({ roll: pose.roll, yaw: pose.yaw, biasRollRad: 0 });
+    expect(Math.abs(comp)).toBeGreaterThan(1); // 飽和していない
+    const t = tweaks({ tiltYawComp: comp, biasRollDeg: 0, tiltGain: 1.3, tiltMax: 23 });
+    const f = computeStateFrame(signals({ roll: pose.roll, yaw: pose.yaw }), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(1); // かしげ ~0°（飽和なら ~18°残る）
+  });
+
   it('右で校正したかしげ補正は、左を向いた姿勢でも 0 にする（奇関数で対称）', () => {
     // 右(yaw+,roll+)で得た comp は、左(yaw-,roll-)でも tilt~0 にする。
     const comp = computeTiltYawComp({ roll: 0.08, yaw: 0.4, biasRollRad: 0 });

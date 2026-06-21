@@ -1507,7 +1507,7 @@ function App() {
             onChange={(v) => setTweak('tiltPivotY', v)}></TweakSlider>
           <TweakToggle label="かしげ反転" value={t.invertTilt}
             onChange={(v) => setTweak('invertTilt', v)}></TweakToggle>
-          <TweakSlider label="左右向き補正" value={t.tiltYawComp} min={-1} max={1} step={0.05}
+          <TweakSlider label="左右向き補正" value={t.tiltYawComp} min={-4} max={4} step={0.05}
             onChange={(v) => setTweak('tiltYawComp', v)}></TweakSlider>
           <TweakSlider label="かしげバイアス" value={t.biasRollDeg} min={-30} max={30} step={1} unit="°"
             onChange={(v) => setTweak('biasRollDeg', v)}></TweakSlider>
