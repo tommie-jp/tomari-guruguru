@@ -146,7 +146,7 @@ OBS 用の tx/rx を動かすための、中継 + 静的配信の単体実行フ
 2. start.bat をダブルクリック → 送信側(tx)が既定ブラウザで開く。
 3. OBS の「ブラウザ」ソースに http://localhost:8787/?rx 。
 
-使い方は [Windows リレイサーバの使い方（OBS向け）](https://github.com/$REPO/blob/$BRANCH/docs-camera/21-OBSリレイサーバの使い方.md) を参照。
+使い方は [21-OBSリレイサーバの使い方](https://github.com/$REPO/blob/$BRANCH/docs-camera/21-OBSリレイサーバの使い方.md) を参照。
 開発者向けの詳細: [09-Windowsで動かす.md](https://github.com/$REPO/blob/$BRANCH/docs-camera/09-Windowsで動かす.md) / [10-単体EXEにする.md](https://github.com/$REPO/blob/$BRANCH/docs-camera/10-単体EXEにする.md)
 NOTES
 )"
