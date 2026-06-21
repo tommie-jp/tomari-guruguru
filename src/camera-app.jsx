@@ -1423,12 +1423,12 @@ function App() {
           title="デバッグ"
           onClose={() => setTweak('showDebug', false)}
           closeLabel="デバッグ表示を隠す"
+          resizable={false}
           defaultStyle={{ top: 16, left: showPreview ? 'calc(min(160px, 34vw) + 30px)' : 16 }}
-          defaultWidth="210px"
           style={{
             background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 10,
             padding: '7px 9px', fontSize: 12, fontFamily: 'ui-monospace, monospace',
-            lineHeight: 1.45, whiteSpace: 'nowrap',
+            lineHeight: 1.45, whiteSpace: 'nowrap', width: 'max-content',
             fontVariantNumeric: 'tabular-nums', // 桁が変わっても幅が動かないよう等幅数字
           }}
         >
