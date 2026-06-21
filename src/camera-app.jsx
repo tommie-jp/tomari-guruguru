@@ -19,6 +19,9 @@ import { SpriteAvatar } from './sprite-avatar';
 import { QRCodeSVG } from 'qrcode.react';
 import { installMobileHardening } from './mobile-hardening.js';
 import { applyThemeColor } from './theme-color.js';
+import { createSoundboard } from './cue-audio.js';
+import { createCueController, isTypingTarget, parseCueParam } from './cue-system.js';
+import { CueStampLayer } from './cue-stamp.jsx';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -113,7 +116,9 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "effGlowColor": "#9FD8FF",
   "effDissolve": false,
   "effDissolveAmount": 0,
-  "effDissolveColor": "#7FE0FF"
+  "effDissolveColor": "#7FE0FF",
+  "sbGain": 1,
+  "sbButtons": true
 }/*EDITMODE-END*/;
 
 // 表示する主な表情ブレンドシェイプ（MediaPipe FaceLandmarker のカテゴリ名）
@@ -333,6 +338,18 @@ function PanelToggles({ items, inkColor, subColor, style }) {
   );
 }
 
+// 演出キュー: 音(tone は合成音フォールバック / sound にパスがあればそれを再生)とスタンプを束ねる。
+// 発火経路は 右端ボタン / 数字キー / ?cue= の3つ共通。後で effect/expression も同じ cue に足せる。
+const DEFAULT_CUES = [
+  { id: 'hello',    label: 'こんにちは', key: '1', tone: 660, stamp: 'こんにちは！', anim: 'pop', icon: '👋' },
+  { id: 'clap',     label: '拍手',       key: '2', tone: 520, stamp: '👏', anim: 'pop' },
+  { id: 'laugh',    label: 'わらい',     key: '3', tone: 720, stamp: '😆', anim: 'rise' },
+  { id: 'sweat',    label: 'あせ',       key: '4', tone: 430, stamp: '💦', anim: 'rise' },
+  { id: 'anger',    label: 'いかり',     key: '5', tone: 300, stamp: '💢', anim: 'shake' },
+  { id: 'sparkle',  label: 'キラキラ',   key: '6', tone: 880, stamp: '✨', anim: 'rise' },
+  { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop' },
+];
+
 function App() {
   const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
   // OBS ブラウザソース用ステージモード（背景透過＋UI 非表示）。
@@ -360,6 +377,16 @@ function App() {
   // 接続中のカメラ一覧（[{deviceId,label}]）。カメラ許可後に列挙して埋める（下の effect）。
   const [cameras, setCameras] = useState([]);
   const view = isRx ? rxConfig : t;
+  // 演出（サウンドボード＋リアクションスタンプ）。発火は ボタン/数字キー/?cue= 共通。
+  const cueBoard = useMemo(() => createSoundboard(), []);
+  const cueStampRef = useRef(null);
+  const cueController = useMemo(
+    () => createCueController(DEFAULT_CUES, (cue) => {
+      cueBoard.play(cue);
+      if (cueStampRef.current) cueStampRef.current.pop(cue);
+    }),
+    [cueBoard],
+  );
   // 表示アバター。?avatar=<id> があれば最優先（OBS シーン固定）、無ければ tweaks の値。
   // URL は起動時固定なので一度だけ解析する。未知 id は getAvatar が既定へフォールバック。
   const avatarParam = useMemo(
@@ -416,6 +443,7 @@ function App() {
   localModeRef.current = localMode;
   const [sheet, setSheet] = useState(0);    // 表示シート(0..5 = A..F)。apply-state が決める
   const [exprValues, setExprValues] = useState([]); // 表情係数パネル表示用
+  const [cueAssigned, setCueAssigned] = useState(() => new Set()); // 音割当済みキューid
   const stageRef = useRef(null);
   const charRef = useRef(null);
   const motionRef = useRef(null);           // 首かしげ・スライド(translate)を直書きするラッパー
@@ -918,6 +946,36 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [obsMode]);
 
+  // 演出: 全体音量を反映。
+  useEffect(() => { cueBoard.setMasterGain(view.sbGain); }, [cueBoard, view.sbGain]);
+  // sound にパス/URL があるキューを先読み（無ければ tone で鳴るので 0 アセットでも可）。
+  useEffect(() => {
+    cueController.cues.forEach((c) => { if (c.sound) cueBoard.loadUrl(c.id, c.sound); });
+  }, [cueBoard, cueController]);
+  // 数字キーでキュー発火（入力中・修飾キー併用は無視）。obsMode でも有効。
+  useEffect(() => {
+    const onCueKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      cueController.runByKey(e.key);
+    };
+    window.addEventListener('keydown', onCueKey);
+    return () => window.removeEventListener('keydown', onCueKey);
+  }, [cueController]);
+  // ?cue=hello,clap で読み込み時に自動発火（OBS の CEF は自動再生が許可されている）。
+  useEffect(() => {
+    const { cues } = parseCueParam(typeof window !== 'undefined' ? window.location.search : '');
+    if (!cues.length) return;
+    cueBoard.resume();
+    cues.forEach((id) => cueController.run(id));
+  }, [cueBoard, cueController]);
+
+  // 特定の音（例: こんにちは.mp3）をキューに割り当てる。その場限り（再読込で消える）。
+  async function assignCueFile(id, file) {
+    const ok = await cueBoard.assignFile(id, file);
+    if (ok) setCueAssigned((s) => new Set(s).add(id));
+  }
+
   const frames = useMemo(() => {
     const arr = [];
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) arr.push({ r, c });
@@ -1056,6 +1114,34 @@ function App() {
        </div>
       </div>
       </div>
+
+      {/* リアクション・スタンプ。アバターの変形(zoom/tilt/drag)を継承しないようステージ直下に置く。obsMode(配信)でも表示する。 */}
+      <CueStampLayer ref={cueStampRef} top="16%"></CueStampLayer>
+
+      {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。 */}
+      {!obsMode && !isRx && t.sbButtons ? (
+        <div style={{
+          position: 'absolute', right: 'calc(14px + var(--sar))', top: '50%',
+          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 8, zIndex: 6
+        }}>
+          {cueController.cues.map((c) => (
+            <button key={c.id} onClick={() => cueController.run(c.id)} title={`${c.label}（キー: ${c.key || '-'}）`}
+              style={{
+                position: 'relative', width: 50, height: 46, fontSize: 21, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)',
+                border: `1.5px solid ${dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)'}`,
+                borderRadius: 11, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap',
+                boxShadow: '0 4px 14px rgba(60,48,38,0.08)'
+              }}>
+              {c.icon || c.stamp || c.label}
+              {c.key ? (
+                <span style={{ position: 'absolute', right: 3, bottom: 2, fontSize: 9, fontWeight: 700, color: subColor }}>{c.key}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {!obsMode && (
       <div style={{
@@ -1454,6 +1540,23 @@ function App() {
             onChange={(v) => setTweak('effDissolveAmount', v)}></TweakSlider>
           <TweakColor label="ディゾルブ縁色" value={t.effDissolveColor} options={DISSOLVE_COLORS}
             onChange={(v) => setTweak('effDissolveColor', v)}></TweakColor>
+        </TweakSection>
+        <TweakSection label="演出（サウンドボード）" collapsible>
+          <TweakSlider label="演出の音量" value={t.sbGain} min={0} max={2} step={0.05}
+            onChange={(v) => setTweak('sbGain', v)}></TweakSlider>
+          <TweakToggle label="ボタンを表示" value={t.sbButtons}
+            onChange={(v) => setTweak('sbButtons', v)}></TweakToggle>
+          {cueController.cues.map((c) => (
+            <label key={c.id} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 8, fontSize: 12, padding: '4px 0', cursor: 'pointer'
+            }}>
+              <span>{c.icon || c.stamp} {c.label} {c.key ? `(${c.key})` : ''} {cueAssigned.has(c.id) ? '🔊' : ''}</span>
+              <span style={{ opacity: 0.55 }}>音を割当…</span>
+              <input type="file" accept="audio/*" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) assignCueFile(c.id, f); }} />
+            </label>
+          ))}
         </TweakSection>
         <TweakSection label="アバター" collapsible>
           {avatarParam ? (

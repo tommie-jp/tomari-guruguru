@@ -61,6 +61,12 @@ describe('normalizeCue', () => {
     expect(normalizeCue({ id: 'x', holdMs: 800 }).holdMs).toBe(800);
   });
 
+  it('icon は任意（ボタン面用）。空文字/未指定は null', () => {
+    expect(normalizeCue({ id: 'x' }).icon).toBeNull();
+    expect(normalizeCue({ id: 'x', icon: '  ' }).icon).toBeNull();
+    expect(normalizeCue({ id: 'x', icon: ' 👋 ' }).icon).toBe('👋');
+  });
+
   it('音だけ・スタンプだけ・両方ありを許容する', () => {
     expect(normalizeCue({ id: 'snd', tone: 440 })).toMatchObject({ tone: 440, stamp: null });
     expect(normalizeCue({ id: 'stp', stamp: '✨' })).toMatchObject({ tone: null, stamp: '✨' });

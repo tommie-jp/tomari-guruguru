@@ -43,7 +43,8 @@ function normKey(k) {
  * id が無いものは無効として null を返す。
  * 音（sound/tone/gain）とスタンプ（stamp/anim/holdMs）はどちらも任意で、
  * 片方だけ・両方ありを許容する（音だけ／スタンプだけ／音＋スタンプ）。
- * @returns {{id,label,key,sound,tone,gain,stamp,anim,holdMs}|null}
+ * icon はボタン面に出す短い絵柄。stamp が長文のときに面が崩れないよう分離する。
+ * @returns {{id,label,key,sound,tone,gain,stamp,anim,holdMs,icon}|null}
  */
 export function normalizeCue(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -57,7 +58,8 @@ export function normalizeCue(raw) {
   const stamp = typeof raw.stamp === 'string' && raw.stamp.trim() ? raw.stamp.trim() : null;
   const anim = STAMP_ANIMS.includes(raw.anim) ? raw.anim : DEFAULT_STAMP_ANIM;
   const holdMs = clampNum(raw.holdMs, STAMP_HOLD_MIN, STAMP_HOLD_MAX, DEFAULT_STAMP_HOLD_MS);
-  return { id, label, key, sound, tone, gain, stamp, anim, holdMs };
+  const icon = typeof raw.icon === 'string' && raw.icon.trim() ? raw.icon.trim() : null;
+  return { id, label, key, sound, tone, gain, stamp, anim, holdMs, icon };
 }
 
 /**
