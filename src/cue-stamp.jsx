@@ -16,6 +16,7 @@
 //   stampRef.current.pop({ stamp:'💢', anim:'shake', holdMs:1100, place:'over' });
 
 import React from 'react';
+import { computeStampBox } from './cue-stamp-geometry.js';
 
 const { useState, useRef, useImperativeHandle, forwardRef, useCallback } = React;
 
@@ -29,10 +30,8 @@ const ANIM_NAME = {
 // 連番キー＆軽いジッター（同じ場所に固まらないよう左右にばらす）用のカウンタ。
 let SEQ = 0;
 
-// 位置算出パラメータ（アバター rect に対する割合）。
-const OVER_SIZE = 0.34;   // 'over' の文字サイズ＝アバター幅 × これ
-const ABOVE_SIZE = 0.17;  // 'above' の文字サイズ＝アバター幅 × これ
-const HEAD_CENTER_Y = 0.30; // 'over' を乗せる頭の縦位置（ボックス上端からの割合）
+// 位置算出パラメータ（OVER_SIZE / ABOVE_SIZE / HEAD_CENTER_Y）と配置式は
+// cue-stamp-geometry.js に集約（cue-offset-editor.jsx とも共用・DOM 非依存でテスト可能）。
 
 // アニメの移動量は em 単位（＝文字サイズ基準）にして、ズームで一緒に拡縮させる。
 const KEYFRAMES = `
@@ -75,18 +74,15 @@ function CueStampLayerImpl(props, ref) {
     if (!el) return;
     const r = el.getBoundingClientRect();
     if (!r.width) return;
-    const cx = r.left + r.width / 2;
-    const above = node.dataset.place === 'above';
+    // place / jit / cue 毎オフセット(ox,oy) は data-* で要素に載せ、毎フレームここで読む。
+    const place = node.dataset.place === 'above' ? 'above' : 'over';
     const jit = Number(node.dataset.jit) || 0;
-    const fontSize = r.width * (above ? ABOVE_SIZE : OVER_SIZE);
-    // above: 文字の下端がアバター上端に来るよう要素 top = 上端 - 文字高。
-    // over : 頭の縦位置に中心が来るよう要素 top = 中心 - 文字高/2。
-    const topY = above
-      ? r.top - fontSize
-      : r.top + r.height * HEAD_CENTER_Y - fontSize / 2;
-    node.style.fontSize = `${fontSize}px`;
-    node.style.left = `${cx + jit * fontSize}px`;
-    node.style.top = `${topY}px`;
+    const ox = Number(node.dataset.offsetX) || 0;
+    const oy = Number(node.dataset.offsetY) || 0;
+    const box = computeStampBox(r, { place, jit, ox, oy });
+    node.style.fontSize = `${box.fontSize}px`;
+    node.style.left = `${box.left}px`;
+    node.style.top = `${box.top}px`;
   }, [anchorRef]);
 
   const pop = useCallback((cue) => {
@@ -97,7 +93,12 @@ function CueStampLayerImpl(props, ref) {
     const place = cue.place === 'above' ? 'above' : 'over';
     // 文字サイズに対する相対ジッター（±0.3em 程度）。連打しても重ならないように。
     const jit = (((id * 53) % 56) - 28) / 90;
-    setItems((prev) => [...prev, { id, glyph: cue.stamp, anim, holdMs, place, jit }]);
+    // cue 毎のアバター相対オフセット（em）。__offset は発火側が { x, y } を差し込む。
+    // 未指定・非有限は 0（＝従来の表示位置）。relay には乗らないローカル調整値。
+    const off = cue.__offset;
+    const ox = off && Number.isFinite(off.x) ? off.x : 0;
+    const oy = off && Number.isFinite(off.y) ? off.y : 0;
+    setItems((prev) => [...prev, { id, glyph: cue.stamp, anim, holdMs, place, jit, ox, oy }]);
     const timer = setTimeout(() => {
       setItems((prev) => prev.filter((it) => it.id !== id));
       timers.current.delete(timer);
@@ -144,6 +145,8 @@ function CueStampLayerImpl(props, ref) {
           }}
           data-place={it.place}
           data-jit={it.jit}
+          data-offset-x={it.ox}
+          data-offset-y={it.oy}
           style={{
             position: 'absolute',
             left: 0, top: 0,          // placeNode が毎フレーム上書き

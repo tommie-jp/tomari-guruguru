@@ -22,6 +22,8 @@ import { applyThemeColor } from './theme-color.js';
 import { createSoundboard } from './cue-audio.js';
 import { createCueController, isTypingTarget, parseCueParam } from './cue-system.js';
 import { CueStampLayer } from './cue-stamp.jsx';
+import { CueOffsetEditor } from './cue-offset-editor.jsx';
+import { loadCueOffsets, saveCueOffsets, clampCueOffset } from './use-tweaks.js';
 import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
@@ -415,10 +417,16 @@ function App() {
   const cueFxTimerRef = useRef(0);
   const gesturePlayRef = useRef(null); // 再生中ジェスチャー { name, start, base }（描画ループが読む）
   const gestureFxRef = useRef(null);   // 回転/拡縮を当てる中心原点ラッパー（顔追従と別レイヤー）
+  // 演出（スタンプ）の cue 毎アバター相対オフセット { [cueId]: {x,y} }（em）。ローカル限定（relay しない）。
+  // 発火は useMemo 化された cueController を通るので、最新値は ref 経由で読む（クロージャの陳腐化回避）。
+  const [cueOffsets, setCueOffsets] = useState(() => loadCueOffsets());
+  const cueOffsetsRef = useRef(cueOffsets);
+  useEffect(() => { cueOffsetsRef.current = cueOffsets; }, [cueOffsets]);
   const cueController = useMemo(
     () => createCueController(DEFAULT_CUES, (cue) => {
       cueBoard.play(cue);
-      if (cueStampRef.current) cueStampRef.current.pop(cue);
+      // __offset は cue 毎の保存オフセット。未設定は undefined → スタンプ側で 0（従来位置）。
+      if (cueStampRef.current) cueStampRef.current.pop({ ...cue, __offset: cueOffsetsRef.current[cue.id] });
       // effect 付きキューは一定時間だけグローを強める（音＋スタンプ＋発光の複合演出）。
       if (cue.effect) {
         clearTimeout(cueFxTimerRef.current);
@@ -434,6 +442,68 @@ function App() {
     [cueBoard, mode],
   );
   useEffect(() => () => clearTimeout(cueFxTimerRef.current), []); // アンマウント時にタイマ掃除
+
+  // ── 演出の位置調整（編集モード）─────────────────────────────────────────────
+  // トリガーは2経路: 可視トグルで編集モードに入り cue ボタンで対象を選ぶ／PC 右クリック・
+  // モバイル長押しでその cue を直接開く。スタンプ無し（動きだけ）の cue は調整対象外。
+  const [editMode, setEditMode] = useState(false);     // 可視トグルの ON/OFF
+  const [editingCueId, setEditingCueId] = useState(null); // 調整中の cue id（null=未選択）
+  const lpTimerRef = useRef(0);          // 長押しタイマー
+  const lpStartRef = useRef({ x: 0, y: 0 }); // 長押し開始座標（移動でキャンセル判定）
+  const lpJustOpenedRef = useRef(false); // 長押しで開いた直後の click を握りつぶすフラグ
+  useEffect(() => () => clearTimeout(lpTimerRef.current), []);
+
+  const openCueEditor = (c) => {
+    if (!c || !c.stamp) return false; // 動かすスタンプが無い cue は対象外
+    setEditMode(true);
+    setEditingCueId(c.id);
+    return true;
+  };
+  const onCueButtonClick = (c) => {
+    if (lpJustOpenedRef.current) { lpJustOpenedRef.current = false; return; } // 長押しで開いた直後
+    if (editMode && c.stamp) { setEditingCueId(c.id); return; } // 編集モード中は対象選択
+    cueController.run(c.id);
+  };
+  const onCueButtonContextMenu = (e, c) => {
+    e.preventDefault();                     // ブラウザメニュー抑制
+    clearTimeout(lpTimerRef.current);       // 長押しタイマーの二重発火を防ぐ（タッチの合成 contextmenu 対策）
+    if (openCueEditor(c)) lpJustOpenedRef.current = true; // 直後の click を握りつぶす。run は呼ばない
+  };
+  // 長押し（タッチ/ペンのみ。マウスは右クリックで開く）。移動 8px・非プライマリ・離脱でキャンセル。
+  const onCueButtonPointerDown = (e, c) => {
+    lpJustOpenedRef.current = false; // 新しい操作の開始: 前回の残留抑制フラグを必ず解除（誤抑制防止）
+    if (e.pointerType === 'mouse') return;
+    if (!e.isPrimary) { clearTimeout(lpTimerRef.current); return; } // 2本指(ピンチ)では発火しない
+    lpStartRef.current = { x: e.clientX, y: e.clientY };
+    clearTimeout(lpTimerRef.current);
+    lpTimerRef.current = setTimeout(() => {
+      if (openCueEditor(c)) lpJustOpenedRef.current = true;
+    }, 500);
+  };
+  const onCueButtonPointerMove = (e) => {
+    const s = lpStartRef.current;
+    if (Math.abs(e.clientX - s.x) > 8 || Math.abs(e.clientY - s.y) > 8) clearTimeout(lpTimerRef.current);
+  };
+  const cancelCueLongPress = () => clearTimeout(lpTimerRef.current);
+  const toggleEditMode = () => {
+    setEditMode((v) => {
+      if (v) setEditingCueId(null); // OFF にしたら選択も解除
+      return !v;
+    });
+  };
+  // 保存: clamp 済みオフセットを map へ反映＋localStorage。{0,0} はエントリ削除（既定位置）。
+  const commitCueOffset = (offset) => {
+    if (!editingCueId) return;
+    const o = clampCueOffset(offset);
+    const next = { ...cueOffsets };
+    if (o.x === 0 && o.y === 0) delete next[editingCueId];
+    else next[editingCueId] = o;
+    setCueOffsets(next);
+    saveCueOffsets(next);
+    setEditingCueId(null); // 編集モードは維持（別 cue を続けて調整できる）
+  };
+  const previewCueStamp = (c) => { if (cueStampRef.current) cueStampRef.current.pop(c); };
+  const editingCue = editingCueId ? (cueController.cues.find((c) => c.id === editingCueId) || null) : null;
   // 表示アバター。?avatar=<id> があれば最優先（OBS シーン固定）、無ければ tweaks の値。
   // URL は起動時固定なので一度だけ解析する。未知 id は getAvatar が既定へフォールバック。
   const avatarParam = useMemo(
@@ -1210,29 +1280,80 @@ function App() {
           （顔追従/ドラッグ/ズームに連動）。place で 頭の上/頭にオーバーレイ を切替。obs でも表示。 */}
       <CueStampLayer ref={cueStampRef} anchorRef={charRef}></CueStampLayer>
 
-      {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。 */}
+      {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。
+          編集モード中はオーバーレイ(z30)より上へ出して対象を選べるよう z を上げる。 */}
       {!obsMode && !isRx && t.sbButtons ? (
         <div style={{
           position: 'absolute', right: 'calc(14px + var(--sar))', top: '50%',
-          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: isNarrow ? 6 : 8, zIndex: 6
+          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: isNarrow ? 6 : 8,
+          zIndex: editMode ? 40 : 6
         }}>
-          {cueController.cues.map((c) => (
-            <button key={c.id} onClick={() => cueController.run(c.id)} title={`${c.label}（キー: ${c.key || '-'}）`}
-              style={{
-                position: 'relative', width: isNarrow ? 40 : 50, height: isNarrow ? 38 : 46, fontSize: isNarrow ? 18 : 21, lineHeight: 1,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)',
-                border: `1.5px solid ${dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)'}`,
-                borderRadius: 11, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap',
-                boxShadow: '0 4px 14px rgba(60,48,38,0.08)'
-              }}>
-              {c.icon || c.stamp || c.label}
-              {c.key ? (
-                <span style={{ position: 'absolute', right: 3, bottom: 2, fontSize: 9, fontWeight: 700, color: subColor }}>{c.key}</span>
-              ) : null}
-            </button>
-          ))}
+          {/* 位置調整トグル（主動線）。ON で cue ボタンは「発火」→「調整対象の選択」に切り替わる。 */}
+          <button type="button" onClick={toggleEditMode}
+            title="演出の表示位置を調整（cue を右クリック／長押しでも開く）"
+            style={{
+              width: isNarrow ? 40 : 50, minHeight: isNarrow ? 30 : 34, fontSize: isNarrow ? 9 : 10,
+              fontWeight: 800, lineHeight: 1.15, padding: '3px 2px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+              background: editMode ? (dark ? '#5B8DEF' : '#3B74E8') : (dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)'),
+              color: editMode ? '#fff' : (dark ? '#F7F1E8' : '#3C3026'),
+              border: `1.5px solid ${editMode ? 'transparent' : (dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)')}`,
+              borderRadius: 11, cursor: 'pointer', whiteSpace: 'normal',
+              boxShadow: '0 4px 14px rgba(60,48,38,0.08)', userSelect: 'none'
+            }}>
+            {editMode ? '調整中' : '位置調整'}
+          </button>
+          {cueController.cues.map((c) => {
+            const editable = !!c.stamp;
+            const active = editMode && c.id === editingCueId;
+            const ring = active
+              ? `2px solid ${dark ? '#7FB0FF' : '#3B74E8'}`
+              : (editMode && editable
+                ? `1.5px dashed ${dark ? 'rgba(127,176,255,0.7)' : 'rgba(59,116,232,0.6)'}`
+                : `1.5px solid ${dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)'}`);
+            return (
+              <button key={c.id}
+                onClick={() => onCueButtonClick(c)}
+                onContextMenu={(e) => onCueButtonContextMenu(e, c)}
+                onPointerDown={(e) => onCueButtonPointerDown(e, c)}
+                onPointerMove={onCueButtonPointerMove}
+                onPointerUp={cancelCueLongPress}
+                onPointerLeave={cancelCueLongPress}
+                onPointerCancel={cancelCueLongPress}
+                title={editMode
+                  ? (editable ? `${c.label}: ドラッグで位置調整` : `${c.label}: 位置調整なし（スタンプ無し）`)
+                  : `${c.label}（キー: ${c.key || '-'}）`}
+                style={{
+                  position: 'relative', width: isNarrow ? 40 : 50, height: isNarrow ? 38 : 46, fontSize: isNarrow ? 18 : 21, lineHeight: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)',
+                  border: ring,
+                  opacity: editMode && !editable ? 0.5 : 1,
+                  borderRadius: 11, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap',
+                  boxShadow: active ? `0 0 0 3px ${dark ? 'rgba(127,176,255,0.25)' : 'rgba(59,116,232,0.2)'}` : '0 4px 14px rgba(60,48,38,0.08)',
+                  userSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation'
+                }}>
+                {c.icon || c.stamp || c.label}
+                {c.key ? (
+                  <span style={{ position: 'absolute', right: 3, bottom: 2, fontSize: 9, fontWeight: 700, color: subColor }}>{c.key}</span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
+      ) : null}
+
+      {/* 演出の位置調整エディタ（編集中の cue のみマウント）。配信/受信では出さない。 */}
+      {!obsMode && !isRx && editingCue ? (
+        <CueOffsetEditor
+          cue={editingCue}
+          anchorRef={charRef}
+          initial={cueOffsets[editingCue.id]}
+          dark={dark}
+          onCommit={commitCueOffset}
+          onClose={() => setEditingCueId(null)}
+          preview={previewCueStamp}
+        ></CueOffsetEditor>
       ) : null}
 
       {!obsMode && (

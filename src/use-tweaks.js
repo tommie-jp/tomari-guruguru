@@ -468,6 +468,64 @@ export function saveSectionState(map, explicit) {
   }
 }
 
+// ── fork:cue-offset ── 演出（スタンプ）のアバター相対オフセット { [cueId]: {x,y} } ──
+// cue 毎にスタンプの表示位置を微調整した値を覚える。値とは別キー（:cueoffset）に置く:
+// tweaks 値に入れると mergeIntoDefaults で落ち、shallowEqualValues（primitive 前提）を
+// 壊し、テーマ export を汚し、resetTweaks で消えてしまうため、UI チューニングとして分離する
+// （:sections / :panelpos と同じサイドカー方式）。単位は em（= スタンプ fontSize = アバター
+// 幅比）なので、charSize/ズーム/解像度が変わってもスケール不変。既定 {0,0} は既存表示と一致。
+// 形は :sections と同じく「ページ単位の単一マップ」（cueId ごとの :id 分割はしない）。
+export function cueOffsetStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cueoffset';
+}
+
+// em オフセットを ±範囲（既定 ±1.5）に収め、非有限・欠落は 0 に正規化する純関数（DOM 非依存）。
+// スタンプが画面外へ飛ばないよう保存前にこれを通す。clampPanelPos と同じく単体テスト容易。
+export function clampCueOffset(o, lo = -1.5, hi = 1.5) {
+  const num = (v) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : 0);
+  return { x: num(o && o.x), y: num(o && o.y) };
+}
+
+// 保存マップを { [cueId]: {x,y} }（x,y は有限数）だけに正規化する。空 id・非オブジェクト・
+// 非有限の x/y を持つエントリは捨て、壊れた入力でも安全なマップを返す（sanitizePresets と同型）。
+function sanitizeCueOffsets(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    if (id && isPlainObject(v) && Number.isFinite(v.x) && Number.isFinite(v.y)) {
+      out[id] = { x: v.x, y: v.y };
+    }
+  }
+  return out;
+}
+
+// 保存マップを返す。未保存・壊れ・読取不可は {}（無害に無効化＝全 cue 既定位置）。
+export function loadCueOffsets(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueOffsetStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueOffsets(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueOffsets(map, explicit) {
+  try {
+    window.localStorage.setItem(cueOffsetStorageKey(explicit), JSON.stringify(sanitizeCueOffsets(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定位置に戻るだけ） */
+  }
+}
+
+export function clearCueOffsets(explicit) {
+  try {
+    window.localStorage.removeItem(cueOffsetStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定位置に戻るだけ） */
+  }
+}
+
 // テーマ・エクスポート JSON のファイル名。形式は
 // guruguru-avatar-tweaks-YYYY-MM-DD-HHMM.json（HHMM=時分）。Date を引数で
 // 受ける純関数にして決定的にテストできるようにする。値はローカル時刻で組む。

@@ -31,6 +31,11 @@ import {
   sectionStateKey,
   loadSectionState,
   saveSectionState,
+  cueOffsetStorageKey,
+  loadCueOffsets,
+  saveCueOffsets,
+  clearCueOffsets,
+  clampCueOffset,
   tweaksExportFilename,
   safeThemeName,
   themeExportFilename,
@@ -750,5 +755,92 @@ describe('safeThemeName / themeExportFilename', () => {
   it('themeExportFilename は guruguru-avatar-theme-<名前>.json', () => {
     expect(themeExportFilename('夜')).toBe('guruguru-avatar-theme-夜.json');
     expect(themeExportFilename('a/b')).toBe('guruguru-avatar-theme-a_b.json');
+  });
+});
+
+// 演出（スタンプ）のアバター相対オフセット { [cueId]: {x,y} } の永続化。
+// tweaks 値とは別キー（:cueoffset）に置き、テーマ export を汚さず resetTweaks でも
+// 消えないようにする（:sections / :panelpos と同じサイドカー方式）。値は em（幅比）。
+describe('演出オフセット（:cueoffset）の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('cueOffsetStorageKey は :cueoffset を付ける（ページ単位の単一マップ）', () => {
+    expect(cueOffsetStorageKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:cueoffset');
+  });
+
+  it('save した offset マップを load で取り戻せる', () => {
+    saveCueOffsets({ hello: { x: 0, y: -0.25 }, anger: { x: 0.1, y: 0 } }, 'k');
+    expect(loadCueOffsets('k')).toEqual({ hello: { x: 0, y: -0.25 }, anger: { x: 0.1, y: 0 } });
+  });
+
+  it('save は cueId ごとに x/y だけを残す（余分なキーは捨てる）', () => {
+    saveCueOffsets({ hello: { x: 1, y: 2, junk: 9 } }, 'k');
+    expect(loadCueOffsets('k')).toEqual({ hello: { x: 1, y: 2 } });
+  });
+
+  it('非有限・非オブジェクトのエントリは捨てる（不正値を無視）', () => {
+    saveCueOffsets({
+      ok: { x: 0.2, y: -0.3 },
+      bad1: { x: NaN, y: 0 },
+      bad2: { x: 0, y: Infinity },
+      bad3: 'nope',
+      bad4: null,
+    }, 'k');
+    expect(loadCueOffsets('k')).toEqual({ ok: { x: 0.2, y: -0.3 } });
+  });
+
+  it('未保存なら {}', () => {
+    expect(loadCueOffsets('k')).toEqual({});
+  });
+
+  it('壊れた JSON は {}', () => {
+    store.set(cueOffsetStorageKey('k'), '{ broken');
+    expect(loadCueOffsets('k')).toEqual({});
+  });
+
+  it('オブジェクトでない保存値は {}', () => {
+    store.set(cueOffsetStorageKey('k'), JSON.stringify([1, 2]));
+    expect(loadCueOffsets('k')).toEqual({});
+  });
+
+  it('clear で消すと load は {} に戻る', () => {
+    saveCueOffsets({ hello: { x: 1, y: 1 } }, 'k');
+    clearCueOffsets('k');
+    expect(loadCueOffsets('k')).toEqual({});
+  });
+});
+
+// clampCueOffset: em オフセットを ±範囲に収め、非有限は 0 に正規化する純関数（DOM 非依存）。
+describe('clampCueOffset', () => {
+  it('範囲内はそのまま返す', () => {
+    expect(clampCueOffset({ x: 0.3, y: -0.4 })).toEqual({ x: 0.3, y: -0.4 });
+  });
+
+  it('既定 ±1.5em を超えたら丸める', () => {
+    expect(clampCueOffset({ x: 5, y: -5 })).toEqual({ x: 1.5, y: -1.5 });
+  });
+
+  it('lo/hi を指定できる', () => {
+    expect(clampCueOffset({ x: 5, y: -5 }, -1, 1)).toEqual({ x: 1, y: -1 });
+  });
+
+  it('非有限・欠落は 0 に正規化する', () => {
+    expect(clampCueOffset({ x: NaN, y: Infinity })).toEqual({ x: 0, y: 0 });
+    expect(clampCueOffset(null)).toEqual({ x: 0, y: 0 });
+    expect(clampCueOffset({})).toEqual({ x: 0, y: 0 });
   });
 });
