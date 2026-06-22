@@ -361,6 +361,16 @@ const DEFAULT_CUES = [
   { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop', gesture: 'shake' },
 ];
 
+// rx(OBS) へ同期しない「ページごとローカル」の設定キー。音声出力（ミュート/音量）は
+// tx=操作モニタ と rx=配信 で別管理にしたいので config 同期から外す。これにより
+// 「tx だけミュート（rx は鳴り続ける）」ができる。配信全体の音量は OBS のミキサーで調整する。
+const LOCAL_ONLY_TWEAKS = ['sbMuted', 'sbGain', 'sbButtons'];
+function syncableTweaks(tw) {
+  const out = { ...tw };
+  for (const k of LOCAL_ONLY_TWEAKS) delete out[k];
+  return out;
+}
+
 function App() {
   const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
   // OBS ブラウザソース用ステージモード（背景透過＋UI 非表示）。
@@ -560,7 +570,7 @@ function App() {
   // WS 中継。tx は config 要求に応答し CEF 接続を表示、rx は state/config を受信。
   const relayApi = useRelay(mode, {
     relayUrl: relay.relayUrl,
-    getConfig: () => tweaksRef.current,
+    getConfig: () => syncableTweaks(tweaksRef.current),
     onState: (arr) => { latestFrameRef.current = decodeStateFrame(arr); },
     onConfig: (cfg) => setRxConfig((prev) => ({ ...prev, ...cfg })),
     onCue: (id) => cueController.run(id), // rx: tx から来た演出をこの端末(OBS)で再生
@@ -571,7 +581,7 @@ function App() {
   // tx: 設定が変わったら CEF へ config を送る（数秒ごとの再送はしない＝変更時のみ）。
   useEffect(() => {
     if (mode !== 'tx') return;
-    relayApi.sendConfig(t);
+    relayApi.sendConfig(syncableTweaks(t));
     // relayApi.sendConfig は clientRef を見るので、依存は mode と t だけでよい。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, t]);
