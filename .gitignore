@@ -36,3 +36,6 @@ guruguru-obs-win/
 
 # Windows のダウンロード ADS（WSL から *:Zone.Identifier として見える）
 *:Zone.Identifier
+
+# Claude Code（個人設定・ローカル設定。公開リポなので一切コミットしない）
+.claude/
