@@ -113,6 +113,23 @@ const AVATAR_DEFS = [
       suffix: 'ChatGPT で作成 ／ 非商用',
     },
   },
+  {
+    id: '06-elf01',
+    displayName: 'エルフ少女01',
+    ext: 'webp',
+    rows: 5,
+    cols: 5,
+    sheets: DEFAULT_SHEETS,
+    commercial: false,
+    credit:
+      'ChatGPT（画像生成）で作成。（商用利用・素材を主体とする再配布/販売は不可）',
+    attribution: {
+      prefix: 'キャラクター: ',
+      name: 'ChatGPT 生成',
+      url: 'https://chatgpt.com/images',
+      suffix: 'ChatGPT で作成 ／ 非商用',
+    },
+  },
 ];
 
 // 1つの定義オブジェクトに参照ヘルパーを生やしてアバター設定オブジェクトを作る。
@@ -142,6 +159,10 @@ function makeAvatar(def) {
 export const avatars = AVATAR_DEFS.map(makeAvatar);
 
 // 既定アバターの id（URL/保存値が無いときや未知 id のフォールバック）。
+// 後方互換の default export（app/talk のスライス方式 src() が参照）が指す先でもあるため、
+// 個別スライス（basePath）を持つアバターを先頭に置くこと。sheet 専用アバター
+// （basePath 無し）を既定にすると src() が `undefined/...` を返して talk/ぐるぐるが壊れる。
+// camera 版の配信デフォルトはこれとは別で、camera-app の TWEAK_DEFAULTS.avatarId で指定する。
 export const DEFAULT_AVATAR_ID = avatars[0].id;
 
 // id からアバター設定を引く。未知 id は既定アバターへフォールバック（実行時に落ちない）。

@@ -61,7 +61,7 @@ const TX_URL = `${TX_PUBLIC_ORIGIN}${import.meta.env.BASE_URL}index.html?tx`;
 // アクセスでもテーマが当たる）。配布テーマを足したい場合は public/default-themes/
 // index.json を置けば上に重なる（fetchBuiltinPresets / 読込失敗は console に出る）。
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "avatarId": "01-tomari",
+  "avatarId": "06-elf01",
   "smoothing": 0.3,
   "sensitivity": 1.3,
   "biasYawDeg": -8,
