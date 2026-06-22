@@ -20,16 +20,22 @@ describe('parseRelayMode', () => {
     expect(parseRelayMode('?tx&rx').mode).toBe('tx');
   });
 
-  it('?relay= で URL を明示上書き', () => {
+  it('?relay= で URL を明示上書き（同一オリジン化の影響を受けない）', () => {
     expect(parseRelayMode('?rx&relay=wss://host:9000').relayUrl).toBe('wss://host:9000');
   });
 
-  it('既定 URL は同ホストの :8787（https なら wss）', () => {
-    const url = parseRelayMode('?tx', { protocol: 'https:', hostname: '100.64.0.2' }).relayUrl;
-    expect(url).toBe('wss://100.64.0.2:8787');
+  it('既定 URL は同一オリジン（host）＋ /__relay（https なら wss）', () => {
+    const url = parseRelayMode('?tx', { protocol: 'https:', host: '100.64.0.2:8787' }).relayUrl;
+    expect(url).toBe('wss://100.64.0.2:8787/__relay');
   });
 
-  it('http なら ws を選ぶ', () => {
-    expect(defaultRelayUrl({ protocol: 'http:', hostname: 'localhost' })).toBe('ws://localhost:8787');
+  it('http なら ws を選ぶ。host の port をそのまま引き継ぐ（同一オリジン）', () => {
+    expect(defaultRelayUrl({ protocol: 'http:', host: 'localhost:5173' })).toBe('ws://localhost:5173/__relay');
+    expect(defaultRelayUrl({ protocol: 'http:', host: 'wsl40:8787' })).toBe('ws://wsl40:8787/__relay');
+  });
+
+  it('host が無ければ hostname、それも無ければ localhost にフォールバック', () => {
+    expect(defaultRelayUrl({ protocol: 'http:', hostname: 'example' })).toBe('ws://example/__relay');
+    expect(defaultRelayUrl({ protocol: 'http:' })).toBe('ws://localhost/__relay');
   });
 });

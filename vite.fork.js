@@ -12,6 +12,7 @@ import { loadEnv } from 'vite';
 import { resolve, basename } from 'path';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
+import relayWsPlugin from './vite-plugin-relay.mjs';
 
 // ビルドされたコミットを一意に特定するための short SHA。
 // CI(GitHub Actions)は checkout 済みなので git で取れる。取れない場合は
@@ -74,6 +75,10 @@ export default function forkConfig({ command, mode }) {
   })();
 
   const config = {
+    // dev/preview に WS 中継を同居させる（配信版と同じ「1プロセス・同一オリジン」）。
+    // mergeConfig は plugins 配列を連結するので upstream の react() と共存する。
+    // 既定は loopback 限定。RELAY_EXPOSE=1（shell or .env.local）で LAN 公開にオプトイン。
+    plugins: [relayWsPlugin({ expose: env.RELAY_EXPOSE === '1' })],
     // ビルド時に静的置換される定数。camera-app.jsx などから参照する。
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),

@@ -34,6 +34,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createStaticHandler } from './static.mjs';
+import { attachRelay } from './relay-core.mjs';
 
 // `--flag value` と `--flag=value` の両形式を拾う最小パーサ。
 function parseArgs(argv) {
@@ -95,58 +96,9 @@ if (CERT && KEY) {
 const wss = new WebSocketServer({ server });
 server.listen(PORT, HOST);
 
-const producers = new Set(); // tx（送信側ブラウザ）
-const consumers = new Set(); // rx（OBS の CEF）
-
-function send(sock, obj) {
-  if (sock.readyState === 1) sock.send(JSON.stringify(obj));
-}
-
-function broadcast(set, data) {
-  for (const s of set) if (s.readyState === 1) s.send(data);
-}
-
-// CEF が居る producer に「設定を出して」+「いま CEF が n 台つながっている」を伝える。
-function requestConfigAndNotify(target) {
-  send(target, { type: 'need-config' });
-  send(target, { type: 'peer', role: 'rx', event: 'connect', count: consumers.size });
-}
-
-function roleOf(req) {
-  try {
-    return new URL(req.url, 'http://localhost').searchParams.get('role');
-  } catch {
-    return null;
-  }
-}
-
-wss.on('connection', (ws, req) => {
-  const role = roleOf(req);
-
-  if (role === 'rx') {
-    consumers.add(ws);
-    // 新しい CEF が来た → 全 producer に config を要求し、接続を通知。
-    for (const p of producers) requestConfigAndNotify(p);
-    ws.on('close', () => {
-      consumers.delete(ws);
-      for (const p of producers) {
-        send(p, { type: 'peer', role: 'rx', event: 'disconnect', count: consumers.size });
-      }
-    });
-    // consumer は受信専用。万一メッセージが来ても中継しない。
-    return;
-  }
-
-  // 既定は producer（tx）。
-  producers.add(ws);
-  // producer が後から繋がったケース: 既に CEF が居れば取りこぼさないよう即要求＋通知。
-  if (consumers.size > 0) requestConfigAndNotify(ws);
-  // producer の state / config を全 consumer へ素通し。
-  ws.on('message', (data, isBinary) => {
-    broadcast(consumers, isBinary ? data : data.toString());
-  });
-  ws.on('close', () => producers.delete(ws));
-});
+// 中継ロジック本体（producer/consumer 管理・素通し）は relay-core.mjs に集約。
+// Vite dev 同居プラグイン（vite-plugin-relay.mjs）も同じ core を使う。
+attachRelay(wss);
 
 // eslint-disable-next-line no-console
 console.log(
