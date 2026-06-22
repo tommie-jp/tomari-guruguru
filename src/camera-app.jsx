@@ -1283,23 +1283,45 @@ function App() {
       {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。
           編集モード中はオーバーレイ(z30)より上へ出して対象を選べるよう z を上げる。 */}
       {!obsMode && !isRx && t.sbButtons ? (
-        <div style={{
+        <div
+          // スマホ(isNarrow): 画面下の横スクロール帯。PC: 従来の縦・右端中央（据え置き）。
+          // スクロールバー非表示は index.html の .cuebar-scroll に依存（スマホ時のみ付与）。
+          className={isNarrow ? 'cuebar-scroll' : undefined}
+          style={isNarrow ? {
+          position: 'absolute',
+          // 左下 PanelToggles（最大2段）・版表記・右下歯車の上へ逃がす。
+          bottom: 'calc(78px + var(--sab))',
+          left: 'calc(8px + var(--sal))', right: 'calc(56px + var(--sar))',
+          zIndex: editMode ? 40 : 6,
+          display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6,
+          overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-x', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'none',
+          scrollSnapType: editMode ? 'none' : 'x proximity', // 編集中はスナップ無効（位置調整がガクつかないよう）
+          padding: '4px 6px', // boxShadow が切れない内側余白
+          // 両端フェード（「まだ続く」の示唆）。編集中は対象を全可視にしたいので外す。
+          WebkitMaskImage: editMode ? 'none'
+            : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+          maskImage: editMode ? 'none'
+            : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+        } : {
           position: 'absolute', right: 'calc(14px + var(--sar))', top: '50%',
-          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: isNarrow ? 6 : 8,
-          zIndex: editMode ? 40 : 6
+          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 8,
+          zIndex: editMode ? 40 : 6,
         }}>
           {/* 位置調整トグル（主動線）。ON で cue ボタンは「発火」→「調整対象の選択」に切り替わる。 */}
           <button type="button" onClick={toggleEditMode}
             title="演出の表示位置を調整（cue を右クリック／長押しでも開く）"
             style={{
-              width: isNarrow ? 40 : 50, minHeight: isNarrow ? 30 : 34, fontSize: isNarrow ? 9 : 10,
+              // スマホ帯では縮ませず（flex 0 0 auto）、cue ボタン高さ(38)に合わせる。
+              flex: isNarrow ? '0 0 auto' : undefined,
+              width: isNarrow ? 40 : 50, minHeight: isNarrow ? 38 : 34, fontSize: isNarrow ? 9 : 10,
               fontWeight: 800, lineHeight: 1.15, padding: '3px 2px',
               display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
               background: editMode ? (dark ? '#5B8DEF' : '#3B74E8') : (dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)'),
               color: editMode ? '#fff' : (dark ? '#F7F1E8' : '#3C3026'),
               border: `1.5px solid ${editMode ? 'transparent' : (dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)')}`,
               borderRadius: 11, cursor: 'pointer', whiteSpace: 'normal',
-              boxShadow: '0 4px 14px rgba(60,48,38,0.08)', userSelect: 'none'
+              boxShadow: '0 4px 14px rgba(60,48,38,0.08)', userSelect: 'none', touchAction: 'manipulation'
             }}>
             {editMode ? '調整中' : '位置調整'}
           </button>
@@ -1324,7 +1346,11 @@ function App() {
                   ? (editable ? `${c.label}: ドラッグで位置調整` : `${c.label}: 位置調整なし（スタンプ無し）`)
                   : `${c.label}（キー: ${c.key || '-'}）`}
                 style={{
-                  position: 'relative', width: isNarrow ? 40 : 50, height: isNarrow ? 38 : 46, fontSize: isNarrow ? 18 : 21, lineHeight: 1,
+                  position: 'relative',
+                  // スマホ帯では縮ませず溢れさせる＝横スクロールの肝。離すと中央へスナップ（編集中は無効）。
+                  flex: isNarrow ? '0 0 auto' : undefined,
+                  scrollSnapAlign: isNarrow && !editMode ? 'center' : undefined,
+                  width: isNarrow ? 40 : 50, height: isNarrow ? 38 : 46, fontSize: isNarrow ? 18 : 21, lineHeight: 1,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)',
                   border: ring,

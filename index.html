@@ -56,6 +56,11 @@
       50% { translate: 0 -1.2vmin; }
     }
   }
+  /* 演出バー（スマホ＝画面下の横スクロール帯）のスクロールバーを隠す。
+     ::-webkit-scrollbar はインライン style で書けないためここで定義する。 */
+  .cuebar-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+  .cuebar-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  .cuebar-scroll button:focus-visible { outline: 2px solid #3B74E8; outline-offset: 1px; }
 </style>
 </head>
 <body>
