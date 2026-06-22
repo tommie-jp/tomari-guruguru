@@ -36,6 +36,8 @@ import {
   saveCueOffsets,
   clearCueOffsets,
   clampCueOffset,
+  sanitizeCueOffsets,
+  equalCueOffsetMaps,
   tweaksExportFilename,
   safeThemeName,
   themeExportFilename,
@@ -842,5 +844,65 @@ describe('clampCueOffset', () => {
     expect(clampCueOffset({ x: NaN, y: Infinity })).toEqual({ x: 0, y: 0 });
     expect(clampCueOffset(null)).toEqual({ x: 0, y: 0 });
     expect(clampCueOffset({})).toEqual({ x: 0, y: 0 });
+  });
+});
+
+// sanitizeCueOffsets: 保存マップを { [cueId]: {x,y} } だけに正規化する純関数（export 化）。
+// テーマ・サイドカー連携の write 側でライブ保存と同じ正規化を再利用するため公開した。
+describe('sanitizeCueOffsets', () => {
+  it('正しいエントリはそのまま、x/y 以外のキーは捨てる', () => {
+    expect(sanitizeCueOffsets({ hello: { x: 1, y: -2, junk: 9 } }))
+      .toEqual({ hello: { x: 1, y: -2 } });
+  });
+
+  it('空 id・非オブジェクト・非有限 x/y のエントリは捨てる', () => {
+    expect(sanitizeCueOffsets({
+      ok: { x: 0.2, y: -0.3 },
+      '': { x: 1, y: 1 },
+      bad1: { x: NaN, y: 0 },
+      bad2: { x: 0, y: Infinity },
+      bad3: 'nope',
+      bad4: null,
+    })).toEqual({ ok: { x: 0.2, y: -0.3 } });
+  });
+
+  it('非オブジェクト入力は {}', () => {
+    expect(sanitizeCueOffsets(null)).toEqual({});
+    expect(sanitizeCueOffsets([1, 2])).toEqual({});
+    expect(sanitizeCueOffsets('x')).toEqual({});
+  });
+});
+
+// equalCueOffsetMaps: 2つの cue オフセットマップが構造的に等しいか（テーマの dirty 判定用）。
+describe('equalCueOffsetMaps', () => {
+  it('同値なら true（キー順は問わない）', () => {
+    expect(equalCueOffsetMaps(
+      { hello: { x: 0.1, y: -0.2 }, anger: { x: 0, y: 0.3 } },
+      { anger: { x: 0, y: 0.3 }, hello: { x: 0.1, y: -0.2 } },
+    )).toBe(true);
+  });
+
+  it('空マップ同士は true', () => {
+    expect(equalCueOffsetMaps({}, {})).toBe(true);
+  });
+
+  it('x または y が違えば false', () => {
+    expect(equalCueOffsetMaps({ a: { x: 0.1, y: 0 } }, { a: { x: 0.2, y: 0 } })).toBe(false);
+    expect(equalCueOffsetMaps({ a: { x: 0, y: 0.1 } }, { a: { x: 0, y: 0.2 } })).toBe(false);
+  });
+
+  it('キー数・キー名が違えば false', () => {
+    expect(equalCueOffsetMaps({ a: { x: 0, y: 0 } }, {})).toBe(false);
+    expect(equalCueOffsetMaps({ a: { x: 0, y: 0 } }, { b: { x: 0, y: 0 } })).toBe(false);
+  });
+
+  it('不正値は正規化後に比較する（捨てた結果が同じなら true）', () => {
+    // 片方に不正エントリがあっても、sanitize 後の有効分が一致すれば等しい。
+    expect(equalCueOffsetMaps(
+      { a: { x: 0.1, y: 0.2 }, bad: { x: NaN, y: 0 } },
+      { a: { x: 0.1, y: 0.2 } },
+    )).toBe(true);
+    // 別参照・別オブジェクトでも構造が同じなら true（参照比較ではない）。
+    expect(equalCueOffsetMaps(null, {})).toBe(true);
   });
 });

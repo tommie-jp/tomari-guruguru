@@ -488,7 +488,9 @@ export function clampCueOffset(o, lo = -1.5, hi = 1.5) {
 
 // 保存マップを { [cueId]: {x,y} }（x,y は有限数）だけに正規化する。空 id・非オブジェクト・
 // 非有限の x/y を持つエントリは捨て、壊れた入力でも安全なマップを返す（sanitizePresets と同型）。
-function sanitizeCueOffsets(obj) {
+// export: テーマ・サイドカー連携で camera 側の write（applyCueOffsets）が再利用する
+// （ライブ保存の saveCueOffsets と同じ正規化を一点に保つ）。
+export function sanitizeCueOffsets(obj) {
   if (!isPlainObject(obj)) return {};
   const out = {};
   for (const [id, v] of Object.entries(obj)) {
@@ -497,6 +499,22 @@ function sanitizeCueOffsets(obj) {
     }
   }
   return out;
+}
+
+// 2つの cue オフセットマップが構造的に等しいか（テーマの「未保存変更（dirty）」判定用）。
+// マップ値はネストした {x,y} オブジェクトなので shallowEqualValues（primitive 前提・参照比較）
+// では使えない。両者を sanitize で正規化してからキー集合と各 x/y を Object.is で比較する純関数。
+// 比較前に正規化するので、壊れた入力やキー順の違いでは false にならない（同値なら true）。
+export function equalCueOffsetMaps(a, b) {
+  const na = sanitizeCueOffsets(a);
+  const nb = sanitizeCueOffsets(b);
+  const ak = Object.keys(na);
+  if (ak.length !== Object.keys(nb).length) return false;
+  for (const k of ak) {
+    if (!hasOwn(nb, k)) return false;
+    if (!Object.is(na[k].x, nb[k].x) || !Object.is(na[k].y, nb[k].y)) return false;
+  }
+  return true;
 }
 
 // 保存マップを返す。未保存・壊れ・読取不可は {}（無害に無効化＝全 cue 既定位置）。

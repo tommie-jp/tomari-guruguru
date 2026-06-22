@@ -23,10 +23,13 @@ import { createSoundboard } from './cue-audio.js';
 import { createCueController, isTypingTarget, parseCueParam } from './cue-system.js';
 import { CueStampLayer } from './cue-stamp.jsx';
 import { CueOffsetEditor } from './cue-offset-editor.jsx';
-import { loadCueOffsets, saveCueOffsets, clampCueOffset } from './use-tweaks.js';
+import {
+  loadCueOffsets, saveCueOffsets, clampCueOffset,
+  sanitizeCueOffsets, equalCueOffsetMaps,
+} from './use-tweaks.js';
 import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
 
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 // バージョン表記。vite.fork.js の define でビルド時に静的置換される。
 // build: "v1.0.0 · f7efa25 · 2026-06-17" / dev: "v1.0.0 · dev"。
@@ -382,7 +385,27 @@ function syncableTweaks(tw) {
 }
 
 function App() {
-  const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS);
+  // 演出（スタンプ）の cue 毎アバター相対オフセット { [cueId]: {x,y} }（em）。ローカル限定（relay しない）。
+  // テーマと一緒に持ち運ぶ「サイドカー」として useTweaks に渡す（保存/適用/書き出し/読み込みで連動）。
+  // useTweaks より前で宣言する必要があるため、cueController 周りより手前に置く。
+  // 発火は useMemo 化された cueController を通るので、最新値は ref 経由で読む（クロージャの陳腐化回避）。
+  const [cueOffsets, setCueOffsets] = useState(() => loadCueOffsets());
+  const cueOffsetsRef = useRef(cueOffsets);
+  useEffect(() => { cueOffsetsRef.current = cueOffsets; }, [cueOffsets]);
+  // テーマ適用/リセット/シード時にサイドカー値を書き戻す唯一の口。state と :cueoffset を同期する
+  // （ライブのドラッグ保存 commitCueOffset と同じ保存先・正規化を共有）。
+  const applyCueOffsets = useCallback((map) => {
+    const next = sanitizeCueOffsets(map);
+    setCueOffsets(next);
+    saveCueOffsets(next);
+  }, []);
+  // useTweaks に渡す汎用サイドカー { key, value, write, equal }。識別を安定させるため
+  // cueOffsets が変わったときだけ作り直す（テーマの dirty 再計算のトリガにもなる）。
+  const themeSidecar = useMemo(
+    () => ({ key: '__cueOffsets', value: cueOffsets, write: applyCueOffsets, equal: equalCueOffsetMaps }),
+    [cueOffsets, applyCueOffsets],
+  );
+  const [t, setTweak, resetTweaks, themes] = useTweaks(TWEAK_DEFAULTS, undefined, themeSidecar);
   // OBS ブラウザソース用ステージモード（背景透過＋UI 非表示）。
   // URL は起動時に固定なので一度だけ解析する。
   const stage = useMemo(
@@ -417,11 +440,7 @@ function App() {
   const cueFxTimerRef = useRef(0);
   const gesturePlayRef = useRef(null); // 再生中ジェスチャー { name, start, base }（描画ループが読む）
   const gestureFxRef = useRef(null);   // 回転/拡縮を当てる中心原点ラッパー（顔追従と別レイヤー）
-  // 演出（スタンプ）の cue 毎アバター相対オフセット { [cueId]: {x,y} }（em）。ローカル限定（relay しない）。
-  // 発火は useMemo 化された cueController を通るので、最新値は ref 経由で読む（クロージャの陳腐化回避）。
-  const [cueOffsets, setCueOffsets] = useState(() => loadCueOffsets());
-  const cueOffsetsRef = useRef(cueOffsets);
-  useEffect(() => { cueOffsetsRef.current = cueOffsets; }, [cueOffsets]);
+  // cueOffsets / cueOffsetsRef / applyCueOffsets は useTweaks 連携のため App 冒頭で宣言済み。
   const cueController = useMemo(
     () => createCueController(DEFAULT_CUES, (cue) => {
       cueBoard.play(cue);
@@ -492,14 +511,14 @@ function App() {
     });
   };
   // 保存: clamp 済みオフセットを map へ反映＋localStorage。{0,0} はエントリ削除（既定位置）。
+  // 永続化は applyCueOffsets（state＋:cueoffset 同期・サイドカーと同一経路）に委譲する。
   const commitCueOffset = (offset) => {
     if (!editingCueId) return;
     const o = clampCueOffset(offset);
     const next = { ...cueOffsets };
     if (o.x === 0 && o.y === 0) delete next[editingCueId];
     else next[editingCueId] = o;
-    setCueOffsets(next);
-    saveCueOffsets(next);
+    applyCueOffsets(next);
     setEditingCueId(null); // 編集モードは維持（別 cue を続けて調整できる）
   };
   const previewCueStamp = (c) => { if (cueStampRef.current) cueStampRef.current.pop(c); };

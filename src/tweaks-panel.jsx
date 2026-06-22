@@ -249,8 +249,19 @@ const __TWEAKS_STYLE = `
 // fork: 永続化ヘルパー（tweaksStorageKey / loadTweaks / saveTweaks）は
 // ./use-tweaks.js に分離。本家に無い純粋な追加なので、衝突しないファイルへ退避した。
 
+// fork:theme-sidecar — 継承キー（__proto__ 等）を除いた自前プロパティ判定。
+const hasOwnKey = (o, k) => o != null && Object.prototype.hasOwnProperty.call(o, k);
+
 // fork: 本家 useTweaks に localStorage 永続化と resetTweaks を追加（番兵で明示）。
-function useTweaks(defaults, storageKey) {
+//
+// fork:theme-sidecar — 第3引数 sidecar（任意）でテーマと一緒に持ち運ぶ付随データを扱う。
+// useTweaks は中身を解釈しない汎用 API: { key, value, write, equal }。
+//   key   … プリセット値オブジェクトに同梱する予約キー（例 '__cueOffsets'）。values 本体には混ぜない。
+//   value … 現在のサイドカー値（保存スナップショットと dirty 判定に使う）。
+//   write … テーマ適用/リセット/シード時にサイドカー値を書き戻す関数（key を持つテーマのみ呼ぶ）。
+//   equal … 2値の構造比較（dirty 判定用。未指定ならサイドカー差分は dirty にしない）。
+// 未指定（talk/ぐるぐる）なら全サイドカー処理がスキップされ、従来挙動とバイト不変。
+function useTweaks(defaults, storageKey, sidecar) {
   // ── fork:persist ↓ ── 永続化（ヘルパーは ./use-tweaks.js）
   const key = React.useMemo(() => tweaksStorageKey(storageKey), [storageKey]);
   const presetsKey = React.useMemo(() => presetsStorageKey(storageKey), [storageKey]);
@@ -287,6 +298,9 @@ function useTweaks(defaults, storageKey) {
   builtinsRef.current = builtins;
   const defaultThemeRef = React.useRef(defaultTheme);
   defaultThemeRef.current = defaultTheme;
+  // fork:theme-sidecar — コールバックから最新の sidecar（write/value/key）を読むための ref。
+  const sidecarRef = React.useRef(sidecar);
+  sidecarRef.current = sidecar;
 
   // values が変わるたびに保存する。初回マウント時にも書き込むため、コード側で
   // defaults にキーが増えた場合は保存済みデータも自動で追従する。
@@ -323,11 +337,21 @@ function useTweaks(defaults, storageKey) {
   // デフォルト = ユーザー指定テーマ（あれば）→ 無ければビルトイン先頭 → 無ければ
   // hardcoded defaults。解決したテーマ名を activeTheme にも反映する。保存は上の
   // useEffect が拾い、host とも同期する。reset と「標準に戻す」が共有する。
+  // fork:theme-sidecar — 解決済み raw テーマからサイドカーを書き戻す。key を持つテーマのみ
+  // write を呼ぶ。key 無し（旧テーマ）は触れない（後方互換: オフセット未保存テーマの適用で
+  // 既存オフセットを消さない）。apply / reset / seed が共有する。
+  const applyThemeSidecar = React.useCallback((rawTheme) => {
+    const sc = sidecarRef.current;
+    if (sc && hasOwnKey(rawTheme, sc.key)) sc.write(rawTheme[sc.key]);
+  }, []);
+
   const applyDefaultTheme = React.useCallback(() => {
     const b = builtinsRef.current, p = presetsRef.current, dn = defaultThemeRef.current;
+    const name = resolveDefaultName(b, p, dn);
     applyValues(resolveDefaultValues(b, p, defaultsRef.current, dn));
-    setActiveTheme(resolveDefaultName(b, p, dn));
-  }, [applyValues]);
+    setActiveTheme(name);
+    if (name) applyThemeSidecar({ ...b, ...p }[name]);
+  }, [applyValues, applyThemeSidecar]);
   const resetTweaks = applyDefaultTheme;
   // ── fork:persist ↑ ──
 
@@ -344,12 +368,14 @@ function useTweaks(defaults, storageKey) {
         if (seedRef.current.firstRun && !seedRef.current.seeded && Object.keys(b).length) {
           seedRef.current.seeded = true;
           const dn = defaultThemeRef.current, p = presetsRef.current;
+          const name = resolveDefaultName(b, p, dn);
           applyValues(resolveDefaultValues(b, p, defaultsRef.current, dn));
-          setActiveTheme(resolveDefaultName(b, p, dn));
+          setActiveTheme(name);
+          if (name) applyThemeSidecar({ ...b, ...p }[name]); // 初回シードでもサイドカーを反映
         }
       });
     return () => { alive = false; };
-  }, [key, applyValues]);
+  }, [key, applyValues, applyThemeSidecar]);
   // ── fork:default-theme ↑ ──
 
   // ── fork:presets ↓ ── テーマ（名前付きプリセット）コントローラ。
@@ -371,7 +397,14 @@ function useTweaks(defaults, storageKey) {
       ? mergeIntoDefaults(merged[activeTheme], defaultsRef.current) : null;
     // 適用中テーマが（まだ）存在するか。旧ユーザーや削除済みなら null 扱い。
     const activeExists = !!(activeTheme && merged[activeTheme]);
-    const dirty = activeResolved ? !shallowEqualValues(values, activeResolved) : false;
+    const valuesDirty = activeResolved ? !shallowEqualValues(values, activeResolved) : false;
+    // fork:theme-sidecar — 適用中テーマが key を持つときだけ、サイドカー（cue オフセット等）の
+    // 差分も dirty に含める。key 無し（旧テーマ）や equal 未指定なら、サイドカーでは dirty にしない。
+    const activeRaw = activeExists ? merged[activeTheme] : null;
+    const sidecarDirty = !!(sidecar && typeof sidecar.equal === 'function'
+      && hasOwnKey(activeRaw, sidecar.key)
+      && !sidecar.equal(sidecar.value, activeRaw[sidecar.key]));
+    const dirty = valuesDirty || sidecarDirty;
     return {
       list,
       active: activeExists ? activeTheme : null,
@@ -383,17 +416,25 @@ function useTweaks(defaults, storageKey) {
       save(name) {
         const n = String(name || '').trim();
         if (!n) return false;
-        setPresets((prev) => ({ ...prev, [n]: { ...valuesRef.current } }));
+        // fork:theme-sidecar — サイドカー（cue オフセット等）を予約キーで同梱する。values 本体には
+        // 混ぜない（apply 時に mergeIntoDefaults が落とすので values は汚れない）。常に同梱するので
+        // 旧テーマも再保存で自動昇格する。sidecar 未指定（talk/ぐるぐる）は従来どおり values だけ。
+        const sc = sidecarRef.current;
+        const snapshot = sc
+          ? { ...valuesRef.current, [sc.key]: sc.value }
+          : { ...valuesRef.current };
+        setPresets((prev) => ({ ...prev, [n]: snapshot }));
         setActiveTheme(n);
         return true;
       },
       // name のテーマ（ユーザー優先で解決）を defaults にマージして適用（前方互換）。
-      // 適用したテーマを active にする。
+      // 適用したテーマを active にする。サイドカー（key 付き）も復元する。
       apply(name) {
         const saved = { ...builtinsRef.current, ...presetsRef.current }[name];
         if (!saved) return false;
         applyValues(mergeIntoDefaults(saved, defaultsRef.current));
         setActiveTheme(name);
+        applyThemeSidecar(saved); // key があればサイドカーも復元（無ければ触れない）
         return true;
       },
       // ユーザー層からのみ削除。ビルトインは消えない（上書きを取り消すと元に戻る）。
@@ -436,7 +477,10 @@ function useTweaks(defaults, storageKey) {
         return Object.keys(incoming).length;
       },
     };
-  }, [builtins, presets, defaultTheme, activeTheme, values, applyValues, storageKey]);
+    // sidecar/applyThemeSidecar を依存に含める: サイドカー値（cue オフセット）が変わったら
+    // dirty を再計算する（呼び出し側で sidecar を useMemo 化し識別を安定させる前提）。
+  }, [builtins, presets, defaultTheme, activeTheme, values, applyValues, storageKey,
+      sidecar, applyThemeSidecar]);
   // ── fork:presets ↑ ──
 
   // fork: 本家は [values, setTweak]。resetTweaks・themes を加えた4要素返し。
