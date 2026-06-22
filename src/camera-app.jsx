@@ -120,7 +120,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "effDissolveColor": "#7FE0FF",
   "sbGain": 1,
   "sbButtons": true,
-  "sbMuted": false
+  "sbMutedTx": false,
+  "sbMutedRx": false
 }/*EDITMODE-END*/;
 
 // 表示する主な表情ブレンドシェイプ（MediaPipe FaceLandmarker のカテゴリ名）
@@ -328,13 +329,13 @@ function PanelToggles({ items, inkColor, subColor, style, children }) {
       position: 'absolute', zIndex: 6, display: 'flex', gap: 6, flexWrap: 'wrap',
       alignItems: 'center', fontFamily: "'Zen Maru Gothic', sans-serif", ...style,
     }}>
-      {items.map(({ key, label, on, toggle }) => (
+      {items.map(({ key, label, on, toggle, title }) => (
         <button
           key={key}
           type="button"
           onClick={toggle}
           aria-pressed={on}
-          title={`${label}を${on ? '隠す' : '表示'}`}
+          title={title || `${label}を${on ? '隠す' : '表示'}`}
           style={{
             display: 'inline-flex', alignItems: 'center', lineHeight: 1,
             padding: '4px 10px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
@@ -361,10 +362,11 @@ const DEFAULT_CUES = [
   { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop', gesture: 'shake' },
 ];
 
-// rx(OBS) へ同期しない「ページごとローカル」の設定キー。音声出力（ミュート/音量）は
-// tx=操作モニタ と rx=配信 で別管理にしたいので config 同期から外す。これにより
-// 「tx だけミュート（rx は鳴り続ける）」ができる。配信全体の音量は OBS のミキサーで調整する。
-const LOCAL_ONLY_TWEAKS = ['sbMuted', 'sbGain', 'sbButtons'];
+// rx(OBS) へ同期しない「ページごとローカル」の設定キー。
+//  - sbMutedTx … 手元(tx)モニタのミュート。tx 自身だけ黙らせる（rx に影響させない）→ 非同期。
+//  - sbMutedRx … 配信(rx)のミュート。rx に UI が無いので tx から同期して遠隔操作 → 同期する(除外しない)。
+//  - sbGain/sbButtons … 各ページのローカル音量/UI（rx 全体音量は OBS ミキサーで調整）→ 非同期。
+const LOCAL_ONLY_TWEAKS = ['sbMutedTx', 'sbGain', 'sbButtons'];
 function syncableTweaks(tw) {
   const out = { ...tw };
   for (const k of LOCAL_ONLY_TWEAKS) delete out[k];
@@ -1009,7 +1011,12 @@ function App() {
   }, [obsMode]);
 
   // 演出: 全体音量を反映。
-  useEffect(() => { cueBoard.setMasterGain(view.sbMuted ? 0 : view.sbGain); }, [cueBoard, view.sbGain, view.sbMuted]);
+  // 出力ミュート: rx は同期された sbMutedRx を、それ以外(tx/local)はローカルの sbMutedTx を見る。
+  // → 手元(tx)と配信(rx)を別々にミュートできる。音量(sbGain)は各ページのローカル値。
+  useEffect(() => {
+    const muted = isRx ? !!view.sbMutedRx : !!t.sbMutedTx;
+    cueBoard.setMasterGain(muted ? 0 : view.sbGain);
+  }, [cueBoard, isRx, view.sbMutedRx, t.sbMutedTx, view.sbGain]);
   // iOS(WebKit=iPhone の Chrome/Safari) 自動再生対策: 最初のユーザー操作で音声をアンロック。
   // pointerdown は click より前に発火するので、ボタンを押し切る前に AudioContext が起きる。
   useEffect(() => {
@@ -1330,7 +1337,14 @@ function App() {
           { key: 'debug', label: 'デバッグ', on: t.showDebug, toggle: () => setTweak('showDebug', !t.showDebug) },
           { key: 'expr', label: '表情', on: t.showExpr, toggle: () => setTweak('showExpr', !t.showExpr) },
           { key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) },
-          { key: 'sound', label: t.sbMuted ? '🔇 音OFF' : '🔊 音ON', on: !t.sbMuted, toggle: () => setTweak('sbMuted', !t.sbMuted) },
+          // 手元(tx/local)の演出音。ローカルなので rx には影響しない。
+          { key: 'soundTx', label: (t.sbMutedTx ? '🔇 ' : '🔊 ') + (mode === 'tx' ? '手元' : '音'),
+            on: !t.sbMutedTx, toggle: () => setTweak('sbMutedTx', !t.sbMutedTx),
+            title: 'この端末で鳴らす演出音（tx=手元モニタ）の ON/OFF。rx(配信)には影響しない' },
+          // 配信(rx/OBS)の演出音。rx は UI が無いので tx から同期して遠隔ミュート。relay(tx) のときだけ表示。
+          ...(mode === 'tx' ? [{ key: 'soundRx', label: (t.sbMutedRx ? '🔇 ' : '🔊 ') + '配信',
+            on: !t.sbMutedRx, toggle: () => setTweak('sbMutedRx', !t.sbMutedRx),
+            title: '配信(rx=OBS)で鳴らす演出音の ON/OFF（tx から遠隔操作）' }] : []),
         ]}
       >
         <button
@@ -1570,8 +1584,10 @@ function App() {
             onChange={(v) => setTweak('effDissolveColor', v)}></TweakColor>
         </TweakSection>
         <TweakSection label="演出（サウンドボード）" collapsible>
-          <TweakToggle label="音を出す" value={!t.sbMuted}
-            onChange={(v) => setTweak('sbMuted', !v)}></TweakToggle>
+          <TweakToggle label="手元(tx)の音を出す" value={!t.sbMutedTx}
+            onChange={(v) => setTweak('sbMutedTx', !v)}></TweakToggle>
+          <TweakToggle label="配信(rx/OBS)の音を出す" value={!t.sbMutedRx}
+            onChange={(v) => setTweak('sbMutedRx', !v)}></TweakToggle>
           <TweakSlider label="演出の音量" value={t.sbGain} min={0} max={2} step={0.05}
             onChange={(v) => setTweak('sbGain', v)}></TweakSlider>
           <TweakToggle label="ボタンを表示" value={t.sbButtons}
