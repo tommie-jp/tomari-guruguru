@@ -1200,6 +1200,87 @@ function App() {
   const engineNote = t.useWorker && status.engine === 'main' ? '（フォールバック）' : '';
   const onWorker = status.engine === 'worker';
 
+  // 演出ボタン帯（PC）の cue 列がスクロール可能かを検知する。表示領域(dvh)に対し cue が
+  // 溢れるときだけ上下フェードを出す（短いリストの端が欠けて見えないように）。resize と
+  // visualViewport の変化で測り直し、ブラウザ表示領域の縮小に追従する。
+  const cueScrollRef = useRef(null);
+  const [cueScrollable, setCueScrollable] = useState(false);
+  useEffect(() => {
+    if (isNarrow) { setCueScrollable(false); return undefined; }
+    const el = cueScrollRef.current;
+    if (!el) { setCueScrollable(false); return undefined; }
+    const measure = () => setCueScrollable(el.scrollHeight - el.clientHeight > 1);
+    measure();
+    window.addEventListener('resize', measure);
+    const vv = window.visualViewport;
+    if (vv) vv.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      if (vv) vv.removeEventListener('resize', measure);
+    };
+  }, [isNarrow, cueController.cues.length, t.sbButtons]);
+
+  // 演出ボタン帯の中身。スマホは横スクロール一体、PC は「位置調整」を固定して cue 列だけを
+  // 縦スクロールさせるため、トグルと cue 列を別々に組めるよう変数化する。
+  const cueToggleButton = (
+    <button type="button" onClick={toggleEditMode}
+      title="演出の表示位置を調整（cue を右クリック／長押しでも開く）"
+      style={{
+        flex: '0 0 auto', // 帯では縮ませない（PC では常時表示の要）。
+        width: isNarrow ? 40 : 50, minHeight: isNarrow ? 38 : 34, fontSize: isNarrow ? 9 : 10,
+        fontWeight: 800, lineHeight: 1.15, padding: '3px 2px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+        background: editMode ? (dark ? '#5B8DEF' : '#3B74E8') : (dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)'),
+        color: editMode ? '#fff' : (dark ? '#F7F1E8' : '#3C3026'),
+        border: `1.5px solid ${editMode ? 'transparent' : (dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)')}`,
+        borderRadius: 11, cursor: 'pointer', whiteSpace: 'normal',
+        boxShadow: '0 4px 14px rgba(60,48,38,0.08)', userSelect: 'none', touchAction: 'manipulation'
+      }}>
+      {editMode ? '調整中' : '位置調整'}
+    </button>
+  );
+  const cueButtonList = cueController.cues.map((c) => {
+    const editable = !!c.stamp;
+    const active = editMode && c.id === editingCueId;
+    const ring = active
+      ? `2px solid ${dark ? '#7FB0FF' : '#3B74E8'}`
+      : (editMode && editable
+        ? `1.5px dashed ${dark ? 'rgba(127,176,255,0.7)' : 'rgba(59,116,232,0.6)'}`
+        : `1.5px solid ${dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)'}`);
+    return (
+      <button key={c.id}
+        onClick={() => onCueButtonClick(c)}
+        onContextMenu={(e) => onCueButtonContextMenu(e, c)}
+        onPointerDown={(e) => onCueButtonPointerDown(e, c)}
+        onPointerMove={onCueButtonPointerMove}
+        onPointerUp={cancelCueLongPress}
+        onPointerLeave={cancelCueLongPress}
+        onPointerCancel={cancelCueLongPress}
+        title={editMode
+          ? (editable ? `${c.label}: ドラッグで位置調整` : `${c.label}: 位置調整なし（スタンプ無し）`)
+          : `${c.label}（キー: ${c.key || '-'}）`}
+        style={{
+          position: 'relative',
+          // 帯では縮ませず溢れさせる＝スクロールの肝。スマホは離すと中央へスナップ（編集中は無効）。
+          flex: '0 0 auto',
+          scrollSnapAlign: isNarrow && !editMode ? 'center' : undefined,
+          width: isNarrow ? 40 : 50, height: isNarrow ? 38 : 46, fontSize: isNarrow ? 18 : 21, lineHeight: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)',
+          border: ring,
+          opacity: editMode && !editable ? 0.5 : 1,
+          borderRadius: 11, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap',
+          boxShadow: active ? `0 0 0 3px ${dark ? 'rgba(127,176,255,0.25)' : 'rgba(59,116,232,0.2)'}` : '0 4px 14px rgba(60,48,38,0.08)',
+          userSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation'
+        }}>
+        {c.icon || c.stamp || c.label}
+        {c.key ? (
+          <span style={{ position: 'absolute', right: 3, bottom: 2, fontSize: 9, fontWeight: 700, color: subColor }}>{c.key}</span>
+        ) : null}
+      </button>
+    );
+  });
+
   return (
     <div
       ref={stageRef}
@@ -1302,90 +1383,58 @@ function App() {
       {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。
           編集モード中はオーバーレイ(z30)より上へ出して対象を選べるよう z を上げる。 */}
       {!obsMode && !isRx && t.sbButtons ? (
-        <div
-          // スマホ(isNarrow): 画面下の横スクロール帯。PC: 従来の縦・右端中央（据え置き）。
-          // スクロールバー非表示は index.html の .cuebar-scroll に依存（スマホ時のみ付与）。
-          className={isNarrow ? 'cuebar-scroll' : undefined}
-          style={isNarrow ? {
-          position: 'absolute',
-          // 左下 PanelToggles（最大2段）・版表記・右下歯車の上へ逃がす。
-          bottom: 'calc(78px + var(--sab))',
-          left: 'calc(8px + var(--sal))', right: 'calc(56px + var(--sar))',
-          zIndex: editMode ? 40 : 6,
-          display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6,
-          overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-x', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'none',
-          scrollSnapType: editMode ? 'none' : 'x proximity', // 編集中はスナップ無効（位置調整がガクつかないよう）
-          padding: '4px 6px', // boxShadow が切れない内側余白
-          // 両端フェード（「まだ続く」の示唆）。編集中は対象を全可視にしたいので外す。
-          WebkitMaskImage: editMode ? 'none'
-            : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
-          maskImage: editMode ? 'none'
-            : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
-        } : {
-          position: 'absolute', right: 'calc(14px + var(--sar))', top: '50%',
-          transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 8,
-          zIndex: editMode ? 40 : 6,
-        }}>
-          {/* 位置調整トグル（主動線）。ON で cue ボタンは「発火」→「調整対象の選択」に切り替わる。 */}
-          <button type="button" onClick={toggleEditMode}
-            title="演出の表示位置を調整（cue を右クリック／長押しでも開く）"
-            style={{
-              // スマホ帯では縮ませず（flex 0 0 auto）、cue ボタン高さ(38)に合わせる。
-              flex: isNarrow ? '0 0 auto' : undefined,
-              width: isNarrow ? 40 : 50, minHeight: isNarrow ? 38 : 34, fontSize: isNarrow ? 9 : 10,
-              fontWeight: 800, lineHeight: 1.15, padding: '3px 2px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-              background: editMode ? (dark ? '#5B8DEF' : '#3B74E8') : (dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)'),
-              color: editMode ? '#fff' : (dark ? '#F7F1E8' : '#3C3026'),
-              border: `1.5px solid ${editMode ? 'transparent' : (dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)')}`,
-              borderRadius: 11, cursor: 'pointer', whiteSpace: 'normal',
-              boxShadow: '0 4px 14px rgba(60,48,38,0.08)', userSelect: 'none', touchAction: 'manipulation'
+        isNarrow ? (
+          // スマホ: 画面下の横スクロール帯。トグルも cue も一体で横スクロール（従来どおり）。
+          // スクロールバー非表示は index.html の .cuebar-scroll に依存。
+          <div className="cuebar-scroll" style={{
+            position: 'absolute',
+            // 左下 PanelToggles（最大2段）・版表記・右下歯車の上へ逃がす。
+            bottom: 'calc(78px + var(--sab))',
+            left: 'calc(8px + var(--sal))', right: 'calc(56px + var(--sar))',
+            zIndex: editMode ? 40 : 6,
+            display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6,
+            overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
+            touchAction: 'pan-x', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'none',
+            scrollSnapType: editMode ? 'none' : 'x proximity', // 編集中はスナップ無効（位置調整がガクつかないよう）
+            padding: '4px 6px', // boxShadow が切れない内側余白
+            // 両端フェード（「まだ続く」の示唆）。編集中は対象を全可視にしたいので外す。
+            WebkitMaskImage: editMode ? 'none'
+              : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+            maskImage: editMode ? 'none'
+              : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+          }}>
+            {cueToggleButton}
+            {cueButtonList}
+          </div>
+        ) : (
+          // PC: 右端中央。「位置調整」は固定（flex 0 0 auto）し、cue 列だけを縦スクロール。
+          // 上限高さをブラウザ表示領域(dvh)−上下マージンにし、足りなければ cue 列が縮んで
+          // スクロールする。これで高さが小さくても「位置調整」は常に見える。
+          // ホイールはネイティブの overflow-y がそのまま縦スクロールに使う（追加 JS 不要）。
+          <div style={{
+            position: 'absolute', right: 'calc(14px + var(--sar))', top: '50%',
+            transform: 'translateY(-50%)',
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8,
+            maxHeight: 'calc(100dvh - 24px)',
+            zIndex: editMode ? 40 : 6,
+          }}>
+            {cueToggleButton}
+            <div ref={cueScrollRef} className="cuebar-scroll" style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8,
+              flex: '1 1 auto', minHeight: 0, // 残り高さを取り、超過分をスクロール
+              overflowY: 'auto', overflowX: 'hidden',
+              overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
+              padding: '2px 0',
+              // スクロール可能なときだけ上下フェード。短いリストでは端を欠かせない。編集中も外す。
+              WebkitMaskImage: !editMode && cueScrollable
+                ? 'linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%)' : 'none',
+              maskImage: !editMode && cueScrollable
+                ? 'linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%)' : 'none',
             }}>
-            {editMode ? '調整中' : '位置調整'}
-          </button>
-          {cueController.cues.map((c) => {
-            const editable = !!c.stamp;
-            const active = editMode && c.id === editingCueId;
-            const ring = active
-              ? `2px solid ${dark ? '#7FB0FF' : '#3B74E8'}`
-              : (editMode && editable
-                ? `1.5px dashed ${dark ? 'rgba(127,176,255,0.7)' : 'rgba(59,116,232,0.6)'}`
-                : `1.5px solid ${dark ? 'rgba(255,248,238,0.18)' : 'rgba(60,48,38,0.14)'}`);
-            return (
-              <button key={c.id}
-                onClick={() => onCueButtonClick(c)}
-                onContextMenu={(e) => onCueButtonContextMenu(e, c)}
-                onPointerDown={(e) => onCueButtonPointerDown(e, c)}
-                onPointerMove={onCueButtonPointerMove}
-                onPointerUp={cancelCueLongPress}
-                onPointerLeave={cancelCueLongPress}
-                onPointerCancel={cancelCueLongPress}
-                title={editMode
-                  ? (editable ? `${c.label}: ドラッグで位置調整` : `${c.label}: 位置調整なし（スタンプ無し）`)
-                  : `${c.label}（キー: ${c.key || '-'}）`}
-                style={{
-                  position: 'relative',
-                  // スマホ帯では縮ませず溢れさせる＝横スクロールの肝。離すと中央へスナップ（編集中は無効）。
-                  flex: isNarrow ? '0 0 auto' : undefined,
-                  scrollSnapAlign: isNarrow && !editMode ? 'center' : undefined,
-                  width: isNarrow ? 40 : 50, height: isNarrow ? 38 : 46, fontSize: isNarrow ? 18 : 21, lineHeight: 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: dark ? 'rgba(48,45,42,0.92)' : 'rgba(255,255,255,0.9)',
-                  border: ring,
-                  opacity: editMode && !editable ? 0.5 : 1,
-                  borderRadius: 11, cursor: 'pointer', overflow: 'hidden', whiteSpace: 'nowrap',
-                  boxShadow: active ? `0 0 0 3px ${dark ? 'rgba(127,176,255,0.25)' : 'rgba(59,116,232,0.2)'}` : '0 4px 14px rgba(60,48,38,0.08)',
-                  userSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation'
-                }}>
-                {c.icon || c.stamp || c.label}
-                {c.key ? (
-                  <span style={{ position: 'absolute', right: 3, bottom: 2, fontSize: 9, fontWeight: 700, color: subColor }}>{c.key}</span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
+              {cueButtonList}
+            </div>
+          </div>
+        )
       ) : null}
 
       {/* 演出の位置調整エディタ（編集中の cue のみマウント）。配信/受信では出さない。 */}
