@@ -67,7 +67,7 @@ npm run dev
 カメラ版はそのまま OBS のブラウザソースに重ねられます。
 
 - `index.html?obs=1` … **ステージモード**（背景透過＋UI 非表示。アバターだけを表示）
-- `?shadow=N` … 影の強さを指定（任意）
+- 影の濃さは Tweaks パネルの「影の濃さ」(0〜6) で調整（旧 `?shadow=N` は廃止）
 - ステージモード中は **`T` キー**で Tweaks パネルを開閉
 - 手順の詳細は [docs-camera/04-OBSでライブ配信.md](docs-camera/04-OBSでライブ配信.md)
 
