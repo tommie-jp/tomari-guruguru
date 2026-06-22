@@ -18,6 +18,7 @@
     "verify:pages": "node scripts/verify-pages-build.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "eslint .",
     "setup:mediapipe": "node scripts/copy-mediapipe-assets.mjs",
     "predev": "node scripts/copy-mediapipe-assets.mjs",
     "prebuild": "node scripts/copy-mediapipe-assets.mjs"
@@ -33,8 +34,13 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-react": "^6.0.2",
     "cross-env": "^7.0.3",
+    "eslint": "^10.5.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.6.0",
     "vite": "^8.0.16",
     "vitest": "^4.1.8",
     "ws": "^8.21.0"
