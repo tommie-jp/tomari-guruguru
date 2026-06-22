@@ -256,7 +256,8 @@ VITE_TLS_CERT=cert.pem VITE_TLS_KEY=key.pem npm run dev
 - OBS の CEF（受信側）: ブラウザソースに `https://<同ホスト>:5173/index.html?rx`
   カメラを起動せず受信した動きで描画。`?rx` は OBS 用に既定で透過オーバーレイ（＋UI 非表示）。
   ブラウザのタブで受信を確認したいときは `?rx&obs=0` で透過を切る。
-  中継が別ホストなら `&relay=wss://<host>:8787` を付ける（既定はページと同ホストの :8787）。
+  既定はページと同一オリジン（同じ `host:port`）＋専用パス `/__relay`。別ホスト/別ポートの
+  中継を使うときは `&relay=wss://<host>:8787` を付ける。
 
 WS のメッセージは `state`（配列）/ `config` / `control`（need-config・peer）の3種。
 設定は変更時と CEF 接続要求時だけ流れる（数秒ごとの再送はしない）。
