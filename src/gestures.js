@@ -15,6 +15,13 @@
 //   nod   … うなずき(Yes)。行(縦)だけ動かす。下げる前に軽く上フリック。
 //   shake … いやいや(No)。列(横)だけ左右に振る＋減衰。
 //
+// おまけ演出（軽め・短め。同じ仕組みに乗せただけ）:
+//   tilt       … 首をかしげる。CSS rotate のみ（cell は base 固定）。こてっと傾けて保持→戻す。
+//   shiver     … ぷるぷる。CSS rotate のみ。小刻みに左右へ振動しながら減衰。
+//   lookAround … 見回す。フレームのみ。ゆっくり左端→右端→元へ（水平に大きく走査）。
+//   glance     … きょろきょろ。フレームのみ。素早く上下左右へチラ見を繰り返す。
+//   surprise   … びっくり。フレーム＋scale。上にのけぞり（dr<0）つつ膨らみ→反動でぷるん。
+//
 // キーフレーム { t, r, c, dr, dc, rotate, scale, ease }:
 //   t      … 開始からの経過 ms
 //   r,c    … 絶対セル(0..4)。指定時は base を無視
@@ -73,6 +80,75 @@ export const GESTURES = {
       { t: 440, dr: 0, dc: -1, ease: 'easeInOut' },   // 左（減衰）
       { t: 580, dr: 0, dc: 1,  ease: 'easeInOut' },   // 右（減衰）
       { t: 700, dr: 0, dc: 0,  ease: 'easeInOut' },   // 中央着地→解放
+    ],
+  },
+
+  // ── おまけ ──
+
+  // 傾げる（tilt）— total 1100ms。向きは変えず（cell=base）、面内に こてっと傾けて保持→戻す。
+  tilt: {
+    total: 1100,
+    keys: [
+      { t: 0,    dr: 0, dc: 0, rotate: 0 },
+      { t: 220,  dr: 0, dc: 0, rotate: 15, ease: 'easeOutBack' }, // こてっと傾ける（軽くオーバーシュート）
+      { t: 820,  dr: 0, dc: 0, rotate: 15, ease: 'linear' },      // きょとんと保持
+      { t: 1100, dr: 0, dc: 0, rotate: 0,  ease: 'easeInOut' },   // ゆっくり戻す→解放
+    ],
+  },
+  // ぷるぷる（shiver）— total 760ms。cell=base のまま小刻みに左右へ振動しながら減衰。
+  shiver: {
+    total: 760,
+    keys: [
+      { t: 0,   dr: 0, dc: 0, rotate: 0 },
+      { t: 60,  dr: 0, dc: 0, rotate: -8, ease: 'easeOut' },
+      { t: 130, dr: 0, dc: 0, rotate: 7,  ease: 'easeInOut' },
+      { t: 200, dr: 0, dc: 0, rotate: -6, ease: 'easeInOut' },
+      { t: 280, dr: 0, dc: 0, rotate: 5,  ease: 'easeInOut' },
+      { t: 370, dr: 0, dc: 0, rotate: -4, ease: 'easeInOut' },
+      { t: 470, dr: 0, dc: 0, rotate: 3,  ease: 'easeInOut' },
+      { t: 590, dr: 0, dc: 0, rotate: -2, ease: 'easeInOut' },
+      { t: 760, dr: 0, dc: 0, rotate: 0,  ease: 'easeInOut' },   // 収束→解放
+    ],
+  },
+  // 見回す（lookAround）— total 2000ms。水平に大きく走査。左右の端は絶対指定で必ず端まで。
+  lookAround: {
+    total: 2000,
+    keys: [
+      { t: 0,    dr: 0, dc: 0 },                  // 現在地から
+      { t: 380,  r: 2, c: 0, ease: 'easeInOut' }, // ゆっくり左端へ
+      { t: 760,  r: 2, c: 0, ease: 'linear' },    // 左で一拍
+      { t: 1240, r: 2, c: 4, ease: 'easeInOut' }, // 右端まで横断
+      { t: 1620, r: 2, c: 4, ease: 'linear' },    // 右で一拍
+      { t: 2000, dr: 0, dc: 0, ease: 'easeInOut' },// 元へ戻る→解放
+    ],
+  },
+  // きょろきょろ（glance）— total 1400ms。base 相対で素早くチラ見を繰り返す（ぱっと動く→一瞬止まる）。
+  glance: {
+    total: 1400,
+    keys: [
+      { t: 0,    dr: 0,  dc: 0 },
+      { t: 130,  dr: 0,  dc: -2, ease: 'easeOut' }, // ぱっと左
+      { t: 270,  dr: 0,  dc: -2, ease: 'linear' },  // 止まる
+      { t: 430,  dr: -1, dc: 2,  ease: 'easeOut' }, // ぱっと右上
+      { t: 570,  dr: -1, dc: 2,  ease: 'linear' },
+      { t: 760,  dr: 1,  dc: -1, ease: 'easeOut' }, // 左下チラ
+      { t: 900,  dr: 1,  dc: -1, ease: 'linear' },
+      { t: 1080, dr: -1, dc: 1,  ease: 'easeOut' }, // もう一度 右上
+      { t: 1220, dr: -1, dc: 1,  ease: 'linear' },
+      { t: 1400, dr: 0,  dc: 0,  ease: 'easeInOut' },// 戻る→解放
+    ],
+  },
+  // びっくり（surprise）— total 900ms。上にのけぞり（dr<0）つつ膨らみ→反動でぷるんと落ち着く。
+  surprise: {
+    total: 900,
+    keys: [
+      { t: 0,   dr: 0,  dc: 0, scale: 1.0 },
+      { t: 90,  dr: -1, dc: 0, scale: 1.12, ease: 'easeOut' },     // ビクッ！上へ＋ふくらむ
+      { t: 200, dr: -2, dc: 0, scale: 1.15, ease: 'easeOut' },     // のけぞり最大
+      { t: 360, dr: 0,  dc: 0, scale: 0.95, ease: 'easeIn' },      // 戻りで縮む
+      { t: 520, dr: 0,  dc: 0, scale: 1.05, ease: 'easeOutBack' }, // 反動でぷるん
+      { t: 700, dr: 0,  dc: 0, scale: 0.98, ease: 'easeInOut' },
+      { t: 900, dr: 0,  dc: 0, scale: 1.0,  ease: 'easeInOut' },   // 落ち着く→解放
     ],
   },
 };

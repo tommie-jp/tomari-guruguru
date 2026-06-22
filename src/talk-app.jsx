@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { installMobileHardening } from './mobile-hardening.js';
 import { applyThemeColor } from './theme-color.js';
-import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -20,7 +19,6 @@ const TALK_DEFAULTS = /*EDITMODE-BEGIN*/{
 }/*EDITMODE-END*/;
 
 const { rows: ROWS, cols: COLS } = charConfig;
-const GRID = { rows: ROWS, cols: COLS };
 // シート: 目開け×口[とじ/中間/開け] = A/B/C, 目閉じ×口[とじ/中間/開け] = D/E/F
 const SHEETS = [
   charConfig.sheets.eyesOpen.close,   // A
@@ -104,8 +102,6 @@ function App() {
   const target = useRef({ x: 0, y: 0 });
   const current = useRef({ x: 0, y: 0 });
   const env = useRef(0);
-  const gestureRef = useRef(null);          // 再生中ジェスチャー { name, start, base }
-  const motionRef = useRef(null);           // ジェスチャーの回転/拡縮を直書きするラッパー
   const tweaksRef = useRef(t);
   tweaksRef.current = t;
 
@@ -144,20 +140,8 @@ function App() {
       const tw = tweaksRef.current;
       current.current.x += (target.current.x - current.current.x) * tw.smoothing;
       current.current.y += (target.current.y - current.current.y) * tw.smoothing;
-      let c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
-      let r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
-      // ジェスチャー再生中は向き(r/c)と回転(transform)を一時的に上書き。
-      const g = gestureRef.current;
-      if (g) {
-        const s = sampleGesture(GESTURES[g.name], now - g.start, g.base, GRID);
-        if (s) {
-          r = s.cell.r; c = s.cell.c;
-          if (motionRef.current) motionRef.current.style.transform = gestureTransform(s);
-        } else {
-          gestureRef.current = null;
-          if (motionRef.current) motionRef.current.style.transform = '';
-        }
-      }
+      const c = clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1);
+      const r = clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1);
       if (r !== last.r || c !== last.c) { last = { r, c }; setCell(last); }
       const raw = engine.level() * tw.micGain;
       if (raw > env.current) env.current += (raw - env.current) * 0.6;
@@ -245,16 +229,6 @@ function App() {
   }, []);
   const activeSheet = sheetFor(blink, mouth);
 
-  // ジェスチャー演出を再生。再生開始時のライブセルを base に取り、相対キーの基準にする。
-  function playGesture(name) {
-    if (!GESTURES[name]) return;
-    const base = {
-      r: clamp(Math.round((current.current.y + 1) / 2 * (ROWS - 1)), 0, ROWS - 1),
-      c: clamp(Math.round((current.current.x + 1) / 2 * (COLS - 1)), 0, COLS - 1),
-    };
-    gestureRef.current = { name, start: performance.now(), base };
-  }
-
   const dark = t.bgColor === '#2B2926';
   const inkColor = dark ? 'rgba(255,248,238,0.85)' : 'rgba(60,48,38,0.8)';
   const subColor = dark ? 'rgba(255,248,238,0.45)' : 'rgba(60,48,38,0.45)';
@@ -276,7 +250,7 @@ function App() {
         maxWidth: 1200, maxHeight: 1200,
         userSelect: 'none', touchAction: 'none'
       }}>
-        <div ref={motionRef} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
+        <div style={{ position: 'absolute', inset: 0 }}>
           {allFrames.map(({ s, r, c }) => (
             <img key={`${s}${r}${c}`} src={SRC(s, r, c)} alt="" draggable="false" style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%',
@@ -388,12 +362,6 @@ function App() {
           onChange={(v) => setTweak('charSize', v)}></TweakSlider>
         <TweakColor label="背景色" value={t.bgColor} options={BG_OPTIONS}
           onChange={(v) => setTweak('bgColor', v)}></TweakColor>
-        <TweakSection label="ジェスチャー"></TweakSection>
-        <div className="twk-presets-row" style={{ flexWrap: 'wrap', marginTop: 2 }}>
-          <TweakButton label="回転" onClick={() => playGesture('spin')}></TweakButton>
-          <TweakButton label="うなずく" onClick={() => playGesture('nod')}></TweakButton>
-          <TweakButton label="No" onClick={() => playGesture('shake')}></TweakButton>
-        </div>
         <TweakSection label="テーマ"></TweakSection>
         <TweakPresets themes={themes}></TweakPresets>
         <TweakSection label="リセット"></TweakSection>

@@ -360,6 +360,12 @@ const DEFAULT_CUES = [
   { id: 'anger',    label: 'いかり',     key: '5', tone: 300, stamp: '💢', anim: 'shake', effect: { glow: 5, glowColor: '#FF6B6B', ms: 500 } },
   { id: 'sparkle',  label: 'キラキラ',   key: '6', tone: 880, stamp: '✨', anim: 'rise', effect: { glow: 7, glowColor: '#FFE9A8', ms: 850 }, gesture: 'spin' },
   { id: 'question', label: 'はてな',     key: '7', tone: 600, stamp: '！？', anim: 'pop', gesture: 'shake' },
+  // おまけ: 音・スタンプ無しの「動きだけ」キュー（gesture のみ）。rx/OBS にも転送される。
+  { id: 'tilt',     label: '傾げる',     key: '8', icon: '🤔', gesture: 'tilt' },
+  { id: 'shiver',   label: 'ぷるぷる',   key: '9', icon: '😖', gesture: 'shiver' },
+  { id: 'look',     label: '見回す',     key: '0', icon: '🔭', gesture: 'lookAround' },
+  { id: 'glance',   label: 'きょろきょろ',         icon: '👀', gesture: 'glance' },
+  { id: 'surprise', label: 'びっくり',             icon: '😲', gesture: 'surprise' },
 ];
 
 // rx(OBS) へ同期しない「ページごとローカル」の設定キー。
