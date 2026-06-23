@@ -94,9 +94,9 @@ export function computeStateFrame(signals, t, expr, now, opts = {}) {
   const sheet = (blink ? 3 : 0) + mouthLevel;
 
   // 首かしげ(roll)。まず中立バイアス(biasRollDeg=「正面のかしげ」)を差し引いてから、
-  // 左右の向き(yaw)が roll に混入してかしげる分を打ち消す。
+  // 左右の向き(yaw)が pitch と結合して roll に混入してかしげる分を打ち消す。
   const rawRoll = signals.roll - (t.biasRollDeg || 0) * DEG;
-  const roll = compensateRollForYaw(rawRoll, signals.yaw, t.tiltYawComp);
+  const roll = compensateRollForYaw(rawRoll, signals.yaw, t.tiltYawComp, signals.pitch);
   const tilt = t.tiltEnabled
     ? clamp((roll / DEG) * t.tiltGain * (t.invertTilt ? -1 : 1), -t.tiltMax, t.tiltMax)
     : 0;

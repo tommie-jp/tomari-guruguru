@@ -17,6 +17,27 @@ function fwdMatrix(yaw, pitch) {
   return [1, 0, 0, 0, 0, 1, 0, 0, f[0], f[1], f[2], 0, 0, 0, 0, 1];
 }
 
+// 内的回転 R=Rx(pitchRot)·Ry(yawRot) の 4x4(列優先)。純粋な首振りで生じる見かけの
+// かしげ（roll=atan2(sin·sin, cos)）を含む、物理的に整合した行列を作る（右ベクトルが傾く）。
+function rotMatrix(yawRot, pitchRot) {
+  const cy = Math.cos(yawRot);
+  const sy = Math.sin(yawRot);
+  const cp = Math.cos(pitchRot);
+  const sp = Math.sin(pitchRot);
+  return [
+    cy, sp * sy, -cp * sy, 0, // 右ベクトル
+    0, cp, sp, 0, // 上ベクトル
+    sy, -sp * cy, cp * cy, 0, // 前方ベクトル
+    0, 0, 0, 1,
+  ];
+}
+
+// 行列から poseFromMatrix で読み戻した生の {yaw, pitch, roll}（実行時 signals と同じ値）。
+function posed(yawRot, pitchRot) {
+  const p = poseFromMatrix(rotMatrix(yawRot, pitchRot));
+  return { yaw: p.yaw, pitch: p.pitch, roll: p.roll };
+}
+
 // computeStateFrame が読む tweak 一式（必要な項目だけ・既定は補正OFF相当）。
 function tweaks(over = {}) {
   return {
@@ -42,44 +63,56 @@ function signals(over = {}) {
 }
 
 describe('方向校正 → 実行時パイプラインの往復', () => {
-  it('右を向いた姿勢で校正すると、その姿勢でアバターのかしげが 0 になる', () => {
-    // 右を向いて roll に 0.08rad のかしげが混入している姿勢。
-    const pose = { yaw: 0.4, roll: 0.08 };
-    const comp = computeTiltYawComp({ roll: pose.roll, yaw: pose.yaw, biasRollRad: 0 });
+  it('右を向いて校正した姿勢で、その姿勢のかしげが 0 になる', () => {
+    const s = posed(0.7, 0.26); // 右 40° + 少し下向き（混入あり）
+    const comp = computeTiltYawComp({ roll: s.roll, yaw: s.yaw, pitch: s.pitch, biasRollRad: 0 });
     const t = tweaks({ tiltYawComp: comp, biasRollDeg: 0 });
-    const f = computeStateFrame(signals({ roll: pose.roll, yaw: pose.yaw }), t, createExprState(), 0);
-    expect(f.tilt).toBeCloseTo(0, 1); // かしげ ~0°
+    const f = computeStateFrame(signals({ roll: s.roll, yaw: s.yaw, pitch: s.pitch }), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(0.5); // かしげ ~0°
   });
 
-  it('横向き(プロファイル)で roll が大きくても、校正後はかしげが 0 になる（±1 飽和の回帰）', () => {
-    // 右を向き切った姿勢: yaw=0.7(クランプ端)・roll=0.95 の大きな混入。
-    // 旧 ±1 クランプでは comp=1 で飽和し tilt≈0.25rad(≈18°)残っていた。
-    const pose = { yaw: 0.7, roll: 0.95 };
-    const comp = computeTiltYawComp({ roll: pose.roll, yaw: pose.yaw, biasRollRad: 0 });
-    expect(Math.abs(comp)).toBeGreaterThan(1); // 飽和していない
-    const t = tweaks({ tiltYawComp: comp, biasRollDeg: 0, tiltGain: 1.3, tiltMax: 23 });
-    const f = computeStateFrame(signals({ roll: pose.roll, yaw: pose.yaw }), t, createExprState(), 0);
-    expect(Math.abs(f.tilt)).toBeLessThan(1); // かしげ ~0°（飽和なら ~18°残る）
+  it('校正と違う pitch で振り向いてもかしげが残らない（支配的バグの回帰）', () => {
+    // 校正: 下向き ~15°で右 40°。使用: 下向き ~5°で同じ右 40°（pitch が違う）。
+    // 旧 yaw 単独モデルでは ~8° 残っていた。
+    const cal = posed(0.7, 0.26);
+    const comp = computeTiltYawComp({ roll: cal.roll, yaw: cal.yaw, pitch: cal.pitch, biasRollRad: 0 });
+    const t = tweaks({ tiltYawComp: comp, tiltGain: 1.3, tiltMax: 23 });
+    const use = posed(0.7, 0.087);
+    const f = computeStateFrame(signals({ roll: use.roll, yaw: use.yaw, pitch: use.pitch }), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(1.5);
   });
 
-  it('右で校正したかしげ補正は、左を向いた姿勢でも 0 にする（奇関数で対称）', () => {
-    // 右(yaw+,roll+)で得た comp は、左(yaw-,roll-)でも tilt~0 にする。
-    const comp = computeTiltYawComp({ roll: 0.08, yaw: 0.4, biasRollRad: 0 });
+  it('右で校正した補正は左を向いた姿勢でも 0 にする（奇関数で対称・単一comp）', () => {
+    const cal = posed(0.7, 0.26);
+    const comp = computeTiltYawComp({ roll: cal.roll, yaw: cal.yaw, pitch: cal.pitch, biasRollRad: 0 });
     const t = tweaks({ tiltYawComp: comp });
-    const left = computeStateFrame(signals({ roll: -0.08, yaw: -0.4 }), t, createExprState(), 0);
-    expect(left.tilt).toBeCloseTo(0, 1);
+    const left = posed(-0.7, 0.26);
+    const f = computeStateFrame(signals({ roll: left.roll, yaw: left.yaw, pitch: left.pitch }), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(1.5);
+  });
+
+  it('中間の振り角でもかしげが小さい（tan 形の非線形を基底で吸収）', () => {
+    const cal = posed(0.7, 0.26);
+    const comp = computeTiltYawComp({ roll: cal.roll, yaw: cal.yaw, pitch: cal.pitch, biasRollRad: 0 });
+    const t = tweaks({ tiltYawComp: comp });
+    const mid = posed(0.35, 0.26); // 同 pitch・浅い振り
+    const f = computeStateFrame(signals({ roll: mid.roll, yaw: mid.yaw, pitch: mid.pitch }), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(1.5);
   });
 
   it('かしげ中立(biasRoll)があっても、補正後は straight も turn も 0 になる', () => {
-    // straight で roll=0.02(常時の傾き) → 正ボタンが biasRollDeg に記録した想定。
+    // straight(正面) で常時 roll=0.02 の傾き → 正ボタンが biasRollDeg に記録した想定。
     const biasRollDeg = Math.round(0.02 / DEG);
-    // 右では roll=0.10 (= 0.02 常時 + 0.08 混入)。
-    const comp = computeTiltYawComp({ roll: 0.10, yaw: 0.4, biasRollRad: biasRollDeg * DEG });
+    const s = posed(0.7, 0.26); // 右向き＋下向き（混入あり）
+    // 計測 roll は「常時の傾き 0.02 + yaw×pitch 混入」。
+    const comp = computeTiltYawComp({
+      roll: 0.02 + s.roll, yaw: s.yaw, pitch: s.pitch, biasRollRad: biasRollDeg * DEG,
+    });
     const t = tweaks({ tiltYawComp: comp, biasRollDeg });
-    const straight = computeStateFrame(signals({ roll: 0.02, yaw: 0 }), t, createExprState(), 0);
-    const right = computeStateFrame(signals({ roll: 0.10, yaw: 0.4 }), t, createExprState(), 0);
+    const straight = computeStateFrame(signals({ roll: 0.02, yaw: 0, pitch: 0 }), t, createExprState(), 0);
+    const right = computeStateFrame(signals({ roll: 0.02 + s.roll, yaw: s.yaw, pitch: s.pitch }), t, createExprState(), 0);
     expect(Math.abs(straight.tilt)).toBeLessThan(1.5); // 中立で ~0
-    expect(Math.abs(right.tilt)).toBeLessThan(1.5);    // 右でも ~0
+    expect(Math.abs(right.tilt)).toBeLessThan(1.5); // 右でも ~0
   });
 
   it('右を向いた姿勢で校正すると、その姿勢で左右の位置ズレが ~0 になる', () => {

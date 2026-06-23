@@ -189,6 +189,16 @@ const CALIBRATE_MIN_SWING_DEG = 5;
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
+// デバッグHUDの数値表示用。毎フレーム値が変わっても小数点の位置がぶれないよう、
+// 整数部（符号込み）を図表空白(U+2007・数字と同じ幅で HTML でも潰れない)で左パディングして
+// 桁を固定する。intWidth は符号も含めた整数部の表示桁数（例: -45 は 3 桁）。
+const FIGURE_SPACE = String.fromCharCode(0x2007); // 数字と同じ幅・HTML で潰れない空白
+function fixDot(n, frac, intWidth) {
+  const s = n.toFixed(frac);
+  const intLen = s.indexOf('.'); // 小数点までの長さ（符号込み）。frac>=1 前提で常に '.' を含む。
+  return FIGURE_SPACE.repeat(Math.max(0, intWidth - intLen)) + s;
+}
+
 // アバターのユーザー操作（ドラッグ移動・ホイール/ピンチでズーム）の範囲と感度。
 // 顔追従とは独立した「表示上の」調整なので relay には送らずローカルのみで完結する。
 // 実値は Tweaks（userZoomMin/userZoomMax/wheelZoomDial）から毎イベント読んでリアルタイムに
@@ -283,6 +293,11 @@ function TxQrButton({ url, subColor, inkColor, style }) {
   );
 }
 
+// 十字グリッドの横幅(px)。3列×44px + 2×4px gap = 140。パネルの内側コンテナにも
+// 同じ幅を当て、＋で説明を開閉してもパネル幅＝十字幅で一定にする（中央寄せの十字が
+// 横にずれないようにするため）。
+const CALIB_CROSS_WIDTH = 140;
+
 // 上下左右＋正面の十字校正ボタン。各方向に顔を振り切って押すと、その向きの
 // 振り幅を校正する（中央=正面）。flash[dir] が 'ok'/'err' のときボタン上に ✓/✗ を出す。
 // スマホでも押しやすいよう各マスは最小 56px、文字は clamp で可変にする。
@@ -310,7 +325,7 @@ function DirectionCross({ flash = {}, onDir, onCenter, onToggleDetail, detailOpe
     <div style={{
       display: 'grid', gridTemplateColumns: 'repeat(3, 44px)', gap: 4,
       gridTemplateAreas: '". up ." "left center right" "plus down ."',
-      width: 140, margin: '0 auto',
+      width: CALIB_CROSS_WIDTH, margin: '0 auto',
     }}>
       {cell('up', '上', 'up', () => onDir('up'), '顔を上に向け切って押す（上端に校正）')}
       {cell('left', '左', 'left', () => onDir('left'), '顔を左に向け切って押す（左端に校正）')}
@@ -744,7 +759,7 @@ function App() {
     if (dir === 'left' || dir === 'right') {
       const compX = computeSlidePoseCompX({ posX: posRef.current.x, yaw, invertSlide: t.invertSlide });
       if (compX != null) edits.slidePoseCompX = compX;
-      const compTilt = computeTiltYawComp({ roll: rollRef.current, yaw, biasRollRad: t.biasRollDeg * DEG });
+      const compTilt = computeTiltYawComp({ roll: rollRef.current, yaw, pitch, biasRollRad: t.biasRollDeg * DEG });
       if (compTilt != null) edits.tiltYawComp = compTilt;
     }
     // 上下: ズーム変化(zoomPitchComp) と 位置ズレ(slidePoseCompY) を打ち消す。
@@ -779,8 +794,9 @@ function App() {
 
   // 今の首かしげ(roll)を「正面のかしげ(0)」として記録する。常に少し傾いて
   // 写ってしまう人向け。以降はこの中立からのズレ分だけアバターがかしげる。
+  // 0.1°刻みで保持（整数度の丸めだと正面で最大 ~0.5°×ゲインの傾きが残るのを防ぐ）。
   function calibrateTilt() {
-    setTweak('biasRollDeg', Math.round(rollRef.current / DEG));
+    setTweak('biasRollDeg', Math.round((rollRef.current / DEG) * 10) / 10);
   }
   function resetTilt() {
     setTweak('biasRollDeg', 0);
@@ -1700,8 +1716,9 @@ function App() {
               }}></div>
             ))}
           </div>
-          {/* 既定はグリッドのみ。＋で row などの数値を展開（向き校正パネルと同様）。 */}
-          <button type="button" onClick={() => setShowDebugDetail((v) => !v)} title={showDebugDetail ? '値を隠す' : '値を表示'}
+          {/* 既定はグリッドのみ。＋で row などの数値を展開（向き校正パネルと同様）。
+              data-no-drag を付けないと DraggablePanel が pointer をキャプチャして click が消える。 */}
+          <button type="button" data-no-drag onClick={() => setShowDebugDetail((v) => !v)} title={showDebugDetail ? '値を隠す' : '値を表示'}
             style={{
               minWidth: 28, height: 20, padding: '0 8px', border: '1px solid rgba(255,255,255,0.25)',
               borderRadius: 4, background: 'rgba(255,255,255,0.10)', color: '#fff',
@@ -1710,12 +1727,12 @@ function App() {
           {showDebugDetail ? (
             <div style={{ marginTop: 4 }}>
               <div>row {cell.r} / col {cell.c}</div>
-              <div>x {target.current.x.toFixed(2)} / y {target.current.y.toFixed(2)}</div>
+              <div>x {fixDot(target.current.x, 2, 2)} / y {fixDot(target.current.y, 2, 2)}</div>
               <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
               <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
-              <div>roll {(rollRef.current / DEG).toFixed(1)}° / slide {posRef.current.x.toFixed(2)},{posRef.current.y.toFixed(2)}</div>
-              <div>size {faceScaleRef.current.toFixed(3)} / zoom {smoothStateRef.current.zoom.toFixed(2)}x</div>
-              <div>engine {status.engine || '—'}{engineNote}</div>
+              <div>roll {fixDot(rollRef.current / DEG, 1, 3)}°</div>
+              <div>slide {fixDot(posRef.current.x, 2, 2)},{fixDot(posRef.current.y, 2, 2)}</div>
+              <div>size {fixDot(faceScaleRef.current, 3, 1)} / zoom {fixDot(smoothStateRef.current.zoom, 2, 1)}x</div>
             </div>
           ) : null}
         </DraggablePanel>
@@ -1739,7 +1756,10 @@ function App() {
             lineHeight: 1.45, maxWidth: 'min(220px, 82vw)',
           }}
         >
-          <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* 内側コンテナを十字と同じ幅に固定し、＋で説明を開閉してもパネル幅が変わらない
+              ようにする（パネル左端は固定なので、幅が変わると中央寄せの十字が横にずれる）。
+              説明文はこの幅の中で折り返す。 */}
+          <div data-no-drag style={{ display: 'flex', flexDirection: 'column', gap: 6, width: CALIB_CROSS_WIDTH }}>
             {/* ＋は十字グリッドの左下セルに統合（押すと説明を展開／－で隠す）。 */}
             <DirectionCross flash={dirFlash} onDir={calibrateDirection} onCenter={calibrateCenterCross}
               onToggleDetail={() => setShowCalibDetail((v) => !v)} detailOpen={showCalibDetail} />

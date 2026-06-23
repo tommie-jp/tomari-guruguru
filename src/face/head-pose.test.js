@@ -72,6 +72,29 @@ describe('poseFromMatrix', () => {
     });
     expect(poseFromMatrix(back).roll).toBeCloseTo(-a, 2);
   });
+
+  it('pitch≠0 で左右に振ると roll が混入する（atan2(sin p·sin y, cos y)）', () => {
+    // 内的回転 R=Rx(pitch)·Ry(yaw): 右ベクトルが傾き、傾けていなくても roll が出る。
+    // pitch=0 のときは roll=0（純ヨーでは混入しない）= 旧テストが見落としていた挙動。
+    const rot = (yawRot, pitchRot) => {
+      const cy = Math.cos(yawRot);
+      const sy = Math.sin(yawRot);
+      const cp = Math.cos(pitchRot);
+      const sp = Math.sin(pitchRot);
+      return matrix({
+        right: [cy, sp * sy, -cp * sy],
+        up: [0, cp, sp],
+        fwd: [sy, -sp * cy, cp * cy],
+      });
+    };
+    // 純ヨー（pitch=0）では roll=0
+    expect(poseFromMatrix(rot(0.7, 0)).roll).toBeCloseTo(0, 5);
+    // pitch がある状態で右を向くと roll が混入し、解析式に一致する
+    const pose = poseFromMatrix(rot(0.7, 0.26));
+    const expected = Math.atan2(Math.sin(0.26) * Math.sin(0.7), Math.cos(0.7));
+    expect(pose.roll).toBeCloseTo(expected, 5);
+    expect(Math.abs(pose.roll)).toBeGreaterThan(0.1); // 無視できない混入（~12°）
+  });
 });
 
 // 前方ベクトルを yaw(右が正)・pitch(上が正) から組み立てるヘルパ。

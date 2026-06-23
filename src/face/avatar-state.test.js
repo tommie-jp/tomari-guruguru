@@ -96,15 +96,21 @@ describe('computeStateFrame', () => {
     expect(tilted.tilt).toBeGreaterThan(neutral.tilt + 5);
   });
 
-  it('左右向き補正OFF: 右を向く(yaw>0)と混入 roll でかしげる（症状の再現）', () => {
-    const f = computeStateFrame(signals({ roll: 0.12, yaw: 0.4 }), tweaks({ tiltYawComp: 0 }), createExprState(), 0);
+  it('左右向き補正OFF: 右を向く(yaw+pitch)と混入 roll でかしげる（症状の再現）', () => {
+    const y = 0.4;
+    const p = 0.3;
+    const roll = Math.atan2(Math.sin(p) * Math.sin(y), Math.cos(y)); // yaw×pitch 由来の混入
+    const f = computeStateFrame(signals({ roll, yaw: y, pitch: p }), tweaks({ tiltYawComp: 0 }), createExprState(), 0);
     expect(f.tilt).not.toBeCloseTo(0, 2);
   });
 
-  it('左右向き補正ON: yaw 由来のかしげを打ち消して tilt≒0', () => {
-    // roll=0.12 は yaw=0.4 由来の混入のみ。comp=0.3 で 0.3*0.4=0.12 を引いて相殺。
-    const f = computeStateFrame(signals({ roll: 0.12, yaw: 0.4 }), tweaks({ tiltYawComp: 0.3 }), createExprState(), 0);
-    expect(f.tilt).toBeCloseTo(0, 5);
+  it('左右向き補正ON: yaw×pitch 由来のかしげを打ち消して tilt≒0', () => {
+    const y = 0.4;
+    const p = 0.3;
+    const roll = Math.atan2(Math.sin(p) * Math.sin(y), Math.cos(y)); // 混入そのもの
+    // comp=1 で基底ぴったり相殺。
+    const f = computeStateFrame(signals({ roll, yaw: y, pitch: p }), tweaks({ tiltYawComp: 1 }), createExprState(), 0);
+    expect(f.tilt).toBeCloseTo(0, 4);
   });
 
   it('スライド無効なら slideX/slideY=0', () => {

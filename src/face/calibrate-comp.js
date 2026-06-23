@@ -10,8 +10,9 @@
 // いずれも「顔の向きだけ変えて（平行移動せず・距離を変えず）押す」前提。avatar-state.js の
 // compensatePos / compensateRollForYaw / compensateScaleForPitch の式をそのまま解いた値を返す。
 // 無効・補正不要は null。
+import { rollYawPitchBasis } from './compensate-roll-for-yaw';
 
-const MAX_ANGLE_RAD = 0.7; // 各補正関数のクランプ（maxYawRad/maxPitchRad）と揃える
+const MAX_ANGLE_RAD = 0.7; // slide/zoom 補正のクランプ（maxYawRad/maxPitchRad）と揃える
 
 function clamp(v, a, b) {
   return Math.min(b, Math.max(a, v));
@@ -61,25 +62,35 @@ export function computeSlidePoseCompY({ posY, pitch, invertSlideY, minPitchRad =
 
 /**
  * 左右を向いたときに roll へ混入するかしげを打ち消す tiltYawComp を逆算する。
- * avatar-state は compensateRollForYaw(roll - biasRoll, yaw, comp) =
- *   (roll - biasRoll) - comp*clamp(yaw, ±0.7)
- * を使う。実際にはかしげていない（振り向きのみ）なら補正後 0 になる comp を解く:
- *   comp = (roll - biasRoll) / clamp(yaw, ±0.7)
- * 混入は yaw の奇関数なので左右どちらの姿勢からでも同じ comp になる。符号付き。
+ * 混入は yaw×pitch の結合で、avatar-state は
+ *   compensateRollForYaw(roll - biasRoll, yaw, comp, pitch) =
+ *     (roll - biasRoll) - comp*rollYawPitchBasis(yaw, pitch)
+ * を使う（rollYawPitchBasis = atan2(sin pitch·sin yaw, cos yaw)）。実際にはかしげて
+ * いない（振り向きのみ）なら補正後 0 になる結合係数 comp を解く:
+ *   comp = (roll - biasRoll) / rollYawPitchBasis(yaw, pitch)
+ * 実行時と同じ基底で割るので、振り切った角(yaw>0.7)で押しても係数が膨らまず、校正と
+ * 違う pitch・浅い振りでも残差が小さい。混入は yaw の奇関数なので左右どちらの姿勢からでも
+ * 同じ comp になる（単一 comp で左右対応）。符号付き。
  * @param {Object} p
  * @param {number} p.roll          今の生 roll(rad)
  * @param {number} p.yaw           今の生 yaw(rad)
+ * @param {number} [p.pitch=0]     今の生 pitch(rad)。基底は pitch=0 で 0 になる
  * @param {number} [p.biasRollRad=0] かしげ中立(rad)。straight 姿勢の roll を引く
  * @param {number} [p.minYawRad=0.087] 補正を解くのに必要な最小 yaw(rad, 約5°)
- * @param {number} [p.maxComp=4] 頭打ち。横向き(プロファイル)では roll が大きく yaw が 0.7 で
- *   頭打ちのため comp=roll/0.7 が 1 を超える。±1 だと飽和して傾きが残るので広めに取る。
- * @returns {number|null} tiltYawComp（0.01刻み, 符号付き）。振り不足・不正は null
+ * @param {number} [p.minBasis=0.03] 基底の最小値(rad)。pitch≈0 等で基底が小さいと
+ *   ゼロ割で comp が暴れる（推定ノイズが増幅される）ため、その姿勢では据え置き(null)。
+ *   pitch≈0 では混入自体が無いので補正不要。
+ * @param {number} [p.maxComp=4] 結合係数の頭打ち（理想 comp≈1。推定の癖で外れても暴発を防ぐ）。
+ * @returns {number|null} tiltYawComp（0.01刻み, 符号付き）。振り不足・基底過小・不正は null
  */
-export function computeTiltYawComp({ roll, yaw, biasRollRad = 0, minYawRad = 0.087, maxComp = 4 }) {
-  if (!Number.isFinite(roll) || !Number.isFinite(yaw)) return null;
-  const a = clamp(yaw, -MAX_ANGLE_RAD, MAX_ANGLE_RAD);
-  if (Math.abs(a) < minYawRad) return null; // 振り不足
-  const comp = (roll - biasRollRad) / a;
+export function computeTiltYawComp({
+  roll, yaw, pitch = 0, biasRollRad = 0, minYawRad = 0.087, minBasis = 0.03, maxComp = 4,
+}) {
+  if (!Number.isFinite(roll) || !Number.isFinite(yaw) || !Number.isFinite(pitch)) return null;
+  if (Math.abs(clamp(yaw, -MAX_ANGLE_RAD, MAX_ANGLE_RAD)) < minYawRad) return null; // 振り不足
+  const basis = rollYawPitchBasis(yaw, pitch);
+  if (Math.abs(basis) < minBasis) return null; // pitch≈0 等で基底が小さすぎ→据え置き
+  const comp = (roll - biasRollRad) / basis;
   if (!Number.isFinite(comp)) return null;
   return Math.round(clamp(comp, -maxComp, maxComp) * 100) / 100;
 }
