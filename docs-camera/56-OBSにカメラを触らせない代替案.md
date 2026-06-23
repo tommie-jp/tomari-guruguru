@@ -2,7 +2,7 @@
 
 OBS 内蔵ブラウザ(CEF)にカメラを使わせる代わりに、**顔トラッキングを通常の Chrome で動かし、
 推定した向き(signals)を OBS 側のページへ送る**構成の構想メモ。これが実現すると
-`--enable-media-stream`（[04-OBSでライブ配信.md](04-OBSでライブ配信.md)）が不要になる。
+`--enable-media-stream`（[10-OBSでライブ配信.md](10-OBSでライブ配信.md)）が不要になる。
 
 ステータス: **WS 中継方式（下記「iPhone 起点の構成」）は実装済み**（`?tx`/`?rx` ＋ `npm run relay`、
 ユニット/結線テスト済み・実機での通し確認は未）。従来の `--enable-media-stream` 方式も引き続き利用可。
@@ -77,7 +77,7 @@ B が配信で効く点:
 - トラッキングが速く確実: 本物の Chrome で GPU/Worker をフル活用（CEF の制約なし）。
 - 配信中に強い: トラッカーが落ちても OBS は生存。Chrome 側だけ再起動で復帰。2PC も可。
 
-A（[04-OBSでライブ配信.md](04-OBSでライブ配信.md)）のままで十分なケース:
+A（[10-OBSでライブ配信.md](10-OBSでライブ配信.md)）のままで十分なケース:
 
 - 映すのはアバター単体（ゲーム/重い合成なし）＋高性能PC＋短時間で、実測して
   エンコーダのフレーム落ちが出ないとき。
@@ -95,7 +95,7 @@ A（[04-OBSでライブ配信.md](04-OBSでライブ配信.md)）のままで十
 ## iPhone 起点の構成（iPhone=推論・設定 / CEF=表示）
 
 上の WS 中継方式を **送信側＝iPhone** に置き換えた構成。「別PCの Chrome から送ることも
-可能」を iPhone に置き換えるだけで思想は同じ。関連: [kick-iphone-streaming-feasibility.md](kick-iphone-streaming-feasibility.md)。
+可能」を iPhone に置き換えるだけで思想は同じ。関連: [92-kick-iphone-streaming-feasibility.md](92-kick-iphone-streaming-feasibility.md)。
 
 ```plantuml
 @startuml

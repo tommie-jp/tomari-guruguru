@@ -121,4 +121,4 @@
 
 - `src/cue-stamp.jsx` / `src/cue-system.js` / `src/gestures.js` / `src/camera-app.jsx`
 - `src/use-tweaks.js` / `src/draggable-panel.jsx`
-- docs-camera/11-カメラ版のエフェクト.md
+- docs-camera/30-カメラ版のエフェクト.md

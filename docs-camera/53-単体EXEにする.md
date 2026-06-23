@@ -10,7 +10,7 @@
 `bun build --compile` の 1 コマンドで完結し、しかも **1 台の Linux/WSL から Windows / Linux /
 macOS の 3 ターゲットをクロスコンパイルできる**（旧 SEA のように Windows 上で作る必要はない）。
 
-通常の運用（Node を入れて使う）は [09-Windowsで動かす.md](09-Windowsで動かす.md) を参照。
+通常の運用（Node を入れて使う）は [14-Windowsで動かす.md](14-Windowsで動かす.md) を参照。
 バイナリ化は「ランタイムを入れない配布」をしたいときだけでよい。
 
 ## 前提
