@@ -53,4 +53,5 @@
 - [92-kick-iphone-streaming-feasibility](92-kick-iphone-streaming-feasibility.md) — iPhone での Kick 配信可否の調査。
 - [93-演出の表示位置調整-PRD](93-演出の表示位置調整-PRD.md) — 演出スタンプ表示位置調整の PRD。
 - [94-PixiとBabylonの比較](94-PixiとBabylonの比較.md) — 描画エンジンの演出 / GPU / CPU / サイズ比較と採用判断。
+- [95-2.5Dレイヤーアバターの設計](95-2.5Dレイヤーアバターの設計.md) — Babylon 上に自作する 2.5D レイヤー視差リグの設計メモ。
 - [95-2.5Dレイヤーアバターの設計](95-2.5Dレイヤーアバターの設計.md) — 自作 Live2D 風（レイヤー視差）アバターの設計と段階計画。
