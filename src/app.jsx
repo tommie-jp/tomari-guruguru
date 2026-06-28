@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import charConfig from './character-config';
 import { installMobileHardening } from './mobile-hardening.js';
 import { applyThemeColor } from './theme-color.js';
+import { pointerToTarget } from './face/pointer-target.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -43,12 +44,10 @@ function App() {
     function onMove(e) {
       const el = charRef.current;
       if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height * 0.45;
       const range = tweaksRef.current.followRange;
-      target.current.x = clamp((e.clientX - cx) / range, -1, 1);
-      target.current.y = clamp((e.clientY - cy) / range, -1, 1);
+      const tgt = pointerToTarget(e.clientX, e.clientY, el.getBoundingClientRect(), range);
+      target.current.x = tgt.x;
+      target.current.y = tgt.y;
     }
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerdown', onMove);

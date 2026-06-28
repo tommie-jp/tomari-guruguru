@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import charConfig, { avatars, getAvatar } from './character-config';
 import { parseCameraParam, resolveCameraDevice, formatCameraLabel } from './camera-config';
 import { useFacePose } from './face/use-face-pose';
+import { useMouseTarget } from './face/use-mouse-target';
+import { useMicLevel } from './face/use-mic-level';
+import { composeSignals } from './face/compose-signals';
 import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
 import { computeStateFrame, createExprState } from './face/avatar-state';
@@ -51,6 +54,8 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 const GIT_SHA = typeof __GIT_SHA__ !== 'undefined' ? __GIT_SHA__ : 'dev';
 const BUILD_DATE = typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : 'dev';
+// 著作権年。本番は __BUILD_DATE__（YYYY-MM-DD）の年を、dev では実行時の現在年を使う（ビルド年から自動）。
+const BUILD_YEAR = /^\d{4}-/.test(BUILD_DATE) ? BUILD_DATE.slice(0, 4) : String(new Date().getFullYear());
 const VERSION_LABEL =
   GIT_SHA === 'dev'
     ? `v${APP_VERSION} · dev`
@@ -76,6 +81,10 @@ const TX_URL = `${TX_PUBLIC_ORIGIN}${import.meta.env.BASE_URL}index.html?tx`;
 // index.json を置けば上に重なる（fetchBuiltinPresets / 読込失敗は console に出る）。
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "avatarId": "06-elf01",
+  "inputDirection": "face",
+  "mouthSource": "camera",
+  "followRange": 340,
+  "micGain": 1.5,
   "smoothing": 0.3,
   "sensitivity": 1.3,
   "biasYawDeg": -8,
@@ -845,8 +854,9 @@ function App() {
   const cameraSelectValue = cameras.some((d) => d.label === t.cameraLabel) ? t.cameraLabel : '';
   // A〜F の6シートURL。アバターが変わったときだけ作り直す（参照安定＝再マウントのキーに使う）。
   const sheetUrls = useMemo(() => avatar.sheetUrls(), [avatarId]);
-  // rx はカメラを持たないのでプレビュー無し。
-  const showPreview = view.preview && !obsMode && !isRx; // 配信にカメラ枠を出さない
+  // rx はカメラを持たないのでプレビュー無し。実際にプレビューを出すかは camEnabled も見て
+  // 後段で確定する（マウス追従でカメラ停止中は空のカメラ枠を出さない）。
+  const previewWanted = view.preview && !obsMode && !isRx; // 配信にカメラ枠を出さない
   const [cell, setCell] = useState({ r: 2, c: 2 });
   const [pressed, setPressed] = useState(false);
   // 十字（上/左/正/右/下）の校正ボタンごとのフィードバック。成功は 'ok'、振り不足や
@@ -874,7 +884,14 @@ function App() {
     shared: { x: 0, y: 0, zoom: 1 }, // CEF へ送る（vw/vh + 倍率）
     local: { x: 0, y: 0, zoom: 1 },  // この端末だけ（送らない）
   });
-  const target = useRef({ x: 0, y: 0 });   // -1..1（顔向きが書き込む）
+  const target = useRef({ x: 0, y: 0 });   // -1..1（顔 or マウスの「向き」所有者が書き込む）
+  // 描画ループ(readSignals)が参照する実効ソースと、マイクの生レベル。値は毎レンダー更新する。
+  const directionRef = useRef('face');     // 実効「向き」ソース（'face' | 'mouse'）
+  const mouthSrcRef = useRef('camera');    // 実効「口」ソース（'camera' | 'mic' | 'none'）
+  const micLevelRef = useRef(0);           // マイクの生 RMS（use-mic-level が書く）
+  const effBlinkSyncRef = useRef(false);   // 実効まばたき同調（カメラで目が取れるときのみ true）
+  // カメラ不可時に顔追従→マウス追従へ自動フォールバックしたか（セッション限定・非永続）。
+  const [autoMouseFallback, setAutoMouseFallback] = useState(false);
   // 時間方向の状態（口エンベロープ・まばたきヒステリシス・ズーム自動基準）→ avatar-state が更新。
   const exprStateRef = useRef(createExprState());
   // 平滑化エンベロープ（向き・かしげ・スライド・ズーム）→ apply-state が更新。
@@ -912,7 +929,30 @@ function App() {
   };
   // 立ち位置（左右・上下）。invert は pose と同じく source 側(純関数)で適用する。
   const positionOptions = { invertX: t.invertSlide, invertY: t.invertSlideY };
-  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: !isRx, poseOptions, positionOptions, preferWorker: t.useWorker, deviceId, facingMode: t.facingMode });
+
+  // 入力ソース（向き=顔/マウス × 口=カメラ/マイク/なし）。カメラ不可時は顔→マウスへ自動フォールバック。
+  const effDirection = (t.inputDirection === 'face' && autoMouseFallback) ? 'mouse' : t.inputDirection;
+  // フォールバック中(カメラ不可)に口=カメラのままは成立しないので閉じへ寄せる（mic は手動で選ぶ）。
+  const effMouthSrc = (autoMouseFallback && t.mouthSource === 'camera') ? 'none' : t.mouthSource;
+  // 各ソースの有効/無効。3フックは常に呼び、この enabled だけで切替える（Rules of Hooks）。
+  const camEnabled = !isRx && (effDirection === 'face' || effMouthSrc === 'camera');
+  const mouseEnabled = !isRx && effDirection === 'mouse';
+  const micEnabled = !isRx && effMouthSrc === 'mic';
+  // カメラで実まばたきが取れるのは口=カメラのときだけ。それ以外は自動まばたきに委譲する。
+  const eyesFromCamera = effMouthSrc === 'camera' && camEnabled;
+  const effBlinkSync = !!t.blinkSync && eyesFromCamera;
+  // readSignals / 描画ループが ref 経由で最新の実効値を読めるようにする。
+  directionRef.current = effDirection;
+  mouthSrcRef.current = effMouthSrc;
+  effBlinkSyncRef.current = effBlinkSync;
+
+  const { videoRef, poseRef, rollRef, posRef, faceScaleRef, mouthRef, eyesClosedRef, blendshapesRef, status } = useFacePose(target, { enabled: camEnabled, writeXY: effDirection === 'face', poseOptions, positionOptions, preferWorker: t.useWorker, deviceId, facingMode: t.facingMode });
+  // マウス追従ソース。アンカーは画面固定の stageRef（charRef は毎フレーム transform されるため不可）。
+  useMouseTarget(target, stageRef, { enabled: mouseEnabled, followRange: t.followRange });
+  // マイク口パクソース。生 RMS を micLevelRef に書き、readSignals が micGain で前段スケールする。
+  const micLevelApi = useMicLevel(micLevelRef, { enabled: micEnabled });
+  // カメラが実際に動くときだけプレビューを出す（マウス追従でカメラ停止中は空枠を出さない）。
+  const showPreview = previewWanted && camEnabled;
 
   // カメラ許可後（status.phase==='running'）に videoinput を列挙して選択肢を更新する。
   // 許可前はラベルが空なので必ず起動後に列挙する。rx はカメラ無しなので対象外。
@@ -932,20 +972,35 @@ function App() {
     return () => { cancelled = true; };
   }, [isRx, status.phase]);
 
-  // useFacePose が各 ref に書いた最新値を「signals」へまとめる（avatar-state の入力）。
+  // カメラ起動に失敗（不許可・デバイス無し等）したら、顔追従のときだけ自動でマウス追従へ。
+  // 保存設定(inputDirection)は書き換えない＝カメラ復旧後の再読込で顔に戻る。手動で別ソースを
+  // 選ぶ（inputDirection が変わる）と false に戻し、次の起動を顔で再試行できるようにする。
+  useEffect(() => {
+    if (isRx || t.inputDirection !== 'face') { setAutoMouseFallback(false); return; }
+    if (status.phase === 'error') setAutoMouseFallback(true);
+  }, [isRx, t.inputDirection, status.phase]);
+
+  // 各 ref の最新値を「signals」へ合成する（avatar-state の入力）。向き=顔/マウス、
+  // 口=カメラ/マイク/なし のチャンネル別合成は純関数 composeSignals に集約（テスト済み）。
   function readSignals() {
-    return {
-      x: target.current.x,
-      y: target.current.y,
-      yaw: poseRef.current.yaw,
-      pitch: poseRef.current.pitch,
-      roll: rollRef.current,
-      posX: posRef.current.x,
-      posY: posRef.current.y,
-      faceScale: faceScaleRef.current,
-      mouth: mouthRef.current,
-      eyesClosed: eyesClosedRef.current,
-    };
+    return composeSignals(
+      {
+        target: target.current,
+        pose: poseRef.current,
+        roll: rollRef.current,
+        posX: posRef.current.x,
+        posY: posRef.current.y,
+        faceScale: faceScaleRef.current,
+        mouth: mouthRef.current,
+        eyesClosed: eyesClosedRef.current,
+      },
+      {
+        direction: directionRef.current,
+        mouthSource: mouthSrcRef.current,
+        micGain: tweaksRef.current.micGain,
+        micLevel: micLevelRef.current,
+      },
+    );
   }
 
   // WS 中継。tx は config 要求に応答し CEF 接続を表示、rx は state/config を受信。
@@ -1241,8 +1296,11 @@ function App() {
         const sh = userTransform.current.shared;
         const ratio = tw.moveRatio == null ? 1 : tw.moveRatio;
         const sentUser = { x: sh.x * ratio, y: sh.y * ratio, zoom: sh.zoom };
+        // カメラで実まばたきが取れないソース（マウス/マイク/なし・フォールバック）では
+        // blinkSync を実効 OFF にして、computeStateFrame を自動まばたき(blinkOverride)経路へ倒す。
+        const twFrame = effBlinkSyncRef.current ? tw : { ...tw, blinkSync: false };
         const frame = computeStateFrame(
-          readSignals(), tw, exprStateRef.current, now,
+          readSignals(), twFrame, exprStateRef.current, now,
           { blinkOverride: autoBlinkRef.current, user: sentUser },
         );
         if (mode === 'tx' && now - lastSent >= SEND_INTERVAL_MS) {
@@ -1381,7 +1439,7 @@ function App() {
   // 結果は autoBlinkRef に書き、メインループが blinkOverride として computeStateFrame に渡す。
   // rx は sheet を受信するので自動まばたきは動かさない。
   useEffect(() => {
-    if (isRx || t.blinkSync) return undefined;
+    if (isRx || effBlinkSync) return undefined;
     let alive = true;
     let timer;
     const rand = (a, b) => a + Math.random() * (b - a);
@@ -1415,7 +1473,7 @@ function App() {
     }
     schedule();
     return () => { alive = false; clearTimeout(timer); };
-  }, [t.blinkSync, isRx]);
+  }, [effBlinkSync, isRx]);
 
   // 表情係数パネルの更新（表示ONのときだけ ~10fps で ref → state にコピー）。
   // OFF時はインターバルを張らないので毎フレーム再描画のコストはゼロ。
@@ -1519,19 +1577,30 @@ function App() {
   // 右下 Tweaks ボタンの幅ぶんを空け、中央タイトル帯は少し上へ逃がすのに使う。
   const isNarrow = useIsNarrow();
 
-  // rx はカメラを持たないので、状態表示は中継リンクの接続有無にする。
-  const statusText = isRx
-    ? (relayApi.linkUp ? '中継に接続中（受信）' : '中継に未接続')
-    : ({
-        idle: 'カメラ停止中',
-        loading: 'カメラ起動中…',
-        error: `エラー: ${status.error || ''}`,
-      }[status.phase] || (status.faceDetected ? '顔を検出中' : '顔が見つかりません'));
-  const statusColor = isRx
-    ? (relayApi.linkUp ? '#46C26A' : '#E5A23D')
-    : (status.phase === 'error' ? '#E5484D'
+  // 状態表示。rx は中継リンクの接続有無、マウス追従は追従中＋口ソース、顔追従はカメラ/顔検出。
+  const micStatus = micLevelApi.status;
+  let statusText;
+  let statusColor;
+  if (isRx) {
+    statusText = relayApi.linkUp ? '中継に接続中（受信）' : '中継に未接続';
+    statusColor = relayApi.linkUp ? '#46C26A' : '#E5A23D';
+  } else if (effDirection === 'mouse') {
+    const mouthNote = effMouthSrc === 'mic'
+      ? (micStatus.phase === 'error' ? '・マイク使用不可'
+        : micStatus.phase === 'running' ? '・マイク口パク' : '・マイク準備中')
+      : effMouthSrc === 'camera' ? '・カメラ口パク' : '';
+    statusText = (autoMouseFallback ? 'カメラ不可→マウス追従' : 'マウス追従中') + mouthNote;
+    statusColor = (effMouthSrc === 'mic' && micStatus.phase === 'error') ? '#E5A23D' : '#46C26A';
+  } else {
+    statusText = ({
+      idle: 'カメラ停止中',
+      loading: 'カメラ起動中…',
+      error: `エラー: ${status.error || ''}`,
+    }[status.phase] || (status.faceDetected ? '顔を検出中' : '顔が見つかりません'));
+    statusColor = status.phase === 'error' ? '#E5484D'
       : status.phase === 'running' && status.faceDetected ? '#46C26A'
-      : '#E5A23D');
+      : '#E5A23D';
+  }
 
   // 実際の推論先（worker を希望しても dev・非対応・フォールバック時は main）。
   const engineLabel = status.engine === 'worker' ? 'Web Worker'
@@ -1925,9 +1994,10 @@ function App() {
         inkColor={inkColor}
         subColor={subColor}
         style={{
-          // 左下隅の Tweaks ハンバーガー（約40px）の右へ寄せて重ならないようにする。
-          // 折り返さず 1 列の帯にして、はみ出しは横スクロール。右端近くまで使えるよう幅を広く取る。
-          bottom: isNarrow ? 'calc(14px + var(--sab))' : 'calc(16px + var(--sab))',
+          // 左下のハンバーガー（約40px）の右へ寄せる。折り返さず 1 列の帯にして画面端まで使い、
+          // はみ出しは横スクロール。バージョン表記は 1 段下へ逃がすので右側は空けない（幅いっぱい）。
+          // 下段のバージョンと重ならないよう、この帯とハンバーガーは少し上げる。
+          bottom: isNarrow ? 'calc(30px + var(--sab))' : 'calc(32px + var(--sab))',
           left: isNarrow ? 'calc(60px + var(--sal))' : 'calc(64px + var(--sal))',
           maxWidth: 'calc(100vw - 72px - var(--sal) - var(--sar))',
         }}
@@ -1935,7 +2005,8 @@ function App() {
           { key: 'preview', label: 'カメラ', on: t.preview, toggle: () => setTweak('preview', !t.preview) },
           { key: 'debug', label: 'デバッグ', on: t.showDebug, toggle: () => setTweak('showDebug', !t.showDebug) },
           { key: 'expr', label: '表情', on: t.showExpr, toggle: () => setTweak('showExpr', !t.showExpr) },
-          { key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) },
+          // 向き校正は顔追従(カメラ)専用。マウス追従では pose が無いので出さない。
+          ...(effDirection === 'face' ? [{ key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) }] : []),
           // 手元(tx/local)の演出音。ローカルなので rx には影響しない。
           { key: 'soundTx', label: (t.sbMutedTx ? '🔇 ' : '🔊 ') + (mode === 'tx' ? '手元' : '音'),
             on: !t.sbMutedTx, toggle: () => setTweak('sbMutedTx', !t.sbMutedTx),
@@ -1967,24 +2038,37 @@ function App() {
       </PanelToggles>
       )}
 
-      {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。
-          右端の演出ボタン列と重ならないよう少し上へ逃がす。狭い画面では
-          日付を落とした短縮版にして左下コントロールにも被らない長さにする。 */}
+      {/* 著作権＋バージョン表記（右下隅に控えめに）。配信に映らないよう obsMode では非表示。
+          下部のチップ列＋ハンバーガーは 1 段上げてあるので、その下（最下段）に置いて重ねない。
+          tommie.jp は GitHub プロフィールへの外部リンク（リンクだけクリック可）。
+          ビルド識別（sha/日付）はホバーの title に逃がす。 */}
       {!obsMode && (
-      <div style={{
-        position: 'absolute', bottom: 'calc(54px + var(--sab))',
-        right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', fontSize: 12,
-        color: inkColor, letterSpacing: '0.04em', whiteSpace: 'nowrap',
-        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-        pointerEvents: 'none', userSelect: 'none'
-      }}>{isNarrow ? VERSION_LABEL_SHORT : VERSION_LABEL}</div>
+      <div
+        title={isNarrow ? VERSION_LABEL_SHORT : VERSION_LABEL}
+        style={{
+          position: 'absolute', bottom: 'calc(8px + var(--sab))',
+          right: isNarrow ? 'calc(12px + var(--sar))' : 'calc(16px + var(--sar))', fontSize: 12,
+          color: inkColor, letterSpacing: '0.04em', whiteSpace: 'nowrap',
+          textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+          pointerEvents: 'none', userSelect: 'none'
+        }}
+      >
+        {BUILD_YEAR}(C) <a
+          href="https://github.com/tommie-jp"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'underline', pointerEvents: 'auto' }}
+        >tommie.jp</a> ver{APP_VERSION}
+      </div>
       )}
 
       {/* （旧「校正」ボタンは廃止。同機能は向き校正パネルの十字「正」ボタンに統合した。） */}
 
       {/* カメラ起動エラーの詳細。原因切り分け用に obsMode でも常に表示する
-          （OBS ブラウザソース内で ?obs=1 のまま読めるように）。 */}
-      {status.phase === 'error' ? (
+          （OBS ブラウザソース内で ?obs=1 のまま読めるように）。ただしマウス追従へ
+          自動フォールバック済み（effDirection==='mouse'）なら、動いているアバターを
+          塞がない＝大きな詳細は出さず、状態バッジの「カメラ不可→マウス追従」に委ねる。 */}
+      {status.phase === 'error' && effDirection === 'face' ? (
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
           maxWidth: 'min(92vw, 560px)', maxHeight: '80vh', overflow: 'auto',
@@ -2076,7 +2160,7 @@ function App() {
               <div>row {cell.r} / col {cell.c}</div>
               <div>x {fixDot(target.current.x, 2, 2)} / y {fixDot(target.current.y, 2, 2)}</div>
               <div>mouth {['とじ', 'はんびらき', 'ぜんかい'][sheet % 3]}</div>
-              <div>blink {sheet >= 3 ? '閉' : '開'} {t.blinkSync ? '(同調)' : '(自動)'}</div>
+              <div>blink {sheet >= 3 ? '閉' : '開'} {effBlinkSync ? '(同調)' : '(自動)'}</div>
               <div>roll {fixDot(rollRef.current / DEG, 1, 3)}°</div>
               <div>slide {fixDot(posRef.current.x, 2, 2)},{fixDot(posRef.current.y, 2, 2)}</div>
               <div>size {fixDot(faceScaleRef.current, 3, 1)} / zoom {fixDot(smoothStateRef.current.zoom, 2, 1)}x</div>
@@ -2085,10 +2169,11 @@ function App() {
         </DraggablePanel>
       ) : null}
 
-      {/* 向き校正パネル（独立した浮動パネル。デバッグHUDと同じく Tweaks のトグルで表示切替）。
+      {/* 向き校正パネル（顔追従専用。マウス追従では pose が無いので出さない）。
+          独立した浮動パネル。デバッグHUDと同じく Tweaks のトグルで表示切替）。
           掴んで移動でき、✕で隠せる（= showCalib を OFF）。カメラ前提なので rx/obs では出さない。
           コントロールは [data-no-drag] でドラッグ開始を抑止し、タイトル帯だけで掴む。 */}
-      {!obsMode && !isRx && t.showCalib ? (
+      {!obsMode && !isRx && t.showCalib && effDirection === 'face' ? (
         <DraggablePanel
           id="calib"
           title="向き校正"
@@ -2127,6 +2212,32 @@ function App() {
         {/* fork:sections — よく触る3つを上に集約し初期展開。残りは折りたたみ
             （開閉は localStorage に永続化）。各セクションはコントロールを内側に
             入れ子にする（兄弟並びは折りたたみ対象にならない）。 */}
+        <TweakSection label="入力ソース" collapsible defaultOpen>
+          <TweakRadio label="向きの入力" value={t.inputDirection}
+            options={[{ value: 'face', label: 'カメラ' }, { value: 'mouse', label: 'マウス' }]}
+            onChange={(v) => {
+              // 向きを変えたら口も既定へ寄せる（マウス→マイク / カメラ→カメラ）。
+              // 以後はユーザーが口を上書き選択でき、ハイブリッド（マウス＋カメラ口）も可。
+              setTweak('inputDirection', v);
+              setTweak('mouthSource', v === 'mouse' ? 'mic' : 'camera');
+            }}></TweakRadio>
+          <TweakRadio label="口の入力" value={t.mouthSource}
+            options={[{ value: 'camera', label: 'カメラ' }, { value: 'mic', label: 'マイク' }, { value: 'none', label: 'なし' }]}
+            onChange={(v) => setTweak('mouthSource', v)}></TweakRadio>
+          {effDirection === 'mouse' ? (
+            <TweakSlider label="追従範囲" value={t.followRange} min={120} max={1200} step={10} unit="px"
+              onChange={(v) => setTweak('followRange', v)}></TweakSlider>
+          ) : null}
+          {effMouthSrc === 'mic' ? (
+            <TweakSlider label="マイク感度" value={t.micGain} min={0.3} max={6} step={0.1}
+              onChange={(v) => setTweak('micGain', v)}></TweakSlider>
+          ) : null}
+          {effMouthSrc === 'mic' && micStatus.phase === 'error' ? (
+            <TweakRow label="マイク">
+              <span style={{ fontSize: 12, color: '#E5484D' }}>使用不可（権限を確認）</span>
+            </TweakRow>
+          ) : null}
+        </TweakSection>
         <TweakSection label="顔追従" collapsible defaultOpen>
           <TweakSlider label="感度" value={t.sensitivity} min={0.4} max={2.5} step={0.1}
             onChange={(v) => setTweak('sensitivity', v)}></TweakSlider>

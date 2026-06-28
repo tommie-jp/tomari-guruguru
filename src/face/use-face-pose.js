@@ -22,7 +22,7 @@ const { useRef, useState, useEffect } = React;
  * @returns {{ videoRef: React.RefObject<HTMLVideoElement>, poseRef: { current: { yaw: number, pitch: number } }, rollRef: { current: number }, posRef: { current: { x: number, y: number } }, faceScaleRef: { current: number }, mouthRef: { current: number }, eyesClosedRef: { current: number }, blendshapesRef: { current: Array<{categoryName: string, score: number}> }, status: { phase: string, faceDetected: boolean, error: string|null } }}
  */
 export function useFacePose(targetRef, opts = {}) {
-  const { enabled = true, poseOptions, positionOptions, preferWorker = true, deviceId = null, facingMode = 'user' } = opts;
+  const { enabled = true, poseOptions, positionOptions, preferWorker = true, deviceId = null, facingMode = 'user', writeXY = true } = opts;
   const videoRef = useRef(null);
   // 最新の「生の」顔向き角(rad)。正面キャリブレーション用に外へ公開する。
   const poseRef = useRef({ yaw: 0, pitch: 0 });
@@ -47,6 +47,11 @@ export function useFacePose(targetRef, opts = {}) {
   poseOptionsRef.current = poseOptions;
   const positionOptionsRef = useRef(positionOptions);
   positionOptionsRef.current = positionOptions;
+  // 向き(x,y)を target に書くか。向き=マウスで口だけカメラ使用(ハイブリッド)のとき false にして
+  // マウスの target を顔が上書きしないようにする。ref 経由で渡し effect 依存に入れない
+  // （= writeXY 切替でカメラを作り直さない）。
+  const writeXYRef = useRef(writeXY);
+  writeXYRef.current = writeXY;
 
   useEffect(() => {
     if (!enabled) {
@@ -77,8 +82,10 @@ export function useFacePose(targetRef, opts = {}) {
         { target: targetRef.current, pose: poseRef.current },
         s,
       );
-      targetRef.current.x = next.target.x;
-      targetRef.current.y = next.target.y;
+      if (writeXYRef.current) {
+        targetRef.current.x = next.target.x;
+        targetRef.current.y = next.target.y;
+      }
       poseRef.current.yaw = next.pose.yaw;
       poseRef.current.pitch = next.pose.pitch;
       rollRef.current = next.roll;
