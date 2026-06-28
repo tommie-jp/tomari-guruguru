@@ -4,7 +4,9 @@
 //   - 状態フレーム: JSON 配列 [...]（state-codec の encode/decode 済み）
 //   - それ以外: JSON オブジェクト { type, ... }
 //       config        : { type:'config', tweaks }     producer→consumer（設定配布）
-//       cue           : { type:'cue', id }             producer→consumer（演出トリガ転送）
+//       cue           : { type:'cue', id, stamp?, color?, size?, shadow?, offset?, hold?, anim?, weight?, stroke?,
+//                         rotation?, place?, halo?, glow?, glowColor?, gain? }
+//                       producer→consumer（演出トリガ＋スタンプ見た目の全カスタム。効果音差し替えは非対象）
 //       need-config   : { type:'need-config' }         server→producer（CEF 接続時の要求）
 //       peer          : { type:'peer', ... }           server→producer（CEF 接続/切断の通知）
 //
@@ -20,12 +22,12 @@ const MAX_BACKOFF_MS = 8000;
  * @param {'tx'|'rx'} o.role  役割（サーバが producer/consumer を振り分ける）
  * @param {(frame:Array<number>)=>void} [o.onState]    状態フレーム受信（rx 用）
  * @param {(tweaks:object)=>void} [o.onConfig]         config 受信（rx 用）
- * @param {(id:string)=>void} [o.onCue]                cue 受信（rx 用・演出トリガ）
+ * @param {(id:string, over:{stamp?:string,color?:string,size?:number,shadow?:string,offset?:{x:number,y:number}})=>void} [o.onCue]  cue 受信（rx 用・演出トリガ＋カスタム文字/色/倍率/影色/位置）
  * @param {()=>void} [o.onNeedConfig]                  config 要求受信（tx 用）
  * @param {(msg:object)=>void} [o.onPeer]              接続通知受信（tx 用）
  * @param {(s:{connected:boolean})=>void} [o.onStatus] 自身の接続状態変化
  * @param {(url:string)=>WebSocket} [o.makeSocket]     テスト用の差し替え口
- * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string)=>void, close:()=>void }}
+ * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string, over?:{stamp?:string,color?:string})=>void, close:()=>void }}
  */
 export function createRelayClient(o) {
   const {
@@ -60,7 +62,11 @@ export function createRelayClient(o) {
       }
       switch (msg && msg.type) {
         case 'config': onConfig?.(msg.tweaks); break;
-        case 'cue': onCue?.(msg.id); break;
+        case 'cue': onCue?.(msg.id, {
+          stamp: msg.stamp, color: msg.color, size: msg.size, shadow: msg.shadow, offset: msg.offset,
+          hold: msg.hold, anim: msg.anim, weight: msg.weight, stroke: msg.stroke,
+          rotation: msg.rotation, place: msg.place, halo: msg.halo, glow: msg.glow, glowColor: msg.glowColor, gain: msg.gain,
+        }); break;
         case 'need-config': onNeedConfig?.(); break;
         case 'peer': onPeer?.(msg); break;
         default: break;
@@ -91,7 +97,25 @@ export function createRelayClient(o) {
   return {
     sendState(frame) { rawSend(JSON.stringify(frame)); },
     sendConfig(tweaks) { rawSend(JSON.stringify({ type: 'config', tweaks })); },
-    sendCue(id) { rawSend(JSON.stringify({ type: 'cue', id })); },
+    sendCue(id, over) {
+      const m = { type: 'cue', id };
+      if (over && over.stamp) m.stamp = over.stamp;
+      if (over && over.color) m.color = over.color;
+      if (over && over.size != null) m.size = over.size;
+      if (over && over.shadow) m.shadow = over.shadow;
+      if (over && over.offset) m.offset = over.offset;
+      if (over && over.hold != null) m.hold = over.hold;
+      if (over && over.anim) m.anim = over.anim;
+      if (over && over.weight != null) m.weight = over.weight;
+      if (over && over.stroke != null) m.stroke = over.stroke;
+      if (over && over.rotation != null) m.rotation = over.rotation;
+      if (over && over.place) m.place = over.place;
+      if (over && over.halo != null) m.halo = over.halo;
+      if (over && over.glow != null) m.glow = over.glow;
+      if (over && over.glowColor) m.glowColor = over.glowColor;
+      if (over && over.gain != null) m.gain = over.gain;
+      rawSend(JSON.stringify(m));
+    },
     close() {
       closed = true;
       clearTimeout(reconnectTimer);

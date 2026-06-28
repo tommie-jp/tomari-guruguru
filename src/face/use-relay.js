@@ -19,8 +19,8 @@ const { useRef, useState, useEffect } = React;
  * @param {()=>object} [o.getConfig]          tx: need-config への応答に使う現在の tweaks
  * @param {(frame:Array<number>)=>void} [o.onState]  rx: 状態フレーム受信
  * @param {(tweaks:object)=>void} [o.onConfig]       rx: config 受信
- * @param {(id:string)=>void} [o.onCue]              rx: 演出キュー受信（tx の発火を再生）
- * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string)=>void,
+ * @param {(id:string, over:{stamp?:string,color?:string})=>void} [o.onCue]  rx: 演出キュー受信（tx の発火＋カスタム文字/色を再生）
+ * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string, over?:{stamp?:string,color?:string})=>void,
  *            peer:{connected:boolean,count:number}, linkUp:boolean }}
  */
 export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue } = {}) {
@@ -45,7 +45,7 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue }
       role: mode,
       onState: mode === 'rx' ? (f) => cbRef.current.onState?.(f) : undefined,
       onConfig: mode === 'rx' ? (t) => cbRef.current.onConfig?.(t) : undefined,
-      onCue: mode === 'rx' ? (id) => cbRef.current.onCue?.(id) : undefined,
+      onCue: mode === 'rx' ? (id, over) => cbRef.current.onCue?.(id, over) : undefined,
       onNeedConfig: mode === 'tx'
         ? () => {
             const cfg = cbRef.current.getConfig?.();
@@ -67,7 +67,7 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue }
   return {
     sendState(frame) { clientRef.current?.sendState(frame); },
     sendConfig(tweaks) { clientRef.current?.sendConfig(tweaks); },
-    sendCue(id) { clientRef.current?.sendCue(id); },
+    sendCue(id, over) { clientRef.current?.sendCue(id, over); },
     peer,
     linkUp,
   };

@@ -59,19 +59,36 @@ describe('createRelayClient', () => {
     expect(onPeer).toHaveBeenCalledWith({ type: 'peer', event: 'connect', count: 1 });
   });
 
-  it('cue は onCue に id を渡す（演出のリレー転送）', () => {
+  it('cue は onCue に id とオーバーライド(stamp/color/size/shadow/offset)を渡す（演出のリレー転送）', () => {
+    const onCue = vi.fn();
+    const { get } = setup({ onCue });
+    get().open();
+    get().recv({ type: 'cue', id: 'hello', stamp: 'やっほー', color: '#ff0000', size: 1.5, shadow: '#000000', offset: { x: 0.2, y: -0.1 }, hold: 2000, anim: 'rise', weight: 600, stroke: 0.1, rotation: 15, place: 'above', halo: 0.8, glow: 6, glowColor: '#00ff00', gain: 1.5 });
+    expect(onCue).toHaveBeenCalledWith('hello', { stamp: 'やっほー', color: '#ff0000', size: 1.5, shadow: '#000000', offset: { x: 0.2, y: -0.1 }, hold: 2000, anim: 'rise', weight: 600, stroke: 0.1, rotation: 15, place: 'above', halo: 0.8, glow: 6, glowColor: '#00ff00', gain: 1.5 });
+  });
+
+  it('cue にカスタムが無ければ各フィールドは undefined で渡す', () => {
     const onCue = vi.fn();
     const { get } = setup({ onCue });
     get().open();
     get().recv({ type: 'cue', id: 'hello' });
-    expect(onCue).toHaveBeenCalledWith('hello');
+    expect(onCue).toHaveBeenCalledWith('hello', { stamp: undefined, color: undefined, size: undefined, shadow: undefined, offset: undefined, hold: undefined, anim: undefined, weight: undefined, stroke: undefined, rotation: undefined, place: undefined, halo: undefined, glow: undefined, glowColor: undefined, gain: undefined });
   });
 
-  it('sendCue は {type:cue,id} を送る', () => {
+  it('sendCue は id だけのとき {type:cue,id} を送る', () => {
     const { client, get } = setup();
     get().open();
     client.sendCue('clap');
     expect(JSON.parse(get().sent[0])).toEqual({ type: 'cue', id: 'clap' });
+  });
+
+  it('sendCue はカスタム文字/色/倍率/影色/位置付きで送る（空は省略）', () => {
+    const { client, get } = setup();
+    get().open();
+    client.sendCue('hello', { stamp: 'やっほー', color: '#ff0000', size: 1.5, shadow: '#000000', offset: { x: 0.2, y: -0.1 }, hold: 2000, anim: 'rise', weight: 600, stroke: 0, rotation: -15, place: 'over', halo: 0, glow: 0, glowColor: '#00ff00', gain: 0 });
+    expect(JSON.parse(get().sent[0])).toEqual({ type: 'cue', id: 'hello', stamp: 'やっほー', color: '#ff0000', size: 1.5, shadow: '#000000', offset: { x: 0.2, y: -0.1 }, hold: 2000, anim: 'rise', weight: 600, stroke: 0, rotation: -15, place: 'over', halo: 0, glow: 0, glowColor: '#00ff00', gain: 0 });
+    client.sendCue('clap', { stamp: undefined, color: undefined, size: undefined, shadow: undefined, offset: undefined, hold: undefined, anim: undefined, weight: undefined, stroke: undefined, rotation: undefined, place: undefined, halo: undefined, glow: undefined, glowColor: undefined, gain: undefined });
+    expect(JSON.parse(get().sent[1])).toEqual({ type: 'cue', id: 'clap' });
   });
 
   it('壊れた JSON は無視して落ちない', () => {

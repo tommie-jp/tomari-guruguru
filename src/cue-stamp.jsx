@@ -30,6 +30,18 @@ const ANIM_NAME = {
 // 連番キー＆軽いジッター（同じ場所に固まらないよう左右にばらす）用のカウンタ。
 let SEQ = 0;
 
+// 影/縁取りの既定色（濃茶）。cue 毎 shadowColor 未指定時のフォールバック。
+const DEFAULT_SHADOW = '#3c3026';
+
+// '#rrggbb' を alpha 付き rgba() 文字列へ。不正なら既定（濃茶）の rgba を返す。
+// 既定 DEFAULT_SHADOW + 元の alpha なら従来の textShadow/縁取りと完全一致する。
+function hexToRgba(hex, a) {
+  const m = /^#([0-9a-f]{6})$/i.exec(typeof hex === 'string' ? hex.trim() : '');
+  if (!m) return `rgba(60,48,38,${a})`;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
 // 位置算出パラメータ（OVER_SIZE / ABOVE_SIZE / HEAD_CENTER_Y）と配置式は
 // cue-stamp-geometry.js に集約（cue-offset-editor.jsx とも共用・DOM 非依存でテスト可能）。
 
@@ -79,8 +91,10 @@ function CueStampLayerImpl(props, ref) {
     const jit = Number(node.dataset.jit) || 0;
     const ox = Number(node.dataset.offsetX) || 0;
     const oy = Number(node.dataset.offsetY) || 0;
+    // cue 毎フォント倍率（既定 1）。自動算出サイズに掛ける。data-scale で要素に載せ毎フレーム読む。
+    const scale = Number(node.dataset.scale) || 1;
     const box = computeStampBox(r, { place, jit, ox, oy });
-    node.style.fontSize = `${box.fontSize}px`;
+    node.style.fontSize = `${box.fontSize * scale}px`;
     node.style.left = `${box.left}px`;
     node.style.top = `${box.top}px`;
   }, [anchorRef]);
@@ -94,11 +108,25 @@ function CueStampLayerImpl(props, ref) {
     // 文字サイズに対する相対ジッター（±0.3em 程度）。連打しても重ならないように。
     const jit = (((id * 53) % 56) - 28) / 90;
     // cue 毎のアバター相対オフセット（em）。__offset は発火側が { x, y } を差し込む。
-    // 未指定・非有限は 0（＝従来の表示位置）。relay には乗らないローカル調整値。
+    // 未指定・非有限は 0（＝従来の表示位置）。tx→rx へも relay される（文字/色/倍率/影色と同様）。
     const off = cue.__offset;
     const ox = off && Number.isFinite(off.x) ? off.x : 0;
     const oy = off && Number.isFinite(off.y) ? off.y : 0;
-    setItems((prev) => [...prev, { id, glyph: cue.stamp, anim, holdMs, place, jit, ox, oy }]);
+    // cue 毎カスタム文字色（#rrggbb）。発火側が stampColor を差し込む。不正・未指定は null（既定の白）。
+    const color = (typeof cue.stampColor === 'string' && /^#[0-9a-f]{6}$/i.test(cue.stampColor)) ? cue.stampColor : null;
+    // cue 毎フォント倍率（自動サイズへの倍率）。未指定・非正は 1（従来サイズ）。
+    const scale = (Number.isFinite(cue.fontScale) && cue.fontScale > 0) ? cue.fontScale : 1;
+    // cue 毎の影/縁取り色（#rrggbb）。未指定・不正は null（既定の濃茶）。
+    const shadow = (typeof cue.shadowColor === 'string' && /^#[0-9a-f]{6}$/i.test(cue.shadowColor)) ? cue.shadowColor : null;
+    // cue 毎フォント太さ（100〜900）。未指定・非正は 800（従来）。
+    const weight = (Number.isFinite(cue.fontWeight) && cue.fontWeight > 0) ? cue.fontWeight : 800;
+    // cue 毎縁取り太さ（em）。未指定・非有限は 0.05（従来）。
+    const stroke = Number.isFinite(cue.strokeEm) ? cue.strokeEm : 0.05;
+    // cue 毎回転（度）。未指定・非有限は 0。
+    const rot = Number.isFinite(cue.rotation) ? cue.rotation : 0;
+    // cue 毎白フチ（白いハロー）の強さ（0..1）。未指定・非有限は 0.55（従来）。
+    const halo = Number.isFinite(cue.haloStrength) ? cue.haloStrength : 0.55;
+    setItems((prev) => [...prev, { id, glyph: cue.stamp, anim, holdMs, place, jit, ox, oy, color, scale, shadow, weight, stroke, rot, halo }]);
     const timer = setTimeout(() => {
       setItems((prev) => prev.filter((it) => it.id !== id));
       timers.current.delete(timer);
@@ -147,22 +175,26 @@ function CueStampLayerImpl(props, ref) {
           data-jit={it.jit}
           data-offset-x={it.ox}
           data-offset-y={it.oy}
+          data-scale={it.scale}
           style={{
             position: 'absolute',
             left: 0, top: 0,          // placeNode が毎フレーム上書き
             fontSize: 1,              // placeNode が毎フレーム上書き
             lineHeight: 1,
             whiteSpace: 'nowrap',
-            fontWeight: 800,
-            color: '#fff',
-            textShadow: '0 0.04em 0 rgba(60,48,38,0.25), 0 0 0.18em rgba(255,255,255,0.55)',
-            WebkitTextStroke: '0.05em rgba(60,48,38,0.35)',
+            fontWeight: it.weight || 800,
+            color: it.color || '#fff',
+            // 影/縁取りは cue 毎 shadow（未指定は既定の濃茶）。元の alpha を保つので既定時は従来と完全一致。
+            // 縁取り幅は cue 毎 stroke（未指定は 0.05em）。白フチ(ハロー)の強さは cue 毎 halo（未指定 0.55）。
+            textShadow: `0 0.04em 0 ${hexToRgba(it.shadow || DEFAULT_SHADOW, 0.25)}, 0 0 0.18em rgba(255,255,255,${Number.isFinite(it.halo) ? it.halo : 0.55})`,
+            WebkitTextStroke: `${Number.isFinite(it.stroke) ? it.stroke : 0.05}em ${hexToRgba(it.shadow || DEFAULT_SHADOW, 0.35)}`,
             filter: 'drop-shadow(0 0.06em 0.14em rgba(0,0,0,0.18))',
             animation: `${ANIM_NAME[it.anim]} ${it.holdMs}ms cubic-bezier(.2,.9,.2,1) forwards`,
             willChange: 'transform, opacity',
           }}
         >
-          {it.glyph}
+          {/* 回転は内側 span（外側 div はアニメの transform を使うため別レイヤーで合成）。 */}
+          <span style={{ display: 'inline-block', transform: `rotate(${it.rot || 0}deg)` }}>{it.glyph}</span>
         </div>
       ))}
     </div>

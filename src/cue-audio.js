@@ -136,10 +136,16 @@ export function createSoundboard() {
     else if (cue.tone) playTone(cue.tone, gain);
   }
 
+  // 割り当て済みバッファを外す（効果音を既定＝tone に戻すとき）。
+  function unassign(id) {
+    st.buffers.delete(id);
+  }
+
   return {
     play,
     loadUrl,
     assignFile,
+    unassign,
     resume,
     unlock,
     setMasterGain,

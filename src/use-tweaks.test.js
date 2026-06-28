@@ -44,6 +44,39 @@ import {
   clearCueTexts,
   sanitizeCueTexts,
   MAX_CUE_TEXT_LEN,
+  cueColorStorageKey,
+  loadCueColors,
+  saveCueColors,
+  clearCueColors,
+  sanitizeCueColors,
+  normalizeHexColor,
+  DEFAULT_CUE_COLOR,
+  cueSizeStorageKey,
+  loadCueSizes,
+  saveCueSizes,
+  clearCueSizes,
+  sanitizeCueSizes,
+  clampCueFontScale,
+  DEFAULT_CUE_FONT_SCALE,
+  MIN_CUE_FONT_SCALE,
+  MAX_CUE_FONT_SCALE,
+  cueShadowStorageKey,
+  loadCueShadows,
+  saveCueShadows,
+  clearCueShadows,
+  sanitizeCueShadows,
+  DEFAULT_CUE_SHADOW_COLOR,
+  cueHoldStorageKey, loadCueHolds, saveCueHolds, clearCueHolds, sanitizeCueHolds,
+  clampCueHoldMs, MIN_CUE_HOLD_MS, MAX_CUE_HOLD_MS,
+  cueAnimStorageKey, loadCueAnims, saveCueAnims, sanitizeCueAnims, normalizeCueAnim, CUE_ANIMS,
+  cueWeightStorageKey, loadCueWeights, saveCueWeights, sanitizeCueWeights,
+  clampCueFontWeight, DEFAULT_CUE_FONT_WEIGHT,
+  cueStrokeStorageKey, loadCueStrokes, saveCueStrokes, sanitizeCueStrokes,
+  clampCueStroke, DEFAULT_CUE_STROKE_EM, MAX_CUE_STROKE_EM,
+  cueRotationStore, MAX_CUE_ROTATION,
+  cuePlaceStore, cueHaloStore, DEFAULT_CUE_HALO,
+  cueGlowStore, MAX_CUE_GLOW, cueGlowColorStore,
+  cueGainStore, MAX_CUE_GAIN, cueSoundStore, MAX_CUE_SOUND_LEN,
   tweaksExportFilename,
   safeThemeName,
   themeExportFilename,
@@ -932,6 +965,323 @@ describe('sanitizeCueTexts', () => {
     expect(sanitizeCueTexts(null)).toEqual({});
     expect(sanitizeCueTexts([1, 2])).toEqual({});
     expect(sanitizeCueTexts('x')).toEqual({});
+  });
+});
+
+// 演出（スタンプ）の cue 毎カスタム文字色 { [cueId]: '#rrggbb' } の永続化。
+describe('演出文字色（:cuecolor）の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('cueColorStorageKey は :cuecolor を付ける', () => {
+    expect(cueColorStorageKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:cuecolor');
+  });
+
+  it('save した色マップを load で取り戻せる（小文字 #rrggbb）', () => {
+    saveCueColors({ hello: '#FF8800', anger: '#0af' }, 'k');
+    expect(loadCueColors('k')).toEqual({ hello: '#ff8800', anger: '#00aaff' });
+  });
+
+  it('不正な色のエントリは捨てる', () => {
+    saveCueColors({ ok: '#123456', bad1: 'red', bad2: '#12', bad3: 5, bad4: null }, 'k');
+    expect(loadCueColors('k')).toEqual({ ok: '#123456' });
+  });
+
+  it('未保存・壊れ JSON・非オブジェクトは {}', () => {
+    expect(loadCueColors('k')).toEqual({});
+    store.set(cueColorStorageKey('k'), '{ broken');
+    expect(loadCueColors('k')).toEqual({});
+    store.set(cueColorStorageKey('k'), JSON.stringify([1, 2]));
+    expect(loadCueColors('k')).toEqual({});
+  });
+
+  it('clear で消すと load は {} に戻る', () => {
+    saveCueColors({ hello: '#abcdef' }, 'k');
+    clearCueColors('k');
+    expect(loadCueColors('k')).toEqual({});
+  });
+});
+
+// normalizeHexColor: 文字列を #rrggbb（小文字）に正規化、#rgb は展開、不正は null。
+describe('normalizeHexColor', () => {
+  it('#rrggbb はそのまま小文字化', () => {
+    expect(normalizeHexColor('#AABBCC')).toBe('#aabbcc');
+    expect(normalizeHexColor('  #123abc  ')).toBe('#123abc');
+  });
+  it('#rgb は #rrggbb に展開', () => {
+    expect(normalizeHexColor('#0af')).toBe('#00aaff');
+    expect(normalizeHexColor('#FFF')).toBe('#ffffff');
+  });
+  it('不正・非文字列は null', () => {
+    expect(normalizeHexColor('red')).toBeNull();
+    expect(normalizeHexColor('#12')).toBeNull();
+    expect(normalizeHexColor('123456')).toBeNull();
+    expect(normalizeHexColor(null)).toBeNull();
+    expect(normalizeHexColor(0xffffff)).toBeNull();
+  });
+  it('DEFAULT_CUE_COLOR は白の #rrggbb', () => {
+    expect(DEFAULT_CUE_COLOR).toBe('#ffffff');
+    expect(normalizeHexColor(DEFAULT_CUE_COLOR)).toBe('#ffffff');
+  });
+});
+
+// sanitizeCueColors: 保存マップを { [cueId]: '#rrggbb' } だけに正規化する純関数（DOM 非依存）。
+describe('sanitizeCueColors', () => {
+  it('正しい色は正規化して残す、不正は捨てる', () => {
+    expect(sanitizeCueColors({ a: '#FFF', b: '#112233', '': '#000000', c: 'nope' }))
+      .toEqual({ a: '#ffffff', b: '#112233' });
+  });
+  it('非オブジェクト入力は {}', () => {
+    expect(sanitizeCueColors(null)).toEqual({});
+    expect(sanitizeCueColors([1, 2])).toEqual({});
+    expect(sanitizeCueColors('x')).toEqual({});
+  });
+});
+
+// 演出スタンプの cue 毎フォント倍率 { [cueId]: number } の永続化。
+describe('演出フォント倍率（:cuesize）の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('cueSizeStorageKey は :cuesize を付ける', () => {
+    expect(cueSizeStorageKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:cuesize');
+  });
+
+  it('save した倍率マップを load で取り戻せる', () => {
+    saveCueSizes({ hello: 1.5, anger: 0.8 }, 'k');
+    expect(loadCueSizes('k')).toEqual({ hello: 1.5, anger: 0.8 });
+  });
+
+  it('範囲外は clamp、非数値は捨てる', () => {
+    saveCueSizes({ big: 9, small: 0.01, ok: 1.2, bad: 'x', nul: null }, 'k');
+    expect(loadCueSizes('k')).toEqual({ big: MAX_CUE_FONT_SCALE, small: MIN_CUE_FONT_SCALE, ok: 1.2 });
+  });
+
+  it('未保存・壊れ・非オブジェクトは {}、clear で {}', () => {
+    expect(loadCueSizes('k')).toEqual({});
+    store.set(cueSizeStorageKey('k'), '{ broken');
+    expect(loadCueSizes('k')).toEqual({});
+    saveCueSizes({ hello: 1.4 }, 'k');
+    clearCueSizes('k');
+    expect(loadCueSizes('k')).toEqual({});
+  });
+});
+
+// clampCueFontScale: 倍率を [MIN,MAX] に収め、非有限は既定(1.0)へ正規化する純関数（DOM 非依存）。
+describe('clampCueFontScale', () => {
+  it('範囲内はそのまま', () => {
+    expect(clampCueFontScale(1.5)).toBe(1.5);
+  });
+  it('範囲外は丸める', () => {
+    expect(clampCueFontScale(99)).toBe(MAX_CUE_FONT_SCALE);
+    expect(clampCueFontScale(0)).toBe(MIN_CUE_FONT_SCALE);
+  });
+  it('非有限は既定(1.0)', () => {
+    expect(clampCueFontScale(NaN)).toBe(DEFAULT_CUE_FONT_SCALE);
+    expect(clampCueFontScale(undefined)).toBe(DEFAULT_CUE_FONT_SCALE);
+    expect(DEFAULT_CUE_FONT_SCALE).toBe(1);
+  });
+});
+
+// sanitizeCueSizes: 保存マップを { [cueId]: clamp 済み数値 } だけに正規化する純関数。
+describe('sanitizeCueSizes', () => {
+  it('数値は clamp して残す、不正は捨てる', () => {
+    expect(sanitizeCueSizes({ a: 1.2, b: 99, '': 1, c: 'x', d: null }))
+      .toEqual({ a: 1.2, b: MAX_CUE_FONT_SCALE });
+  });
+  it('非オブジェクト入力は {}', () => {
+    expect(sanitizeCueSizes(null)).toEqual({});
+    expect(sanitizeCueSizes('x')).toEqual({});
+  });
+});
+
+// 演出スタンプの cue 毎影色 { [cueId]: '#rrggbb' } の永続化。
+describe('演出影色（:cueshadow）の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('cueShadowStorageKey は :cueshadow を付ける', () => {
+    expect(cueShadowStorageKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:cueshadow');
+  });
+
+  it('save した影色マップを load で取り戻せる（正規化）', () => {
+    saveCueShadows({ hello: '#000', anger: '#11223344'.slice(0, 7) }, 'k');
+    expect(loadCueShadows('k')).toEqual({ hello: '#000000', anger: '#112233' });
+  });
+
+  it('不正色は捨てる、clear で {}', () => {
+    saveCueShadows({ ok: '#abcdef', bad: 'navy' }, 'k');
+    expect(loadCueShadows('k')).toEqual({ ok: '#abcdef' });
+    clearCueShadows('k');
+    expect(loadCueShadows('k')).toEqual({});
+  });
+
+  it('既定影色は白ではなく濃茶 #3c3026', () => {
+    expect(DEFAULT_CUE_SHADOW_COLOR).toBe('#3c3026');
+    expect(sanitizeCueShadows({ a: DEFAULT_CUE_SHADOW_COLOR })).toEqual({ a: '#3c3026' });
+  });
+});
+
+// 表示時間 / アニメ / 太さ / 縁取り の永続化（localStorage モックを共有）。
+describe('演出スタンプの追加パラメータ永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => { delete globalThis.window; });
+
+  // 表示時間（:cuehold）
+  it('cuehold: キー名・save/load・clamp・clear', () => {
+    expect(cueHoldStorageKey('k')).toBe('k:cuehold');
+    saveCueHolds({ a: 1800, big: 99999, small: 1, bad: 'x' }, 'k');
+    expect(loadCueHolds('k')).toEqual({ a: 1800, big: MAX_CUE_HOLD_MS, small: MIN_CUE_HOLD_MS });
+    clearCueHolds('k');
+    expect(loadCueHolds('k')).toEqual({});
+  });
+  it('clampCueHoldMs: 範囲内整数化、非有限は null', () => {
+    expect(clampCueHoldMs(1800.4)).toBe(1800);
+    expect(clampCueHoldMs(10)).toBe(MIN_CUE_HOLD_MS);
+    expect(clampCueHoldMs(NaN)).toBeNull();
+  });
+
+  // アニメ（:cueanim）
+  it('cueanim: 有効値のみ残す・clear', () => {
+    expect(cueAnimStorageKey('k')).toBe('k:cueanim');
+    saveCueAnims({ a: 'rise', b: 'shake', bad: 'zoom', c: 5 }, 'k');
+    expect(loadCueAnims('k')).toEqual({ a: 'rise', b: 'shake' });
+    expect(normalizeCueAnim('pop')).toBe('pop');
+    expect(normalizeCueAnim('nope')).toBeNull();
+    expect(CUE_ANIMS).toEqual(['pop', 'rise', 'shake']);
+  });
+  it('sanitizeCueAnims は不正を捨てる', () => {
+    expect(sanitizeCueAnims({ a: 'pop', b: 'x', '': 'rise' })).toEqual({ a: 'pop' });
+  });
+
+  // 太さ（:cueweight）
+  it('cueweight: 100刻みclamp・既定800', () => {
+    expect(cueWeightStorageKey('k')).toBe('k:cueweight');
+    expect(DEFAULT_CUE_FONT_WEIGHT).toBe(800);
+    expect(clampCueFontWeight(740)).toBe(700);
+    expect(clampCueFontWeight(9999)).toBe(900);
+    expect(clampCueFontWeight(0)).toBe(100);
+    expect(clampCueFontWeight(NaN)).toBe(800);
+    saveCueWeights({ a: 740, b: 'x' }, 'k');
+    expect(loadCueWeights('k')).toEqual({ a: 700 });
+    expect(sanitizeCueWeights({ a: 300 })).toEqual({ a: 300 });
+  });
+
+  // 縁取り（:cuestroke）
+  it('cuestroke: 0〜0.2 clamp・既定0.05', () => {
+    expect(cueStrokeStorageKey('k')).toBe('k:cuestroke');
+    expect(DEFAULT_CUE_STROKE_EM).toBe(0.05);
+    expect(clampCueStroke(0.1)).toBe(0.1);
+    expect(clampCueStroke(9)).toBe(MAX_CUE_STROKE_EM);
+    expect(clampCueStroke(-1)).toBe(0);
+    expect(clampCueStroke(NaN)).toBe(0.05);
+    saveCueStrokes({ a: 0.12, b: 'x' }, 'k');
+    expect(loadCueStrokes('k')).toEqual({ a: 0.12 });
+    expect(sanitizeCueStrokes(null)).toEqual({});
+  });
+});
+
+// 追加カスタム（回転/位置/白フチ/発光/音量/効果音）の単一値マップ（makeCueValueMap）。
+describe('追加 cue カスタム（単一値マップ）', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => { delete globalThis.window; });
+
+  it('回転: キー・clamp(±45)・非数値除去・save/load/clear', () => {
+    expect(cueRotationStore.key('k')).toBe('k:cuerot');
+    cueRotationStore.save({ a: 30, big: 999, neg: -999, bad: 'x' }, 'k');
+    expect(cueRotationStore.load('k')).toEqual({ a: 30, big: MAX_CUE_ROTATION, neg: -MAX_CUE_ROTATION });
+    cueRotationStore.clear('k');
+    expect(cueRotationStore.load('k')).toEqual({});
+  });
+
+  it('表示位置: above/over のみ残す', () => {
+    expect(cuePlaceStore.key('k')).toBe('k:cueplace');
+    cuePlaceStore.save({ a: 'above', b: 'over', bad: 'side' }, 'k');
+    expect(cuePlaceStore.load('k')).toEqual({ a: 'above', b: 'over' });
+  });
+
+  it('白フチ: 0..1 clamp・既定0.55', () => {
+    expect(DEFAULT_CUE_HALO).toBe(0.55);
+    cueHaloStore.save({ a: 0.3, hi: 9, lo: -1, bad: 'x' }, 'k');
+    expect(cueHaloStore.load('k')).toEqual({ a: 0.3, hi: 1, lo: 0 });
+  });
+
+  it('発光強さ: 0..10 clamp、発光色: #rrggbb 正規化', () => {
+    cueGlowStore.save({ a: 5, hi: 99, bad: 'x' }, 'k');
+    expect(cueGlowStore.load('k')).toEqual({ a: 5, hi: MAX_CUE_GLOW });
+    cueGlowColorStore.save({ a: '#ABC', bad: 'red' }, 'k');
+    expect(cueGlowColorStore.load('k')).toEqual({ a: '#aabbcc' });
+  });
+
+  it('音量: 0..3 clamp・既定1', () => {
+    cueGainStore.save({ a: 1.5, hi: 99, lo: -1, bad: 'x' }, 'k');
+    expect(cueGainStore.load('k')).toEqual({ a: 1.5, hi: MAX_CUE_GAIN, lo: 0 });
+  });
+
+  it('効果音: data:audio のみ・サイズ上限・非audioは捨てる', () => {
+    const ok = 'data:audio/wav;base64,AAAA';
+    const tooBig = 'data:audio/wav;base64,' + 'A'.repeat(MAX_CUE_SOUND_LEN);
+    cueSoundStore.save({ a: ok, big: tooBig, bad: 'data:image/png;base64,AA', x: 5 }, 'k');
+    expect(cueSoundStore.load('k')).toEqual({ a: ok });
   });
 });
 

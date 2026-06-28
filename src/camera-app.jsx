@@ -28,6 +28,18 @@ import {
   loadCueOffsets, saveCueOffsets, clampCueOffset,
   sanitizeCueOffsets, equalCueOffsetMaps,
   loadCueTexts, saveCueTexts, sanitizeCueTexts, MAX_CUE_TEXT_LEN,
+  loadCueColors, saveCueColors, sanitizeCueColors, normalizeHexColor, DEFAULT_CUE_COLOR,
+  loadCueSizes, saveCueSizes, sanitizeCueSizes, clampCueFontScale, DEFAULT_CUE_FONT_SCALE,
+  loadCueShadows, saveCueShadows, sanitizeCueShadows, DEFAULT_CUE_SHADOW_COLOR,
+  loadCueHolds, saveCueHolds, sanitizeCueHolds, clampCueHoldMs,
+  loadCueAnims, saveCueAnims, sanitizeCueAnims, normalizeCueAnim,
+  loadCueWeights, saveCueWeights, sanitizeCueWeights, clampCueFontWeight, DEFAULT_CUE_FONT_WEIGHT,
+  loadCueStrokes, saveCueStrokes, sanitizeCueStrokes, clampCueStroke, DEFAULT_CUE_STROKE_EM,
+  cueRotationStore, MAX_CUE_ROTATION, DEFAULT_CUE_ROTATION,
+  cuePlaceStore, cueHaloStore, DEFAULT_CUE_HALO,
+  cueGlowStore, MAX_CUE_GLOW, cueGlowColorStore, DEFAULT_CUE_GLOW_COLOR,
+  cueGainStore, MAX_CUE_GAIN, DEFAULT_CUE_GAIN,
+  cueSoundStore, MAX_CUE_SOUND_LEN,
 } from './use-tweaks.js';
 import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
 
@@ -405,8 +417,19 @@ function syncableTweaks(tw) {
   return out;
 }
 
+// 単一値マップ store（makeCueValueMap 産）を React 状態に載せる小ヘルパー。
+// [map, ref, apply] を返す。ref は useMemo 化された cueController から最新値を同期で読むため。
+function useCueMap(store) {
+  const [map, setMap] = useState(() => store.load());
+  const ref = useRef(map);
+  useEffect(() => { ref.current = map; }, [map]);
+  const apply = useCallback((m) => { const n = store.sanitize(m); setMap(n); store.save(n); }, [store]);
+  return [map, ref, apply];
+}
+
 function App() {
-  // 演出（スタンプ）の cue 毎アバター相対オフセット { [cueId]: {x,y} }（em）。ローカル限定（relay しない）。
+  // 演出（スタンプ）の cue 毎アバター相対オフセット { [cueId]: {x,y} }（em）。発火時に tx→rx へ relay する
+  // （文字/色/倍率/影色と同様、OBS のスタンプ位置も揃える）。ただし保存はテーマ・サイドカーとして持ち運ぶ。
   // テーマと一緒に持ち運ぶ「サイドカー」として useTweaks に渡す（保存/適用/書き出し/読み込みで連動）。
   // useTweaks より前で宣言する必要があるため、cueController 周りより手前に置く。
   // 発火は useMemo 化された cueController を通るので、最新値は ref 経由で読む（クロージャの陳腐化回避）。
@@ -430,6 +453,58 @@ function App() {
     setCueTexts(next);
     saveCueTexts(next);
   }, []);
+  // 演出（スタンプ）の cue 毎カスタム文字色 { [cueId]: '#rrggbb' }。:cuetext と同型のローカル限定・テーマ非連携。
+  const [cueColors, setCueColors] = useState(() => loadCueColors());
+  const cueColorsRef = useRef(cueColors);
+  useEffect(() => { cueColorsRef.current = cueColors; }, [cueColors]);
+  const applyCueColors = useCallback((map) => {
+    const next = sanitizeCueColors(map);
+    setCueColors(next);
+    saveCueColors(next);
+  }, []);
+  // 演出（スタンプ）の cue 毎フォント倍率 { [cueId]: number }。:cuecolor と同型のローカル限定・テーマ非連携。
+  const [cueSizes, setCueSizes] = useState(() => loadCueSizes());
+  const cueSizesRef = useRef(cueSizes);
+  useEffect(() => { cueSizesRef.current = cueSizes; }, [cueSizes]);
+  const applyCueSizes = useCallback((map) => {
+    const next = sanitizeCueSizes(map);
+    setCueSizes(next);
+    saveCueSizes(next);
+  }, []);
+  // 演出（スタンプ）の cue 毎影色 { [cueId]: '#rrggbb' }。同上。
+  const [cueShadows, setCueShadows] = useState(() => loadCueShadows());
+  const cueShadowsRef = useRef(cueShadows);
+  useEffect(() => { cueShadowsRef.current = cueShadows; }, [cueShadows]);
+  const applyCueShadows = useCallback((map) => {
+    const next = sanitizeCueShadows(map);
+    setCueShadows(next);
+    saveCueShadows(next);
+  }, []);
+  // 演出（スタンプ）の cue 毎: 表示時間(ms) / アニメ / フォント太さ / 縁取り幅(em)。いずれもローカル限定・テーマ非連携。
+  const [cueHolds, setCueHolds] = useState(() => loadCueHolds());
+  const cueHoldsRef = useRef(cueHolds);
+  useEffect(() => { cueHoldsRef.current = cueHolds; }, [cueHolds]);
+  const applyCueHolds = useCallback((map) => { const n = sanitizeCueHolds(map); setCueHolds(n); saveCueHolds(n); }, []);
+  const [cueAnims, setCueAnims] = useState(() => loadCueAnims());
+  const cueAnimsRef = useRef(cueAnims);
+  useEffect(() => { cueAnimsRef.current = cueAnims; }, [cueAnims]);
+  const applyCueAnims = useCallback((map) => { const n = sanitizeCueAnims(map); setCueAnims(n); saveCueAnims(n); }, []);
+  const [cueWeights, setCueWeights] = useState(() => loadCueWeights());
+  const cueWeightsRef = useRef(cueWeights);
+  useEffect(() => { cueWeightsRef.current = cueWeights; }, [cueWeights]);
+  const applyCueWeights = useCallback((map) => { const n = sanitizeCueWeights(map); setCueWeights(n); saveCueWeights(n); }, []);
+  const [cueStrokes, setCueStrokes] = useState(() => loadCueStrokes());
+  const cueStrokesRef = useRef(cueStrokes);
+  useEffect(() => { cueStrokesRef.current = cueStrokes; }, [cueStrokes]);
+  const applyCueStrokes = useCallback((map) => { const n = sanitizeCueStrokes(map); setCueStrokes(n); saveCueStrokes(n); }, []);
+  // 追加カスタム（回転 / 表示位置 / 白フチ / 発光強さ / 発光色 / 音量 / 効果音）。useCueMap で簡潔に。
+  const [cueRotations, cueRotationsRef, applyCueRotations] = useCueMap(cueRotationStore);
+  const [cuePlaces, cuePlacesRef, applyCuePlaces] = useCueMap(cuePlaceStore);
+  const [cueHalos, cueHalosRef, applyCueHalos] = useCueMap(cueHaloStore);
+  const [cueGlows, cueGlowsRef, applyCueGlows] = useCueMap(cueGlowStore);
+  const [cueGlowColors, cueGlowColorsRef, applyCueGlowColors] = useCueMap(cueGlowColorStore);
+  const [cueGains, cueGainsRef, applyCueGains] = useCueMap(cueGainStore);
+  const [cueSounds, cueSoundsRef, applyCueSounds] = useCueMap(cueSoundStore);
   // useTweaks に渡す汎用サイドカー { key, value, write, equal }。識別を安定させるため
   // cueOffsets が変わったときだけ作り直す（テーマの dirty 再計算のトリガにもなる）。
   const themeSidecar = useMemo(
@@ -467,6 +542,9 @@ function App() {
   const cueBoard = useMemo(() => createSoundboard(), []);
   const cueStampRef = useRef(null);
   const cueSendRef = useRef(null); // relayApi.sendCue を後で差す（render 末で代入）
+  // rx: tx から来たカスタム文字/色を発火直前に差し込む一時オーバーライド { stamp?, color? }。
+  // cueController.run は同期実行なので、run の前後で set/clear すれば pop コールバックが拾える。
+  const relayCueOverrideRef = useRef(null);
   const [cueFx, setCueFx] = useState(null); // 演出の一時エフェクト（グローのフラッシュ）
   const cueFxTimerRef = useRef(0);
   const gesturePlayRef = useRef(null); // 再生中ジェスチャー { name, start, base }（描画ループが読む）
@@ -474,25 +552,75 @@ function App() {
   // cueOffsets / cueOffsetsRef / applyCueOffsets は useTweaks 連携のため App 冒頭で宣言済み。
   const cueController = useMemo(
     () => createCueController(DEFAULT_CUES, (cue) => {
-      cueBoard.play(cue);
-      // __offset は cue 毎の保存オフセット。未設定は undefined → スタンプ側で 0（従来位置）。
-      // stamp は cue 毎カスタム文字で上書き。保存値は非空保証なので || で既定（cue.stamp）へフォールバック。
-      if (cueStampRef.current) cueStampRef.current.pop({ ...cue, stamp: cueTextsRef.current[cue.id] || cue.stamp, __offset: cueOffsetsRef.current[cue.id] });
-      // effect 付きキューは一定時間だけグローを強める（音＋スタンプ＋発光の複合演出）。
-      if (cue.effect) {
+      // 優先順位は全項目共通: rx の relay オーバーライド（tx から届いた値）＞ ローカル保存値 ＞ 既定。
+      // これで tx 側の全カスタムが OBS(rx/CEF) にも反映される（効果音の差し替えだけは relay 非対象）。
+      const relayOv = relayCueOverrideRef.current;
+      const num = (a, b) => (Number.isFinite(a) ? a : b); // relay 優先で有限なら採用
+      // 効果音の音量を上書きして再生（差し替え音源は cue.id 鍵のバッファを cueBoard 側が持つ）。
+      const gain = num(relayOv && relayOv.gain, cueGainsRef.current[cue.id] ?? cue.gain);
+      cueBoard.play({ ...cue, gain });
+      // スタンプ各パラメータ。未設定は undefined → スタンプ側で従来既定。
+      const stamp = (relayOv && relayOv.stamp) || cueTextsRef.current[cue.id] || cue.stamp;
+      const stampColor = (relayOv && relayOv.color) || cueColorsRef.current[cue.id];
+      const fontScale = num(relayOv && relayOv.size, cueSizesRef.current[cue.id]);
+      const shadowColor = (relayOv && relayOv.shadow) || cueShadowsRef.current[cue.id];
+      const offset = (relayOv && relayOv.offset) || cueOffsetsRef.current[cue.id];
+      const holdMs = num(relayOv && relayOv.hold, cueHoldsRef.current[cue.id] || cue.holdMs);
+      const anim = (relayOv && relayOv.anim) || cueAnimsRef.current[cue.id] || cue.anim;
+      const fontWeight = num(relayOv && relayOv.weight, cueWeightsRef.current[cue.id]);
+      const strokeEm = num(relayOv && relayOv.stroke, cueStrokesRef.current[cue.id]);
+      const rotation = num(relayOv && relayOv.rotation, cueRotationsRef.current[cue.id]);
+      const place = (relayOv && relayOv.place) || cuePlacesRef.current[cue.id] || cue.place;
+      const haloStrength = num(relayOv && relayOv.halo, cueHalosRef.current[cue.id]);
+      if (cueStampRef.current) cueStampRef.current.pop({ ...cue, stamp, stampColor, fontScale, shadowColor, holdMs, anim, fontWeight, strokeEm, rotation, place, haloStrength, __offset: offset });
+      // 発光フラッシュ（アバターのグロー）。強さ・色を cue 毎に上書き。強さ>0 のときだけ出す。
+      const glowStr = num(relayOv && relayOv.glow, cueGlowsRef.current[cue.id] ?? (cue.effect ? cue.effect.glow : 0));
+      const glowCol = (relayOv && relayOv.glowColor) || cueGlowColorsRef.current[cue.id] || (cue.effect ? cue.effect.glowColor : undefined);
+      const glowMs = (cue.effect && cue.effect.ms) || 700;
+      if (Number.isFinite(glowStr) && glowStr > 0) {
         clearTimeout(cueFxTimerRef.current);
-        setCueFx(cue.effect);
-        cueFxTimerRef.current = setTimeout(() => setCueFx(null), cue.effect.ms || 700);
+        setCueFx({ glow: glowStr, glowColor: glowCol, ms: glowMs });
+        cueFxTimerRef.current = setTimeout(() => setCueFx(null), glowMs);
       }
       // gesture 付きキューは うなずき/回転/いやいや を再生（描画ループが顔追従を一時上書き）。
       if (cue.gesture && GESTURES[cue.gesture]) {
         gesturePlayRef.current = { name: cue.gesture, start: performance.now(), base: null };
       }
-      if (mode === 'tx' && cueSendRef.current) cueSendRef.current(cue.id);
+      // tx → rx 転送。カスタム文字/色を持つ cue は一緒に送り、OBS 側でも同じ見た目にする。
+      if (mode === 'tx' && cueSendRef.current) {
+        cueSendRef.current(cue.id, {
+          stamp: cueTextsRef.current[cue.id] || undefined,
+          color: cueColorsRef.current[cue.id] || undefined,
+          size: cueSizesRef.current[cue.id] || undefined,
+          shadow: cueShadowsRef.current[cue.id] || undefined,
+          offset: cueOffsetsRef.current[cue.id] || undefined,
+          // 数値は 0 もあり得る（stroke=0 等）ので直接渡す（undefined はそのまま未送信になる）。
+          hold: cueHoldsRef.current[cue.id],
+          anim: cueAnimsRef.current[cue.id],
+          weight: cueWeightsRef.current[cue.id],
+          stroke: cueStrokesRef.current[cue.id],
+          rotation: cueRotationsRef.current[cue.id],
+          place: cuePlacesRef.current[cue.id],
+          halo: cueHalosRef.current[cue.id],
+          glow: cueGlowsRef.current[cue.id],
+          glowColor: cueGlowColorsRef.current[cue.id],
+          gain: cueGainsRef.current[cue.id],
+          // 効果音(差し替え)は relay しない（pose フレームと同じ WS を圧迫しないため・ローカル限定）。
+        });
+      }
     }),
+    // 全 cue* 値は ref 経由で読むので deps は [cueBoard, mode] のみ。useCueMap 産の ref は
+    // 配列分割代入のため linter が安定参照と判定できないが実体は useRef で安定（誤検知を抑制）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [cueBoard, mode],
   );
   useEffect(() => () => clearTimeout(cueFxTimerRef.current), []); // アンマウント時にタイマ掃除
+  // 起動時: 保存済みのカスタム効果音(data URL)を cueBoard へ読み込む（cue.id 鍵のバッファ）。
+  useEffect(() => {
+    for (const [id, url] of Object.entries(cueSoundsRef.current)) cueBoard.loadUrl(id, url);
+    // 起動時1回だけ。以降の差し替えは commit 内で loadUrl/unassign 済み。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cueBoard]);
 
   // ── 演出の位置調整（編集モード）─────────────────────────────────────────────
   // トリガーは2経路: 可視トグルで編集モードに入り cue ボタンで対象を選ぶ／PC 右クリック・
@@ -542,24 +670,127 @@ function App() {
       return !v;
     });
   };
-  // 保存: 位置オフセットとカスタム文字を同時に確定する（パネルの保存ボタンは1つ）。
-  //  - オフセット: clamp 済みを map へ反映。{0,0} はエントリ削除（既定位置）。
-  //  - 文字: trim + 上限。空（空白のみ）または既定 stamp と同一ならエントリ削除（既定文字へフォールバック）。
-  // 永続化は applyCueOffsets / applyCueTexts（state＋localStorage 同期）に委譲する。
-  const commitCueEdit = (offset, text) => {
+  // 保存: パネルの全パラメータを 1 つの edit オブジェクトで受け、各サイドカーへ同時確定する（保存ボタンは1つ）。
+  // 各項目とも「既定（cue 由来 or 定数）と同一なら map から削除」＝既定フォールバック（offset の {0,0} と同じ思想）。
+  // 永続化は apply*（state＋localStorage 同期）に委譲。edit = { offset, text, color, size, shadow, hold, anim, weight, stroke }。
+  const commitCueEdit = (edit) => {
     if (!editingCueId) return;
-    const o = clampCueOffset(offset);
+    const e = edit || {};
+    const cue = cueController.cues.find((c) => c.id === editingCueId);
+
+    const o = clampCueOffset(e.offset);
     const nextOff = { ...cueOffsets };
     if (o.x === 0 && o.y === 0) delete nextOff[editingCueId];
     else nextOff[editingCueId] = o;
     applyCueOffsets(nextOff);
 
-    const cue = cueController.cues.find((c) => c.id === editingCueId);
-    const norm = (typeof text === 'string' ? text : '').trim().slice(0, MAX_CUE_TEXT_LEN);
+    const norm = (typeof e.text === 'string' ? e.text : '').trim().slice(0, MAX_CUE_TEXT_LEN);
     const nextText = { ...cueTexts };
     if (!norm || norm === (cue && cue.stamp ? cue.stamp : '')) delete nextText[editingCueId];
     else nextText[editingCueId] = norm;
     applyCueTexts(nextText);
+
+    const col = normalizeHexColor(e.color);
+    const nextColor = { ...cueColors };
+    if (!col || col === DEFAULT_CUE_COLOR) delete nextColor[editingCueId];
+    else nextColor[editingCueId] = col;
+    applyCueColors(nextColor);
+
+    // フォント倍率: clamp。既定(1.0)と同一なら削除。
+    const sz = clampCueFontScale(e.size);
+    const nextSize = { ...cueSizes };
+    if (sz === DEFAULT_CUE_FONT_SCALE) delete nextSize[editingCueId];
+    else nextSize[editingCueId] = sz;
+    applyCueSizes(nextSize);
+
+    // 影色: 正規化。不正または既定(濃茶)と同一なら削除。
+    const sh = normalizeHexColor(e.shadow);
+    const nextShadow = { ...cueShadows };
+    if (!sh || sh === DEFAULT_CUE_SHADOW_COLOR) delete nextShadow[editingCueId];
+    else nextShadow[editingCueId] = sh;
+    applyCueShadows(nextShadow);
+
+    // 表示時間: clamp。cue 既定(holdMs)と同一/無効なら削除。
+    const hd = clampCueHoldMs(e.hold);
+    const nextHold = { ...cueHolds };
+    if (hd == null || hd === (cue ? cue.holdMs : null)) delete nextHold[editingCueId];
+    else nextHold[editingCueId] = hd;
+    applyCueHolds(nextHold);
+
+    // アニメ: 検証。cue 既定 anim と同一/無効なら削除。
+    const an = normalizeCueAnim(e.anim);
+    const nextAnim = { ...cueAnims };
+    if (!an || an === (cue ? cue.anim : null)) delete nextAnim[editingCueId];
+    else nextAnim[editingCueId] = an;
+    applyCueAnims(nextAnim);
+
+    // フォント太さ: clamp。既定(800)と同一なら削除。
+    const wt = clampCueFontWeight(e.weight);
+    const nextWeight = { ...cueWeights };
+    if (wt === DEFAULT_CUE_FONT_WEIGHT) delete nextWeight[editingCueId];
+    else nextWeight[editingCueId] = wt;
+    applyCueWeights(nextWeight);
+
+    // 縁取り幅: clamp。既定(0.05em)と同一なら削除。
+    const st = clampCueStroke(e.stroke);
+    const nextStroke = { ...cueStrokes };
+    if (st === DEFAULT_CUE_STROKE_EM) delete nextStroke[editingCueId];
+    else nextStroke[editingCueId] = st;
+    applyCueStrokes(nextStroke);
+
+    // 1 件分の値を store の sanitize で正規化する小道具（不正は undefined）。
+    const one = (store, v) => store.sanitize({ v }).v;
+
+    // 回転: 既定(0)と同一なら削除。
+    const rot = one(cueRotationStore, e.rotation) ?? DEFAULT_CUE_ROTATION;
+    const nextRot = { ...cueRotations };
+    if (rot === DEFAULT_CUE_ROTATION) delete nextRot[editingCueId]; else nextRot[editingCueId] = rot;
+    applyCueRotations(nextRot);
+
+    // 表示位置: cue 既定(place)と同一/無効なら削除。
+    const pl = one(cuePlaceStore, e.place);
+    const nextPlace = { ...cuePlaces };
+    if (!pl || pl === (cue ? cue.place : 'over')) delete nextPlace[editingCueId]; else nextPlace[editingCueId] = pl;
+    applyCuePlaces(nextPlace);
+
+    // 白フチ強さ: 既定(0.55)と同一なら削除。
+    const ha = one(cueHaloStore, e.halo) ?? DEFAULT_CUE_HALO;
+    const nextHalo = { ...cueHalos };
+    if (ha === DEFAULT_CUE_HALO) delete nextHalo[editingCueId]; else nextHalo[editingCueId] = ha;
+    applyCueHalos(nextHalo);
+
+    // 発光強さ: cue 既定(effect.glow か 0)と同一なら削除。
+    const defGlow = (cue && cue.effect && Number.isFinite(cue.effect.glow)) ? cue.effect.glow : 0;
+    const gl = one(cueGlowStore, e.glow) ?? defGlow;
+    const nextGlow = { ...cueGlows };
+    if (gl === defGlow) delete nextGlow[editingCueId]; else nextGlow[editingCueId] = gl;
+    applyCueGlows(nextGlow);
+
+    // 発光色: cue 既定(effect.glowColor か DEFAULT)と同一/無効なら削除。
+    const defGlowCol = (cue && cue.effect && cue.effect.glowColor)
+      ? normalizeHexColor(cue.effect.glowColor) : DEFAULT_CUE_GLOW_COLOR;
+    const gc = one(cueGlowColorStore, e.glowColor);
+    const nextGlowCol = { ...cueGlowColors };
+    if (!gc || gc === defGlowCol) delete nextGlowCol[editingCueId]; else nextGlowCol[editingCueId] = gc;
+    applyCueGlowColors(nextGlowCol);
+
+    // 音量: 既定(1.0)と同一なら削除。
+    const gn = one(cueGainStore, e.gain) ?? DEFAULT_CUE_GAIN;
+    const nextGain = { ...cueGains };
+    if (gn === DEFAULT_CUE_GAIN) delete nextGain[editingCueId]; else nextGain[editingCueId] = gn;
+    applyCueGains(nextGain);
+
+    // 効果音(差し替え): data:audio の data URL は保存＋ライブ読込。空なら削除＋バッファ解放。
+    const snd = typeof e.sound === 'string' ? e.sound : '';
+    const nextSound = { ...cueSounds };
+    if (snd.startsWith('data:audio') && snd.length <= MAX_CUE_SOUND_LEN) {
+      nextSound[editingCueId] = snd;
+      cueBoard.loadUrl(editingCueId, snd);
+    } else {
+      delete nextSound[editingCueId];
+      cueBoard.unassign(editingCueId);
+    }
+    applyCueSounds(nextSound);
 
     setEditingCueId(null); // 編集モードは維持（別 cue を続けて調整できる）
   };
@@ -715,7 +946,32 @@ function App() {
     getConfig: () => syncableTweaks(tweaksRef.current),
     onState: (arr) => { latestFrameRef.current = decodeStateFrame(arr); },
     onConfig: (cfg) => setRxConfig((prev) => ({ ...prev, ...cfg })),
-    onCue: (id) => cueController.run(id), // rx: tx から来た演出をこの端末(OBS)で再生
+    // rx: tx から来た演出をこの端末(OBS)で再生。カスタム文字/色が同梱されていれば一時オーバーライドに
+    // 積んで run（同期）→ pop コールバックが拾う→直後に clear。relay 値は信頼私設網前提だが念のため検証する。
+    onCue: (id, over) => {
+      relayCueOverrideRef.current = over ? {
+        stamp: typeof over.stamp === 'string' && over.stamp.trim()
+          ? over.stamp.trim().slice(0, MAX_CUE_TEXT_LEN) : undefined,
+        color: normalizeHexColor(over.color) || undefined,
+        size: Number.isFinite(over.size) ? clampCueFontScale(over.size) : undefined,
+        shadow: normalizeHexColor(over.shadow) || undefined,
+        offset: over.offset && Number.isFinite(over.offset.x) && Number.isFinite(over.offset.y)
+          ? clampCueOffset(over.offset) : undefined,
+        hold: Number.isFinite(over.hold) ? clampCueHoldMs(over.hold) : undefined,
+        anim: normalizeCueAnim(over.anim) || undefined,
+        weight: Number.isFinite(over.weight) ? clampCueFontWeight(over.weight) : undefined,
+        stroke: Number.isFinite(over.stroke) ? clampCueStroke(over.stroke) : undefined,
+        // 追加分（store の sanitize を 1 件分流用して検証）。
+        rotation: cueRotationStore.sanitize({ v: over.rotation }).v,
+        place: cuePlaceStore.sanitize({ v: over.place }).v,
+        halo: cueHaloStore.sanitize({ v: over.halo }).v,
+        glow: cueGlowStore.sanitize({ v: over.glow }).v,
+        glowColor: cueGlowColorStore.sanitize({ v: over.glowColor }).v,
+        gain: cueGainStore.sanitize({ v: over.gain }).v,
+      } : null;
+      cueController.run(id);
+      relayCueOverrideRef.current = null;
+    },
   });
   // tx の発火を rx へ転送するための送信口。毎レンダー最新の sendCue を ref に差す。
   cueSendRef.current = relayApi.sendCue;
@@ -1520,6 +1776,34 @@ function App() {
           initial={cueOffsets[editingCue.id]}
           initialText={cueTexts[editingCue.id] ?? editingCue.stamp}
           defaultText={editingCue.stamp}
+          initialColor={cueColors[editingCue.id] ?? DEFAULT_CUE_COLOR}
+          defaultColor={DEFAULT_CUE_COLOR}
+          initialSize={cueSizes[editingCue.id] ?? DEFAULT_CUE_FONT_SCALE}
+          defaultSize={DEFAULT_CUE_FONT_SCALE}
+          initialShadow={cueShadows[editingCue.id] ?? DEFAULT_CUE_SHADOW_COLOR}
+          defaultShadow={DEFAULT_CUE_SHADOW_COLOR}
+          initialHold={cueHolds[editingCue.id] ?? editingCue.holdMs}
+          defaultHold={editingCue.holdMs}
+          initialAnim={cueAnims[editingCue.id] ?? editingCue.anim}
+          defaultAnim={editingCue.anim}
+          initialWeight={cueWeights[editingCue.id] ?? DEFAULT_CUE_FONT_WEIGHT}
+          defaultWeight={DEFAULT_CUE_FONT_WEIGHT}
+          initialStroke={cueStrokes[editingCue.id] ?? DEFAULT_CUE_STROKE_EM}
+          defaultStroke={DEFAULT_CUE_STROKE_EM}
+          initialRotation={cueRotations[editingCue.id] ?? DEFAULT_CUE_ROTATION}
+          defaultRotation={DEFAULT_CUE_ROTATION}
+          initialPlace={cuePlaces[editingCue.id] ?? editingCue.place}
+          defaultPlace={editingCue.place}
+          initialHalo={cueHalos[editingCue.id] ?? DEFAULT_CUE_HALO}
+          defaultHalo={DEFAULT_CUE_HALO}
+          initialGlow={cueGlows[editingCue.id] ?? ((editingCue.effect && Number.isFinite(editingCue.effect.glow)) ? editingCue.effect.glow : 0)}
+          defaultGlow={(editingCue.effect && Number.isFinite(editingCue.effect.glow)) ? editingCue.effect.glow : 0}
+          initialGlowColor={cueGlowColors[editingCue.id] ?? ((editingCue.effect && editingCue.effect.glowColor) || DEFAULT_CUE_GLOW_COLOR)}
+          defaultGlowColor={(editingCue.effect && editingCue.effect.glowColor) || DEFAULT_CUE_GLOW_COLOR}
+          initialGain={cueGains[editingCue.id] ?? DEFAULT_CUE_GAIN}
+          defaultGain={DEFAULT_CUE_GAIN}
+          initialSound={cueSounds[editingCue.id] ?? ''}
+          maxSoundLen={MAX_CUE_SOUND_LEN}
           dark={dark}
           onCommit={commitCueEdit}
           onClose={() => setEditingCueId(null)}

@@ -599,6 +599,430 @@ export function clearCueTexts(explicit) {
   }
 }
 
+// ── fork:cue-color ── 演出（スタンプ）の cue 毎カスタム文字色 { [cueId]: '#rrggbb' } ──
+// cue-stamp の既定文字色（白 = DEFAULT_CUE_COLOR）を任意の色で上書きする。:cuetext と同じく
+// ローカル限定・テーマ非連携の独立キー（:cuecolor）。既定（白）一致は保存しない（呼び出し側で削除）。
+export const DEFAULT_CUE_COLOR = '#ffffff';
+
+export function cueColorStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cuecolor';
+}
+
+// 文字列を #rrggbb（小文字）に正規化する純関数。#rgb は #rrggbb へ展開する。
+// 不正・非文字列は null（＝上書き無し＝既定色）。<input type="color"> は常に #rrggbb を返すが、
+// 手編集した localStorage や relay 外の値に備えてここで検証する。
+export function normalizeHexColor(s) {
+  if (typeof s !== 'string') return null;
+  const v = s.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(v)) return v;
+  if (/^#[0-9a-f]{3}$/.test(v)) return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
+  return null;
+}
+
+// 保存マップを { [cueId]: '#rrggbb' } だけに正規化する純関数（DOM 非依存）。空 id・不正色は捨てる。
+export function sanitizeCueColors(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    const c = normalizeHexColor(v);
+    if (id && c) out[id] = c;
+  }
+  return out;
+}
+
+// 保存マップを返す。未保存・壊れ・読取不可は {}（無害に無効化＝全 cue 既定色）。
+export function loadCueColors(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueColorStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueColors(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueColors(map, explicit) {
+  try {
+    window.localStorage.setItem(cueColorStorageKey(explicit), JSON.stringify(sanitizeCueColors(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定色に戻るだけ） */
+  }
+}
+
+export function clearCueColors(explicit) {
+  try {
+    window.localStorage.removeItem(cueColorStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定色に戻るだけ） */
+  }
+}
+
+// ── fork:cue-size ── 演出スタンプの cue 毎フォント倍率 { [cueId]: number } ──
+// cue-stamp はアバター幅からフォントサイズを自動算出する。その算出値への倍率（既定 1.0）を cue 毎に持つ。
+// :cuetext/:cuecolor と同型のローカル限定・テーマ非連携の独立キー（:cuesize）。既定 1.0 は保存しない。
+export const DEFAULT_CUE_FONT_SCALE = 1;
+export const MIN_CUE_FONT_SCALE = 0.3;
+export const MAX_CUE_FONT_SCALE = 3;
+
+// 倍率を [MIN,MAX] に収め、非有限は既定(1.0)へ正規化する純関数（DOM 非依存）。
+export function clampCueFontScale(v) {
+  return Number.isFinite(v) ? Math.min(MAX_CUE_FONT_SCALE, Math.max(MIN_CUE_FONT_SCALE, v)) : DEFAULT_CUE_FONT_SCALE;
+}
+
+export function cueSizeStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cuesize';
+}
+
+// 保存マップを { [cueId]: [MIN,MAX] の数値 } だけに正規化する純関数。空 id・非数値は捨てる。
+export function sanitizeCueSizes(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    if (id && Number.isFinite(v)) out[id] = clampCueFontScale(v);
+  }
+  return out;
+}
+
+export function loadCueSizes(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueSizeStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueSizes(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueSizes(map, explicit) {
+  try {
+    window.localStorage.setItem(cueSizeStorageKey(explicit), JSON.stringify(sanitizeCueSizes(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定倍率に戻るだけ） */
+  }
+}
+
+export function clearCueSizes(explicit) {
+  try {
+    window.localStorage.removeItem(cueSizeStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定倍率に戻るだけ） */
+  }
+}
+
+// ── fork:cue-shadow ── 演出スタンプの cue 毎影色 { [cueId]: '#rrggbb' } ──
+// cue-stamp の縁取り/影（既定 = DEFAULT_CUE_SHADOW_COLOR の濃茶）を任意色で上書きする。
+// :cuecolor と同型（normalizeHexColor で検証）。既定色一致は保存しない。
+export const DEFAULT_CUE_SHADOW_COLOR = '#3c3026';
+
+export function cueShadowStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cueshadow';
+}
+
+export function sanitizeCueShadows(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    const c = normalizeHexColor(v);
+    if (id && c) out[id] = c;
+  }
+  return out;
+}
+
+export function loadCueShadows(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueShadowStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueShadows(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueShadows(map, explicit) {
+  try {
+    window.localStorage.setItem(cueShadowStorageKey(explicit), JSON.stringify(sanitizeCueShadows(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定影色に戻るだけ） */
+  }
+}
+
+export function clearCueShadows(explicit) {
+  try {
+    window.localStorage.removeItem(cueShadowStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定影色に戻るだけ） */
+  }
+}
+
+// ── fork:cue-hold ── 演出スタンプの cue 毎表示時間 { [cueId]: ms } ──
+// cue の既定表示時間（cue.holdMs、未指定は 1100）を上書き。:cuecolor 等と同型のローカル限定。
+// 既定は cue 毎に異なるため、保存マップは「絶対 ms」を持ち、commit 側で既定一致なら削除する。
+export const MIN_CUE_HOLD_MS = 200;
+export const MAX_CUE_HOLD_MS = 6000;
+
+// 表示時間を [MIN,MAX] ms に収め整数化する純関数。非有限は null（＝無効・上書きしない）。
+export function clampCueHoldMs(v) {
+  return Number.isFinite(v) ? Math.round(Math.min(MAX_CUE_HOLD_MS, Math.max(MIN_CUE_HOLD_MS, v))) : null;
+}
+
+export function cueHoldStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cuehold';
+}
+
+export function sanitizeCueHolds(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    const ms = clampCueHoldMs(v);
+    if (id && ms != null) out[id] = ms;
+  }
+  return out;
+}
+
+export function loadCueHolds(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueHoldStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueHolds(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueHolds(map, explicit) {
+  try {
+    window.localStorage.setItem(cueHoldStorageKey(explicit), JSON.stringify(sanitizeCueHolds(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定表示時間に戻るだけ） */
+  }
+}
+
+export function clearCueHolds(explicit) {
+  try {
+    window.localStorage.removeItem(cueHoldStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定表示時間に戻るだけ） */
+  }
+}
+
+// ── fork:cue-anim ── 演出スタンプの cue 毎アニメ種別 { [cueId]: 'pop'|'rise'|'shake' } ──
+// cue の既定 anim を上書き。既定は cue 毎に異なるため commit 側で既定一致なら削除する。
+export const CUE_ANIMS = ['pop', 'rise', 'shake'];
+
+// アニメ名を検証し正規化（許可外は null）。
+export function normalizeCueAnim(s) {
+  return CUE_ANIMS.includes(s) ? s : null;
+}
+
+export function cueAnimStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cueanim';
+}
+
+export function sanitizeCueAnims(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    const a = normalizeCueAnim(v);
+    if (id && a) out[id] = a;
+  }
+  return out;
+}
+
+export function loadCueAnims(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueAnimStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueAnims(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueAnims(map, explicit) {
+  try {
+    window.localStorage.setItem(cueAnimStorageKey(explicit), JSON.stringify(sanitizeCueAnims(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定アニメに戻るだけ） */
+  }
+}
+
+export function clearCueAnims(explicit) {
+  try {
+    window.localStorage.removeItem(cueAnimStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定アニメに戻るだけ） */
+  }
+}
+
+// ── fork:cue-weight ── 演出スタンプの cue 毎フォント太さ { [cueId]: 100..900 } ──
+// 既定の太さ（DEFAULT_CUE_FONT_WEIGHT=800）を上書き。100 刻みに丸める。
+export const DEFAULT_CUE_FONT_WEIGHT = 800;
+export const MIN_CUE_FONT_WEIGHT = 100;
+export const MAX_CUE_FONT_WEIGHT = 900;
+
+// 太さを [100,900] に収め 100 刻みへ丸める純関数。非有限は既定(800)。
+export function clampCueFontWeight(v) {
+  if (!Number.isFinite(v)) return DEFAULT_CUE_FONT_WEIGHT;
+  return Math.min(MAX_CUE_FONT_WEIGHT, Math.max(MIN_CUE_FONT_WEIGHT, Math.round(v / 100) * 100));
+}
+
+export function cueWeightStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cueweight';
+}
+
+export function sanitizeCueWeights(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    if (id && Number.isFinite(v)) out[id] = clampCueFontWeight(v);
+  }
+  return out;
+}
+
+export function loadCueWeights(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueWeightStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueWeights(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueWeights(map, explicit) {
+  try {
+    window.localStorage.setItem(cueWeightStorageKey(explicit), JSON.stringify(sanitizeCueWeights(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定の太さに戻るだけ） */
+  }
+}
+
+export function clearCueWeights(explicit) {
+  try {
+    window.localStorage.removeItem(cueWeightStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定の太さに戻るだけ） */
+  }
+}
+
+// ── fork:cue-stroke ── 演出スタンプの cue 毎縁取り太さ { [cueId]: em } ──
+// 既定の縁取り（DEFAULT_CUE_STROKE_EM=0.05em）を上書き。0〜0.2em。
+export const DEFAULT_CUE_STROKE_EM = 0.05;
+export const MIN_CUE_STROKE_EM = 0;
+export const MAX_CUE_STROKE_EM = 0.2;
+
+// 縁取り em 幅を [0,0.2] に収める純関数。非有限は既定(0.05)。
+export function clampCueStroke(v) {
+  if (!Number.isFinite(v)) return DEFAULT_CUE_STROKE_EM;
+  return Math.min(MAX_CUE_STROKE_EM, Math.max(MIN_CUE_STROKE_EM, v));
+}
+
+export function cueStrokeStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cuestroke';
+}
+
+export function sanitizeCueStrokes(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    if (id && Number.isFinite(v)) out[id] = clampCueStroke(v);
+  }
+  return out;
+}
+
+export function loadCueStrokes(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueStrokeStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueStrokes(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueStrokes(map, explicit) {
+  try {
+    window.localStorage.setItem(cueStrokeStorageKey(explicit), JSON.stringify(sanitizeCueStrokes(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定の縁取りに戻るだけ） */
+  }
+}
+
+export function clearCueStrokes(explicit) {
+  try {
+    window.localStorage.removeItem(cueStrokeStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定の縁取りに戻るだけ） */
+  }
+}
+
+// ── fork:cue-extra ── 追加の cue 毎カスタム（回転/表示位置/白フチ/発光/音量/効果音）──
+// ここからは「単一値マップ { [cueId]: value }」を共通ファクトリで量産する（上の :cuetext 等と同じ
+// localStorage 形式・ローカル限定・テーマ非連携）。値の検証だけ差し替えて boilerplate を抑える。
+// 返り値: { key, sanitize, load, save, clear }。sanitizeOne(v) は正規化済み値か null を返す。
+function makeCueValueMap(suffix, sanitizeOne) {
+  const key = (explicit) => tweaksStorageKey(explicit) + suffix;
+  const sanitize = (obj) => {
+    if (!isPlainObject(obj)) return {};
+    const out = {};
+    for (const [id, v] of Object.entries(obj)) {
+      const s = sanitizeOne(v);
+      if (id && s != null) out[id] = s;
+    }
+    return out;
+  };
+  const load = (explicit) => {
+    try {
+      const raw = window.localStorage.getItem(key(explicit));
+      return raw ? sanitize(JSON.parse(raw)) : {};
+    } catch { return {}; }
+  };
+  const save = (map, explicit) => {
+    try { window.localStorage.setItem(key(explicit), JSON.stringify(sanitize(map))); } catch { /* 容量超過/プライベートは諦め */ }
+  };
+  const clear = (explicit) => {
+    try { window.localStorage.removeItem(key(explicit)); } catch { /* noop */ }
+  };
+  return { key, sanitize, load, save, clear };
+}
+
+// 回転（度・±45・既定0）。スタンプを傾ける。
+export const MAX_CUE_ROTATION = 45;
+export const DEFAULT_CUE_ROTATION = 0;
+export const cueRotationStore = makeCueValueMap(':cuerot',
+  (v) => (Number.isFinite(v) ? Math.max(-MAX_CUE_ROTATION, Math.min(MAX_CUE_ROTATION, v)) : null));
+
+// 表示位置（'above'=頭の上 / 'over'=重ねる）。既定は cue.place。
+export const cuePlaceStore = makeCueValueMap(':cueplace',
+  (v) => (v === 'above' || v === 'over' ? v : null));
+
+// 白フチ（テキストの白いハロー）の強さ（0..1・既定0.55）。
+export const DEFAULT_CUE_HALO = 0.55;
+export const cueHaloStore = makeCueValueMap(':cuehalo',
+  (v) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : null));
+
+// 発光フラッシュ（アバターのグロー）の強さ（0..10・0=off）。既定は cue.effect?.glow。
+export const MAX_CUE_GLOW = 10;
+export const cueGlowStore = makeCueValueMap(':cueglow',
+  (v) => (Number.isFinite(v) ? Math.max(0, Math.min(MAX_CUE_GLOW, v)) : null));
+
+// 発光フラッシュの色（#rrggbb）。既定は cue.effect?.glowColor。
+export const DEFAULT_CUE_GLOW_COLOR = '#9fd8ff';
+export const cueGlowColorStore = makeCueValueMap(':cueglowcol',
+  (v) => normalizeHexColor(v));
+
+// 効果音の音量（0..3・既定1）。
+export const MAX_CUE_GAIN = 3;
+export const DEFAULT_CUE_GAIN = 1;
+export const cueGainStore = makeCueValueMap(':cuegain',
+  (v) => (Number.isFinite(v) ? Math.max(0, Math.min(MAX_CUE_GAIN, v)) : null));
+
+// 効果音の差し替え（data:audio... の data URL）。ローカル限定（relay しない・サイズ上限あり）。
+// localStorage 圧迫を避けるため上限を切る。超過や非 audio は捨てる。
+export const MAX_CUE_SOUND_LEN = 262144; // 256KB
+export const cueSoundStore = makeCueValueMap(':cuesound',
+  (v) => (typeof v === 'string' && v.startsWith('data:audio') && v.length <= MAX_CUE_SOUND_LEN ? v : null));
+
 // テーマ・エクスポート JSON のファイル名。形式は
 // guruguru-avatar-tweaks-YYYY-MM-DD-HHMM.json（HHMM=時分）。Date を引数で
 // 受ける純関数にして決定的にテストできるようにする。値はローカル時刻で組む。
