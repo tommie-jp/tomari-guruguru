@@ -11,6 +11,7 @@ import { compensatePos } from './pitch-compensated-pos';
 import { compensateScaleForPitch } from './pitch-compensated-scale';
 import { compensateScaleForMouth } from './mouth-compensated-scale';
 import { compensateRollForYaw } from './compensate-roll-for-yaw';
+import { yawTiltBiasDeg } from './yaw-roll-trim';
 
 const DEG = Math.PI / 180;
 // 口が開くときの追従係数（閉じるときは tweaks.release を使う＝開きは速く・閉じはゆっくり）
@@ -93,10 +94,15 @@ export function computeStateFrame(signals, t, expr, now, opts = {}) {
   }
   const sheet = (blink ? 3 : 0) + mouthLevel;
 
-  // 首かしげ(roll)。まず中立バイアス(biasRollDeg=「正面のかしげ」)を差し引いてから、
-  // 左右の向き(yaw)が pitch と結合して roll に混入してかしげる分を打ち消す。
-  const rawRoll = signals.roll - (t.biasRollDeg || 0) * DEG;
-  const roll = compensateRollForYaw(rawRoll, signals.yaw, t.tiltYawComp, signals.pitch);
+  // 首かしげ(roll)。a/b モデル: a=正面のかしげ(biasRollDeg)を全姿勢から差し引き、
+  // b=左右のかしげ差(rollYawTiltB)を向き(正面相対 yaw の符号)に応じて差し引く。
+  //   正面: roll-a / 右向き: roll-a-b / 左向き: roll-a+b
+  // 向きは正面相対 yaw(生yaw − biasYaw)で判定する（biasYaw 既定 -8° 等でも正面で 0 になるよう）。
+  // tiltYawComp(幾何モデルの左右向き補正)は手動スライダー専用として残す（既定 0 で素通し）。
+  const rawRoll = signals.roll - (t.biasRollDeg || 0) * DEG; // roll - a
+  const rollGeo = compensateRollForYaw(rawRoll, signals.yaw, t.tiltYawComp, signals.pitch);
+  const yawRel = signals.yaw - (t.biasYawDeg || 0) * DEG; // 正面相対 yaw（右が正）
+  const roll = rollGeo - yawTiltBiasDeg(yawRel, t.rollYawTiltB) * DEG; // - b·向き
   const tilt = t.tiltEnabled
     ? clamp((roll / DEG) * t.tiltGain * (t.invertTilt ? -1 : 1), -t.tiltMax, t.tiltMax)
     : 0;

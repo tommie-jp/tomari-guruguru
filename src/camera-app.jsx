@@ -8,7 +8,7 @@ import { parseRelayMode } from './relay-mode';
 import { computeStateFrame, createExprState } from './face/avatar-state';
 import { computeDirectionRange } from './face/direction-range';
 import {
-  computeSlidePoseCompX, computeSlidePoseCompY, computeZoomPitchComp, computeTiltYawComp,
+  computeSlidePoseCompX, computeSlidePoseCompY, computeZoomPitchComp,
 } from './face/calibrate-comp';
 import { compensateScaleForMouth } from './face/mouth-compensated-scale';
 import { applyState, createSmoothState } from './face/apply-state';
@@ -85,7 +85,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "tiltMax": 23,
   "tiltPivotY": 72,
   "invertTilt": false,
-  "tiltYawComp": 0,
+  "tiltYawComp": -3.0,
+  "rollYawTiltB": 0,
   "biasRollDeg": 0,
   "slideEnabled": true,
   "slideGain": 12,
@@ -186,6 +187,9 @@ const DEG = Math.PI / 180;
 // 方向校正(上下左右)で受け付ける最小の振り角(度・物理角)。これ未満や逆向きは
 // 「ちゃんと振り向いていない」とみなして弾く（direction-range.js が判定）。
 const CALIBRATE_MIN_SWING_DEG = 5;
+// 向き校正を押してから、かしげ・スライド・ズームの平滑化を飛ばして即反映する時間(ms)。
+// setTweak の反映(再レンダー→tweaksRef 更新)を跨いでも「すぐ垂直」に見えるよう少し長めに取る。
+const SNAP_MOTION_MS = 350;
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
@@ -613,6 +617,9 @@ function App() {
   const exprStateRef = useRef(createExprState());
   // 平滑化エンベロープ（向き・かしげ・スライド・ズーム）→ apply-state が更新。
   const smoothStateRef = useRef(createSmoothState());
+  // 校正直後の一定時間、かしげ・スライド・ズームの平滑化を飛ばしてターゲットへ即スナップする
+  // 期限(performance.now ベース ms)。向き校正の右/左等を押した瞬間に「すぐ垂直」に見せるため。
+  const snapMotionUntilRef = useRef(0);
   const autoBlinkRef = useRef(false);       // blinkSync OFF 時の自動まばたき状態（computeStateFrame に渡す）
   const latestFrameRef = useRef(null);      // rx: 最後に受信した状態フレーム
   const tweaksRef = useRef(t);
@@ -755,12 +762,19 @@ function App() {
       return;
     }
     const edits = { [res.key]: res.deg };
-    // 左右: 位置ズレ(slidePoseCompX) と かしげ混入(tiltYawComp) を打ち消す（無効なら据え置き）。
+    // 左右: 位置ズレ(slidePoseCompX) と かしげ差(b) を、押した姿勢で 0 になるよう記録する。
     if (dir === 'left' || dir === 'right') {
       const compX = computeSlidePoseCompX({ posX: posRef.current.x, yaw, invertSlide: t.invertSlide });
-      if (compX != null) edits.slidePoseCompX = compX;
-      const compTilt = computeTiltYawComp({ roll: rollRef.current, yaw, pitch, biasRollRad: t.biasRollDeg * DEG });
-      if (compTilt != null) edits.tiltYawComp = compTilt;
+      if (compX != null) edits.slidePoseCompX = compX; // 逆符号・振り不足は据え置き
+      // かしげ差 b = 「a(正面のかしげ=biasRoll)を引いた後の、今のかしげ」。右なら +b、左なら -b。
+      // 実行時は右向きで roll-a-b、左向きで roll-a+b になるので、押した向きの姿勢でちょうど 0。
+      // 「正」を先に押して a を決めておく前提（パネルの案内通り）。0.1°刻みで保持。
+      const rollAfterBias = rollRef.current / DEG - t.biasRollDeg; // a 差し引き後の今のかしげ(deg)
+      const b = dir === 'right' ? rollAfterBias : -rollAfterBias;
+      edits.rollYawTiltB = Math.round(b * 10) / 10;
+      // 左右向き補正(幾何モデル tiltYawComp) は手動スライダー（既定 -3.0）として独立に扱い、
+      // ここでは変更しない。水平向き(pitch≈0)では tiltYawComp の寄与は基底≈0 でほぼ 0 なので、
+      // 生 roll から求めた b が押下姿勢でそのまま効く。
     }
     // 上下: ズーム変化(zoomPitchComp) と 位置ズレ(slidePoseCompY) を打ち消す。
     // ズームは実行時パイプラインに合わせ、口開き補正(zoomMouthComp)を先に通したサイズで逆算
@@ -780,6 +794,8 @@ function App() {
       edits.eyesOpenBias = Math.min(0.9, Math.round(ec * 100) / 100);
     }
     setTweak(edits);
+    // 押した瞬間に平滑化のランプを飛ばし、新しい補正へ即スナップさせる（「すぐ垂直」を保証）。
+    snapMotionUntilRef.current = performance.now() + SNAP_MOTION_MS;
     flashDir(dir, true);
   }
   // 上下左右の振り幅を既定（≒従来の対称レンジ）へ戻す。1回の setTweak でまとめて反映する。
@@ -799,7 +815,9 @@ function App() {
     setTweak('biasRollDeg', Math.round((rollRef.current / DEG) * 10) / 10);
   }
   function resetTilt() {
-    setTweak('biasRollDeg', 0);
+    // 自動校正するかしげ値（正面中立 a=biasRoll・左右のかしげ差 b）を 0 に戻す。
+    // 左右向き補正 tiltYawComp は手動スライダー（既定 -3.0）なのでここでは触らない。
+    setTweak({ biasRollDeg: 0, rollYawTiltB: 0 });
   }
 
   // いまの目の状態（開いている想定）を「まばたきなし」の基準にする。
@@ -824,14 +842,16 @@ function App() {
     exprStateRef.current.autoBaseline = 0; // 自動基準も捨てて次の検出で取り直す
   }
 
-  // 今の向き＝正面・今の距離＝等倍の基準・今の目の大きさ＝まばたきなし・かしげ＝0 を
-  // まとめて取り直す。個別校正をそのまま順に呼ぶだけ（計算を重複させない）。setTweak は
-  // 関数更新でマージするので、続けて呼んでも取りこぼさず同フレームに反映される。
+  // 今の向き＝正面・今の距離＝等倍の基準・今の目の大きさ＝まばたきなし・今のかしげ＝正面(a) を
+  // まとめて取り直す。個別校正をそのまま順に呼ぶだけ（計算を重複させない）。setTweak は関数更新で
+  // マージするので、続けて呼んでも取りこぼさず同フレームに反映される。
+  // 注: 左右のかしげ差(b=rollYawTiltB)と左右向き補正(tiltYawComp)はここでは変更しない
+  // （「正」は a の取り直しのみ。b は右/左ボタンで別途記録する）。
   function calibrateAll() {
-    calibrateCenter();   // 今の向きを正面に
-    calibrateZoom();     // 今の距離を等倍の基準に
-    calibrateEyesOpen(); // 今の目の大きさをまばたきなしに
-    calibrateTilt();     // 今のかしげを正面(0)に
+    calibrateCenter();      // 今の向きを正面に
+    calibrateZoom();        // 今の距離を等倍の基準に
+    calibrateEyesOpen();    // 今の目の大きさをまばたきなしに
+    calibrateTilt();        // 今のかしげを正面(a)に（biasRollDeg を記録）
   }
   // アンマウント時にフィードバック用タイマーを後始末する（解除後の setState を避ける）。
   useEffect(() => () => {
@@ -934,6 +954,15 @@ function App() {
         if (mode === 'tx' && now - lastSent >= SEND_INTERVAL_MS) {
           lastSent = now;
           relayApi.sendState(encodeStateFrame(frame));
+        }
+        // 校正直後はかしげ・スライド・ズームの平滑化を飛ばし、ターゲットへ即スナップさせる。
+        // setTweak の反映が次レンダーなので、数フレームぶん（SNAP_MOTION_MS）スナップし続ける。
+        if (now < snapMotionUntilRef.current) {
+          const sm = smoothStateRef.current;
+          sm.tilt = frame.tilt;
+          sm.slideX = frame.slideX;
+          sm.slideY = frame.slideY;
+          sm.zoom = frame.zoom;
         }
         out = applyState(frame, tw, smoothStateRef.current);
       }
@@ -1903,11 +1932,17 @@ function App() {
             onChange={(v) => setTweak('tiltPivotY', v)}></TweakSlider>
           <TweakToggle label="かしげ反転" value={t.invertTilt}
             onChange={(v) => setTweak('invertTilt', v)}></TweakToggle>
+          {/* 左右のかしげ差(b): 右を向いたとき roll-a-b、左で roll-a+b になる単一係数。
+              向き校正の右/左ボタンが押した姿勢から自動記録する（手動微調整も可）。 */}
+          <TweakSlider label="左右のかしげ差(b)" value={t.rollYawTiltB} min={-30} max={30} step={0.1} unit="°"
+            onChange={(v) => setTweak('rollYawTiltB', v)}></TweakSlider>
+          {/* 左右向き補正(tiltYawComp): yaw×pitch 幾何モデルの手動スライダー（既定 0 で素通し）。
+              「正」ボタンでは変更しない。上下も向いて振る人向けの上級者向け微調整。 */}
           <TweakSlider label="左右向き補正" value={t.tiltYawComp} min={-4} max={4} step={0.05}
             onChange={(v) => setTweak('tiltYawComp', v)}></TweakSlider>
-          <TweakSlider label="かしげバイアス" value={t.biasRollDeg} min={-30} max={30} step={1} unit="°"
+          <TweakSlider label="かしげバイアス(a)" value={t.biasRollDeg} min={-30} max={30} step={1} unit="°"
             onChange={(v) => setTweak('biasRollDeg', v)}></TweakSlider>
-          <TweakButton label="今のかしげを正面(0)にする" onClick={calibrateTilt}></TweakButton>
+          <TweakButton label="今のかしげを正面(a)にする" onClick={calibrateTilt}></TweakButton>
           <TweakButton label="かしげをリセット" secondary onClick={resetTilt}></TweakButton>
         </TweakSection>
         <TweakSection label="スライド" collapsible>

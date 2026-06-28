@@ -132,6 +132,62 @@ describe('方向校正 → 実行時パイプラインの往復', () => {
   });
 });
 
+// a/b モデルの校正経路。正ボタンで a=正面のかしげ(biasRoll)、右/左ボタンで b=左右のかしげ差を
+// 記録し、実行時に 右→roll-a-b / 左→roll-a+b / 正面→roll-a となる往復を端から端まで検証する。
+describe('a/b モデル（正で a・右/左で b）→ 実行時パイプラインの往復', () => {
+  // camera-app の calibrateDirection（左右）と同じ b の解き方: b = (押下時 roll[deg] − a[deg])、左は符号反転。
+  function solveB({ rollDeg, dir, biasRollDeg = 0 }) {
+    const rollAfterBias = rollDeg - biasRollDeg; // a を引いた後の今のかしげ(deg)
+    const b = dir === 'right' ? rollAfterBias : -rollAfterBias;
+    return Math.round(b * 10) / 10;
+  }
+
+  it('水平に右を向いて押すと、その姿勢でかしげが 0 になる（症状の本丸）', () => {
+    // 真横に右 ~29°。pitch=0 だが推定器の癖で roll=0.12rad が乗っている。a=0。
+    const pose = { roll: 0.12, yaw: 0.5, pitch: 0 };
+    const b = solveB({ rollDeg: pose.roll / DEG, dir: 'right' });
+    const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
+    const f = computeStateFrame(signals(pose), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(0.5);
+  });
+
+  it('水平に左を向いて押すと、その姿勢でかしげが 0 になる（左ボタンも同様）', () => {
+    const pose = { roll: -0.1, yaw: -0.5, pitch: 0 };
+    const b = solveB({ rollDeg: pose.roll / DEG, dir: 'left' });
+    const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
+    const f = computeStateFrame(signals(pose), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(0.5);
+  });
+
+  it('右で記録した b は正面(yaw=0)を傾けない（中立は roll-a のみ）', () => {
+    const b = solveB({ rollDeg: 0.12 / DEG, dir: 'right' });
+    const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
+    const front = computeStateFrame(signals({ roll: 0, yaw: 0, pitch: 0 }), t, createExprState(), 0);
+    expect(Math.abs(front.tilt)).toBeLessThan(0.5);
+  });
+
+  it('a(正面の常時かしげ)を先に記録してから右で b → 正面も右向きも 0 になる', () => {
+    // 正面で常時 roll=0.02 → 正ボタンが a=biasRollDeg に記録。右向きはそれ＋推定バイアス。
+    const biasRollDeg = Math.round((0.02 / DEG) * 10) / 10;
+    const pose = { roll: 0.02 + 0.1, yaw: 0.5, pitch: 0 };
+    const b = solveB({ rollDeg: pose.roll / DEG, dir: 'right', biasRollDeg });
+    const t = tweaks({ rollYawTiltB: b, biasRollDeg, tiltGain: 1.3, tiltMax: 23 });
+    const front = computeStateFrame(signals({ roll: 0.02, yaw: 0, pitch: 0 }), t, createExprState(), 0);
+    const right = computeStateFrame(signals(pose), t, createExprState(), 0);
+    expect(Math.abs(front.tilt)).toBeLessThan(0.6); // 正面: roll-a≒0
+    expect(Math.abs(right.tilt)).toBeLessThan(0.6); // 右: roll-a-b≒0
+  });
+
+  it('pitch を付けて振っても押した姿勢で 0 になる（b は a 差し引き後の roll をそのまま使う）', () => {
+    // 右 40°＋下向き。physically 整合な行列から読んだ roll をそのまま b にする。
+    const s = posed(0.7, 0.26);
+    const b = solveB({ rollDeg: s.roll / DEG, dir: 'right' });
+    const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
+    const f = computeStateFrame(signals({ roll: s.roll, yaw: s.yaw, pitch: s.pitch }), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(0.6);
+  });
+});
+
 // 方向校正 → 顔向き(x/y)の往復。右/左/上/下で校正すると、その姿勢が画面端(±1)に届く
 // （= デバッグパネルの x/y が ±1.00、列/行が端になる）ことを端から端まで確認する。
 describe('方向校正 → 向き(x)が画面端(±1)に届く', () => {

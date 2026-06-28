@@ -113,6 +113,46 @@ describe('computeStateFrame', () => {
     expect(f.tilt).toBeCloseTo(0, 4);
   });
 
+  it('水平向き(pitch≈0): tiltYawComp ではかしげが消えない（症状の再現）', () => {
+    // 真横に振る(pitch=0)と幾何基底 rollYawPitchBasis≈0 → どんな tiltYawComp でも打ち消せない。
+    // 推定器の癖で乗った見かけの roll=0.12rad はそのまま残ってアバターが傾く。
+    const sig = signals({ roll: 0.12, yaw: 0.5, pitch: 0 });
+    const off = computeStateFrame(sig, tweaks({ tiltYawComp: 0 }), createExprState(), 0);
+    const on = computeStateFrame(sig, tweaks({ tiltYawComp: 1 }), createExprState(), 0);
+    expect(Math.abs(off.tilt)).toBeGreaterThan(3);
+    // tiltYawComp を入れても水平向きでは効かない（≒変わらない）。
+    expect(on.tilt).toBeCloseTo(off.tilt, 5);
+  });
+
+  it('かしげ差(b): 真横で乗った見かけのかしげを roll-a-b で打ち消して tilt≒0', () => {
+    // a=0、roll=0.12rad の右向き(yaw=0.5)。b=0.12rad分(deg) を入れると roll-a-b=0。
+    const bDeg = 0.12 / (Math.PI / 180);
+    const f = computeStateFrame(
+      signals({ roll: 0.12, yaw: 0.5, pitch: 0 }),
+      tweaks({ tiltYawComp: 0, rollYawTiltB: bDeg }),
+      createExprState(), 0,
+    );
+    expect(Math.abs(f.tilt)).toBeLessThan(0.5);
+  });
+
+  it('かしげ差(b): 右で記録した b は左向きで逆符号に効く（roll-a-b ↔ roll-a+b）・正面は不変', () => {
+    const bDeg = 8;
+    const t = tweaks({ tiltGain: 1.0, tiltMax: 45, rollYawTiltB: bDeg });
+    const front = computeStateFrame(signals({ roll: 0, yaw: 0, pitch: 0 }), t, createExprState(), 0);
+    const right = computeStateFrame(signals({ roll: 0, yaw: 0.5, pitch: 0 }), t, createExprState(), 0);
+    const left = computeStateFrame(signals({ roll: 0, yaw: -0.5, pitch: 0 }), t, createExprState(), 0);
+    expect(front.tilt).toBeCloseTo(0, 6); // 正面(yaw=0)は b の影響なし
+    expect(right.tilt).toBeCloseTo(-bDeg, 4); // 右: roll-a-b = 0-0-8 = -8
+    expect(left.tilt).toBeCloseTo(bDeg, 4); // 左: roll-a+b = 0-0+8 = +8（逆符号）
+  });
+
+  it('かしげ差(b): biasYaw があっても正面相対 yaw で判定（既定 -8° で正面が 0 になる）', () => {
+    const t = tweaks({ tiltGain: 1.0, tiltMax: 45, rollYawTiltB: 8, biasYawDeg: -8 });
+    // 正面=生yaw が biasYaw(-8°=-0.14rad) のとき → yawRel=0 → b なし。
+    const front = computeStateFrame(signals({ roll: 0, yaw: -8 * (Math.PI / 180), pitch: 0 }), t, createExprState(), 0);
+    expect(front.tilt).toBeCloseTo(0, 4);
+  });
+
   it('スライド無効なら slideX/slideY=0', () => {
     const f = computeStateFrame(signals({ posX: 0.5, posY: 0.5 }), tweaks({ slideEnabled: false }), createExprState(), 0);
     expect(f.slideX).toBe(0);
