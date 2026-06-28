@@ -1559,11 +1559,11 @@ function App() {
     };
   }, [isNarrow, cueController.cues.length, t.sbButtons]);
 
-  // 演出ボタン帯の中身。スマホは横スクロール一体、PC は「位置調整」を固定して cue 列だけを
-  // 縦スクロールさせるため、トグルと cue 列を別々に組めるよう変数化する。
+  // 演出ボタン帯の中身。「編集」トグルは固定（スマホ/PC とも常時表示）、cue 列だけをスクロールさせる
+  // ため、トグルと cue 列を別々に組めるよう変数化する。
   const cueToggleButton = (
     <button type="button" onClick={toggleEditMode}
-      title="演出の表示位置を調整（cue を右クリック／長押しでも開く）"
+      title="演出を編集（位置・色・音などを調整。cue を右クリック／長押しでも個別に開く）"
       style={{
         flex: '0 0 auto', // 帯では縮ませない（PC では常時表示の要）。
         width: isNarrow ? 40 : 50, minHeight: isNarrow ? 38 : 34, fontSize: isNarrow ? 9 : 10,
@@ -1575,7 +1575,7 @@ function App() {
         borderRadius: 11, cursor: 'pointer', whiteSpace: 'normal',
         boxShadow: '0 4px 14px rgba(60,48,38,0.08)', userSelect: 'none', touchAction: 'manipulation'
       }}>
-      {editMode ? '設定中' : '設定'}
+      {editMode ? '編集中' : '編集'}
     </button>
   );
   const cueButtonList = cueController.cues.map((c) => {
@@ -1725,32 +1725,37 @@ function App() {
           編集モード中はオーバーレイ(z30)より上へ出して対象を選べるよう z を上げる。 */}
       {!obsMode && !isRx && t.sbButtons ? (
         isNarrow ? (
-          // スマホ: 画面下の横スクロール帯。トグルも cue も一体で横スクロール（従来どおり）。
+          // スマホ: 画面下の帯。「編集」トグルは左端に固定（スライドしない）し、cue 列だけを横スクロール。
           // スクロールバー非表示は index.html の .cuebar-scroll に依存。
-          <div className="cuebar-scroll" style={{
+          <div style={{
             position: 'absolute',
             // 左下 PanelToggles（1列の帯）・版表記の上へ逃がす。右端はブラウザ端まで使う（幅いっぱい）。
             bottom: 'calc(78px + var(--sab))',
             left: 'calc(8px + var(--sal))', right: 'calc(8px + var(--sar))',
             zIndex: editMode ? 40 : 6,
-            display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6,
-            overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
-            touchAction: 'pan-x', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'none',
-            scrollSnapType: editMode ? 'none' : 'x proximity', // 編集中はスナップ無効（位置調整がガクつかないよう）
-            padding: '4px 6px', // boxShadow が切れない内側余白
-            // 両端フェード（「まだ続く」の示唆）。編集中は対象を全可視にしたいので外す。
-            WebkitMaskImage: editMode ? 'none'
-              : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
-            maskImage: editMode ? 'none'
-              : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+            display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6,
           }}>
             {cueToggleButton}
-            {cueButtonList}
+            <div className="cuebar-scroll" style={{
+              flex: '1 1 auto', minWidth: 0, // 残り幅を取り、はみ出し分を横スクロール（縮小可に minWidth:0）
+              display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6,
+              overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
+              touchAction: 'pan-x', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'none',
+              scrollSnapType: editMode ? 'none' : 'x proximity', // 編集中はスナップ無効（位置調整がガクつかないよう）
+              padding: '4px 6px', // boxShadow が切れない内側余白
+              // 両端フェード（「まだ続く」の示唆）。編集中は対象を全可視にしたいので外す。
+              WebkitMaskImage: editMode ? 'none'
+                : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+              maskImage: editMode ? 'none'
+                : 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+            }}>
+              {cueButtonList}
+            </div>
           </div>
         ) : (
-          // PC: 左端中央。「設定」トグルは固定（flex 0 0 auto）し、cue 列だけを縦スクロール。
+          // PC: 左端中央。「編集」トグルは固定（flex 0 0 auto）し、cue 列だけを縦スクロール。
           // 上限高さをブラウザ表示領域(dvh)−上下マージンにし、足りなければ cue 列が縮んで
-          // スクロールする。これで高さが小さくても「設定」は常に見える。
+          // スクロールする。これで高さが小さくても「編集」は常に見える。
           // ホイールはネイティブの overflow-y がそのまま縦スクロールに使う（追加 JS 不要）。
           <div style={{
             position: 'absolute', left: 'calc(14px + var(--sal))', top: '50%',
@@ -1848,7 +1853,7 @@ function App() {
           <span style={{ fontSize: 'clamp(12px, 1.5vmin, 14px)', color: subColor, letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: relayApi.peer.connected ? '#46C26A' : 'rgba(120,120,120,0.55)', display: 'inline-block' }}></span>
             {relayApi.linkUp
-              ? (relayApi.peer.connected ? `CEF 接続中（${relayApi.peer.count}）` : 'CEF 未接続')
+              ? (relayApi.peer.connected ? `OBS接続中（${relayApi.peer.count}）` : 'OBS未接続')
               : '中継に未接続'}
           </span>
         </div>
