@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# doAvatarConvert.sh — グレー背景の生5×5シート（A〜F.png）を、camera2 が読む
+# doAvatarConvert.sh — グレー背景の生5×5シート（A〜F.png / A〜F.webp）を、camera2 が読む
 # 透過済み・正規化済みスプライトシート public/slices2-sheets/<id>/{A..F}.webp へ変換する。
 #
 # やること:
@@ -18,7 +18,7 @@
 #   ./doAvatarConvert.sh assets/03-foo 03-foo 1500 90 "143,143,143" 0.95
 #
 # 引数:
-#   source-dir : A.png〜F.png（または A_*.png 等）が入った生シートのフォルダ
+#   source-dir : A〜F の生シート（.png / .webp、A_*.png 等の接尾辞可）が入ったフォルダ
 #   avatar-id  : 出力先 public/slices2-sheets/<id>/ のID（character-config の avatars[].id と一致させる）
 #   grid       : 出力1辺px＝解像度（5の倍数。1セル=grid/5。省略=元寸を5で割り切れる値へ floor）
 #   quality    : webp 品質 1〜100（既定 92）
@@ -30,7 +30,7 @@ set -euo pipefail
 
 show_help() {
   cat <<'HELP'
-doAvatarConvert.sh — グレー背景の生5×5シート(A〜F.png)を、camera2 が読む
+doAvatarConvert.sh — グレー背景の生5×5シート(A〜F.png / A〜F.webp)を、camera2 が読む
 透過済み・正規化済みスプライトシート public/slices2-sheets/<id>/{A..F}.webp へ変換する。
 
 usage:
@@ -39,7 +39,7 @@ usage:
 位置引数です。後ろの引数だけ指定したいときは前の引数も渡す(auto / 92 を明示)。
 
 必須:
-  source-dir  A.png〜F.png(または A_*.png 等)が入った生シートのフォルダ
+  source-dir  A〜F の生シート(.png / .webp、A_*.png 等の接尾辞可)が入ったフォルダ
   avatar-id   出力先 public/slices2-sheets/<id>/ のID
               (character-config.js の avatars[].id と一致させる)
 
@@ -128,14 +128,17 @@ QUALITY = int(os.environ['QUALITY'])
 BG_ARG = os.environ['BG']
 FILL = float(os.environ['FILL'])
 STATES = ['A', 'B', 'C', 'D', 'E', 'F']
+SRC_EXTS = ('png', 'webp', 'PNG', 'WEBP')   # 入力は png / webp（大文字拡張子も可）
 
 def find_sheet(state):
-    # スライスツールと同じ規約: <S>_*.png を優先、無ければ <S>*.png。
-    for pat in (f'{state}_*.png', f'{state}*.png'):
-        m = sorted(SRC.glob(pat))
-        if m:
-            return m[0]
-    raise FileNotFoundError(f'{state} sheet PNG not found in {SRC}')
+    # スライスツールと同じ規約: <S>_*.<ext> を優先、無ければ <S>*.<ext>。
+    # 拡張子は png / webp の両対応。同名で複数形式があれば SRC_EXTS の並び順で優先。
+    for shape in (f'{state}_*', f'{state}*'):
+        for ext in SRC_EXTS:
+            m = sorted(SRC.glob(f'{shape}.{ext}'))
+            if m:
+                return m[0]
+    raise FileNotFoundError(f'{state} sheet (png/webp) not found in {SRC}')
 
 def detect_bg(arr):
     # 四隅 24x24 の中央値を背景色とみなす。

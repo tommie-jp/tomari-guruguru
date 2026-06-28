@@ -130,6 +130,23 @@ const AVATAR_DEFS = [
       suffix: 'ChatGPT で作成 ／ 非商用',
     },
   },
+  {
+    id: '07-wanko',
+    displayName: 'わん子',
+    ext: 'webp',
+    rows: 5,
+    cols: 5,
+    sheets: DEFAULT_SHEETS,
+    commercial: false,
+    credit:
+      'わんたん@減量中さんの画像をChatGPT（画像生成）で作成。（商用利用・素材を主体とする再配布/販売は不可）',
+    attribution: {
+      prefix: 'キャラクター: ',
+      name: 'わんたん@減量中',
+      url: 'https://x.com/alacbal/status/2070680511954260368?s=20',
+      suffix: ' の画像を AI で作成 ／ 非商用',
+    },
+  },
 ];
 
 // 1つの定義オブジェクトに参照ヘルパーを生やしてアバター設定オブジェクトを作る。
