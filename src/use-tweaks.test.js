@@ -38,6 +38,12 @@ import {
   clampCueOffset,
   sanitizeCueOffsets,
   equalCueOffsetMaps,
+  cueTextStorageKey,
+  loadCueTexts,
+  saveCueTexts,
+  clearCueTexts,
+  sanitizeCueTexts,
+  MAX_CUE_TEXT_LEN,
   tweaksExportFilename,
   safeThemeName,
   themeExportFilename,
@@ -823,6 +829,109 @@ describe('演出オフセット（:cueoffset）の永続化', () => {
     saveCueOffsets({ hello: { x: 1, y: 1 } }, 'k');
     clearCueOffsets('k');
     expect(loadCueOffsets('k')).toEqual({});
+  });
+});
+
+// 演出（スタンプ）の cue 毎カスタム文字列 { [cueId]: string } の永続化。
+// :cueoffset と同じ独立サイドカー方式だが、こちらはテーマに載せない単独キー（:cuetext）。
+describe('演出文字（:cuetext）の永続化', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    globalThis.window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+    };
+  });
+  afterEach(() => {
+    delete globalThis.window;
+  });
+
+  it('cueTextStorageKey は :cuetext を付ける（ページ単位の単一マップ）', () => {
+    expect(cueTextStorageKey('tomari-tweaks:camera.html'))
+      .toBe('tomari-tweaks:camera.html:cuetext');
+  });
+
+  it('save した文字マップを load で取り戻せる', () => {
+    saveCueTexts({ hello: 'やっほー！', anger: 'ぷんぷん' }, 'k');
+    expect(loadCueTexts('k')).toEqual({ hello: 'やっほー！', anger: 'ぷんぷん' });
+  });
+
+  it('非文字列・空・空白のみのエントリは捨てる', () => {
+    saveCueTexts({
+      ok: 'x',
+      empty: '',
+      blank: '   ',
+      num: 5,
+      nul: null,
+    }, 'k');
+    expect(loadCueTexts('k')).toEqual({ ok: 'x' });
+  });
+
+  it('前後の空白は trim する', () => {
+    saveCueTexts({ hello: '  こんちは  ' }, 'k');
+    expect(loadCueTexts('k')).toEqual({ hello: 'こんちは' });
+  });
+
+  it('MAX_CUE_TEXT_LEN を超える値は切り詰める', () => {
+    const long = 'あ'.repeat(MAX_CUE_TEXT_LEN + 16);
+    saveCueTexts({ hello: long }, 'k');
+    expect(loadCueTexts('k').hello).toHaveLength(MAX_CUE_TEXT_LEN);
+  });
+
+  it('未保存なら {}', () => {
+    expect(loadCueTexts('k')).toEqual({});
+  });
+
+  it('壊れた JSON は {}', () => {
+    store.set(cueTextStorageKey('k'), '{ broken');
+    expect(loadCueTexts('k')).toEqual({});
+  });
+
+  it('オブジェクトでない保存値は {}', () => {
+    store.set(cueTextStorageKey('k'), JSON.stringify([1, 2]));
+    expect(loadCueTexts('k')).toEqual({});
+  });
+
+  it('clear で消すと load は {} に戻る', () => {
+    saveCueTexts({ hello: 'やっほー' }, 'k');
+    clearCueTexts('k');
+    expect(loadCueTexts('k')).toEqual({});
+  });
+});
+
+// sanitizeCueTexts: 保存マップを { [cueId]: 非空文字列(<=MAX) } だけに正規化する純関数（DOM 非依存）。
+describe('sanitizeCueTexts', () => {
+  it('非空文字列はそのまま残す', () => {
+    expect(sanitizeCueTexts({ hello: 'やっほー', clap: '👏👏' }))
+      .toEqual({ hello: 'やっほー', clap: '👏👏' });
+  });
+
+  it('trim し、上限で切り詰める', () => {
+    const long = 'b'.repeat(MAX_CUE_TEXT_LEN + 5);
+    const out = sanitizeCueTexts({ a: '  hi  ', b: long });
+    expect(out.a).toBe('hi');
+    expect(out.b).toHaveLength(MAX_CUE_TEXT_LEN);
+  });
+
+  it('空 id・空文字・空白のみ・非文字列のエントリは捨てる', () => {
+    expect(sanitizeCueTexts({
+      ok: 'x',
+      '': 'y',
+      empty: '',
+      blank: '   ',
+      num: 5,
+      nul: null,
+    })).toEqual({ ok: 'x' });
+  });
+
+  it('非オブジェクト入力は {}', () => {
+    expect(sanitizeCueTexts(null)).toEqual({});
+    expect(sanitizeCueTexts([1, 2])).toEqual({});
+    expect(sanitizeCueTexts('x')).toEqual({});
   });
 });
 

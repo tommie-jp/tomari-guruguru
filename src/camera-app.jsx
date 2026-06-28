@@ -27,6 +27,7 @@ import { CueOffsetEditor } from './cue-offset-editor.jsx';
 import {
   loadCueOffsets, saveCueOffsets, clampCueOffset,
   sanitizeCueOffsets, equalCueOffsetMaps,
+  loadCueTexts, saveCueTexts, sanitizeCueTexts, MAX_CUE_TEXT_LEN,
 } from './use-tweaks.js';
 import { GESTURES, sampleGesture, gestureTransform } from './gestures.js';
 
@@ -413,11 +414,21 @@ function App() {
   const cueOffsetsRef = useRef(cueOffsets);
   useEffect(() => { cueOffsetsRef.current = cueOffsets; }, [cueOffsets]);
   // テーマ適用/リセット/シード時にサイドカー値を書き戻す唯一の口。state と :cueoffset を同期する
-  // （ライブのドラッグ保存 commitCueOffset と同じ保存先・正規化を共有）。
+  // （ライブのドラッグ保存 commitCueEdit と同じ保存先・正規化を共有）。
   const applyCueOffsets = useCallback((map) => {
     const next = sanitizeCueOffsets(map);
     setCueOffsets(next);
     saveCueOffsets(next);
+  }, []);
+  // 演出（スタンプ）の cue 毎カスタム文字列 { [cueId]: string }。:cueoffset と同じくローカル限定だが、
+  // テーマには載せない独立キー（:cuetext）。発火は ref 経由で最新値を読む（クロージャ陳腐化回避）。
+  const [cueTexts, setCueTexts] = useState(() => loadCueTexts());
+  const cueTextsRef = useRef(cueTexts);
+  useEffect(() => { cueTextsRef.current = cueTexts; }, [cueTexts]);
+  const applyCueTexts = useCallback((map) => {
+    const next = sanitizeCueTexts(map);
+    setCueTexts(next);
+    saveCueTexts(next);
   }, []);
   // useTweaks に渡す汎用サイドカー { key, value, write, equal }。識別を安定させるため
   // cueOffsets が変わったときだけ作り直す（テーマの dirty 再計算のトリガにもなる）。
@@ -465,7 +476,8 @@ function App() {
     () => createCueController(DEFAULT_CUES, (cue) => {
       cueBoard.play(cue);
       // __offset は cue 毎の保存オフセット。未設定は undefined → スタンプ側で 0（従来位置）。
-      if (cueStampRef.current) cueStampRef.current.pop({ ...cue, __offset: cueOffsetsRef.current[cue.id] });
+      // stamp は cue 毎カスタム文字で上書き。保存値は非空保証なので || で既定（cue.stamp）へフォールバック。
+      if (cueStampRef.current) cueStampRef.current.pop({ ...cue, stamp: cueTextsRef.current[cue.id] || cue.stamp, __offset: cueOffsetsRef.current[cue.id] });
       // effect 付きキューは一定時間だけグローを強める（音＋スタンプ＋発光の複合演出）。
       if (cue.effect) {
         clearTimeout(cueFxTimerRef.current);
@@ -530,15 +542,25 @@ function App() {
       return !v;
     });
   };
-  // 保存: clamp 済みオフセットを map へ反映＋localStorage。{0,0} はエントリ削除（既定位置）。
-  // 永続化は applyCueOffsets（state＋:cueoffset 同期・サイドカーと同一経路）に委譲する。
-  const commitCueOffset = (offset) => {
+  // 保存: 位置オフセットとカスタム文字を同時に確定する（パネルの保存ボタンは1つ）。
+  //  - オフセット: clamp 済みを map へ反映。{0,0} はエントリ削除（既定位置）。
+  //  - 文字: trim + 上限。空（空白のみ）または既定 stamp と同一ならエントリ削除（既定文字へフォールバック）。
+  // 永続化は applyCueOffsets / applyCueTexts（state＋localStorage 同期）に委譲する。
+  const commitCueEdit = (offset, text) => {
     if (!editingCueId) return;
     const o = clampCueOffset(offset);
-    const next = { ...cueOffsets };
-    if (o.x === 0 && o.y === 0) delete next[editingCueId];
-    else next[editingCueId] = o;
-    applyCueOffsets(next);
+    const nextOff = { ...cueOffsets };
+    if (o.x === 0 && o.y === 0) delete nextOff[editingCueId];
+    else nextOff[editingCueId] = o;
+    applyCueOffsets(nextOff);
+
+    const cue = cueController.cues.find((c) => c.id === editingCueId);
+    const norm = (typeof text === 'string' ? text : '').trim().slice(0, MAX_CUE_TEXT_LEN);
+    const nextText = { ...cueTexts };
+    if (!norm || norm === (cue && cue.stamp ? cue.stamp : '')) delete nextText[editingCueId];
+    else nextText[editingCueId] = norm;
+    applyCueTexts(nextText);
+
     setEditingCueId(null); // 編集モードは維持（別 cue を続けて調整できる）
   };
   const previewCueStamp = (c) => { if (cueStampRef.current) cueStampRef.current.pop(c); };
@@ -1496,8 +1518,10 @@ function App() {
           cue={editingCue}
           anchorRef={charRef}
           initial={cueOffsets[editingCue.id]}
+          initialText={cueTexts[editingCue.id] ?? editingCue.stamp}
+          defaultText={editingCue.stamp}
           dark={dark}
-          onCommit={commitCueOffset}
+          onCommit={commitCueEdit}
           onClose={() => setEditingCueId(null)}
           preview={previewCueStamp}
         ></CueOffsetEditor>

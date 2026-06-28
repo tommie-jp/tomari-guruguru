@@ -544,6 +544,61 @@ export function clearCueOffsets(explicit) {
   }
 }
 
+// ── fork:cue-text ── 演出（スタンプ）の cue 毎カスタム文字列 { [cueId]: string } ──
+// cue の既定 stamp（例: 'こんにちは！'）を任意文字列で上書きする。:cueoffset と同じく
+// ローカル限定・relay しない UI チューニング。ただし :cueoffset と違って【テーマのサイドカーには
+// 載せない独立キー（:cuetext）】: 文字の上書きはテーマ apply/reset/export に追従しない（意図的）。
+// 将来「サイドカー化して直そう」と誤解しないこと（ユーザー方針: テーマ非連携の単独保存）。
+// 形は :cueoffset と同じく「ページ単位の単一マップ」。空文字・既定一致は保存しない（呼び出し側で削除）。
+// 文字数は MAX_CUE_TEXT_LEN で上限を切る（cue-stamp は whiteSpace:nowrap で横溢れするため）。
+export const MAX_CUE_TEXT_LEN = 24;
+
+export function cueTextStorageKey(explicit) {
+  return tweaksStorageKey(explicit) + ':cuetext';
+}
+
+// 保存マップを { [cueId]: 非空文字列(<=MAX) } だけに正規化する純関数（DOM 非依存）。空 id・非文字列・
+// trim 後に空の値は捨て、長すぎる値は MAX_CUE_TEXT_LEN で切る。壊れた入力でも安全なマップを返す。
+// 注意: 「既定 stamp と一致したら捨てる」判定は default を知らないここでは行わない（commit 側で行う）。
+export function sanitizeCueTexts(obj) {
+  if (!isPlainObject(obj)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(obj)) {
+    if (id && typeof v === 'string') {
+      const s = v.trim().slice(0, MAX_CUE_TEXT_LEN);
+      if (s) out[id] = s;
+    }
+  }
+  return out;
+}
+
+// 保存マップを返す。未保存・壊れ・読取不可は {}（無害に無効化＝全 cue 既定文字）。
+export function loadCueTexts(explicit) {
+  try {
+    const raw = window.localStorage.getItem(cueTextStorageKey(explicit));
+    if (!raw) return {};
+    return sanitizeCueTexts(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function saveCueTexts(map, explicit) {
+  try {
+    window.localStorage.setItem(cueTextStorageKey(explicit), JSON.stringify(sanitizeCueTexts(map)));
+  } catch {
+    /* 容量超過やプライベートモードでは黙って諦める（次回は既定文字に戻るだけ） */
+  }
+}
+
+export function clearCueTexts(explicit) {
+  try {
+    window.localStorage.removeItem(cueTextStorageKey(explicit));
+  } catch {
+    /* 読み書き不可でも無視（全 cue 既定文字に戻るだけ） */
+  }
+}
+
 // テーマ・エクスポート JSON のファイル名。形式は
 // guruguru-avatar-tweaks-YYYY-MM-DD-HHMM.json（HHMM=時分）。Date を引数で
 // 受ける純関数にして決定的にテストできるようにする。値はローカル時刻で組む。
