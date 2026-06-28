@@ -125,6 +125,16 @@ export default function forkConfig({ command, mode }) {
   if (env.VITE_HOST === '1') config.server.host = true;
   if (env.VITE_NO_OPEN === '1') config.server.open = false;
 
+  // doStartDev.sh の既定 --both モード用。vite は http のまま（WSL なら 0.0.0.0 のまま＝
+  // Windows Chrome から localhost で届く）、別ポートの TLS プロキシ(server/dev-tls-proxy.mjs)
+  // が tailscale から FQDN(Host) 付きで素通ししてくる。vite8 の host 検証は https のときだけ
+  // 無効化されるため、http の本モードでは既定 allowedHosts=[] がこの FQDN をブロックしてしまう
+  // （"Blocked request"）。そこで該当 FQDN だけを allowedHosts に足して通す（localhost / IP は
+  // 既定で常に許可されるので PC ローカルには影響しない）。
+  if (env.VITE_ALLOWED_HOST) {
+    config.server.allowedHosts = [env.VITE_ALLOWED_HOST];
+  }
+
   // iPhone Safari は secure context でないとカメラ(getUserMedia)が動かない。LAN の別端末
   // から開く tx モード用に、mkcert / `tailscale cert` の鍵を渡せば dev/preview を HTTPS 配信する:
   //   VITE_TLS_CERT=cert.pem VITE_TLS_KEY=key.pem npm run dev

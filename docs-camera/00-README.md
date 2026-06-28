@@ -27,6 +27,7 @@
 - [14-Windowsで動かす](14-Windowsで動かす.md) — Windows 1台の localhost 内で完結する手順。
 - [15-カメラ切り替え](15-カメラ切り替え.md) — カメラの選択・記憶と `?camera=` 固定。
 - [16-URLパラメータ一覧](16-URLパラメータ一覧.md) — 起動時に読む URL クエリの早見表。
+- [17-localhostとtailscaleを同時に使う](17-localhostとtailscaleを同時に使う.md) — doStartDev の既定 both モード（PC=http / 別端末=https を1回の起動で同時）。
 
 ## カスタマイズ・アセット制作（30-49）
 
