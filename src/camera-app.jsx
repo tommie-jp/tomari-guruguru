@@ -361,11 +361,18 @@ function DirectionCross({ flash = {}, onDir, onCenter, onToggleDetail, detailOpe
 
 // パネルの表示/非表示をワンタップで切り替えるチップ列（Tweaks を開かずに各 HUD を出せる）。
 // on のチップは緑枠で強調。items=[{ key, label, on, toggle }]。
+// 演出ボタン帯と同じく「折り返さない 1 列の帯」にして、はみ出し分はドラッグ/スワイプで
+// 横スクロールする（タッチはネイティブの overflow-x がそのままスライドになる）。
+// スクロールバー非表示は index.html の .cuebar-scroll に依存。
 function PanelToggles({ items, inkColor, subColor, style, children }) {
   return (
-    <div style={{
-      position: 'absolute', zIndex: 6, display: 'flex', gap: 6, flexWrap: 'wrap',
-      alignItems: 'center', fontFamily: "'Zen Maru Gothic', sans-serif", ...style,
+    <div className="cuebar-scroll" style={{
+      position: 'absolute', zIndex: 6, display: 'flex', gap: 6, flexWrap: 'nowrap',
+      alignItems: 'center', fontFamily: "'Zen Maru Gothic', sans-serif",
+      overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
+      touchAction: 'pan-x', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'none',
+      padding: '2px 0', // boxShadow/枠が切れない内側余白
+      ...style,
     }}>
       {items.map(({ key, label, on, toggle, title }) => (
         <button
@@ -375,6 +382,7 @@ function PanelToggles({ items, inkColor, subColor, style, children }) {
           aria-pressed={on}
           title={title || `${label}を${on ? '隠す' : '表示'}`}
           style={{
+            flex: '0 0 auto', // 縮めず一定サイズを保ち、はみ出しは横スクロールへ
             display: 'inline-flex', alignItems: 'center', lineHeight: 1,
             padding: '4px 10px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
             border: `1.5px solid ${on ? '#46C26A' : 'rgba(127,127,127,0.45)'}`,
@@ -1721,9 +1729,9 @@ function App() {
           // スクロールバー非表示は index.html の .cuebar-scroll に依存。
           <div className="cuebar-scroll" style={{
             position: 'absolute',
-            // 左下 PanelToggles（最大2段）・版表記・右下歯車の上へ逃がす。
+            // 左下 PanelToggles（1列の帯）・版表記の上へ逃がす。右端はブラウザ端まで使う（幅いっぱい）。
             bottom: 'calc(78px + var(--sab))',
-            left: 'calc(8px + var(--sal))', right: 'calc(56px + var(--sar))',
+            left: 'calc(8px + var(--sal))', right: 'calc(8px + var(--sar))',
             zIndex: editMode ? 40 : 6,
             display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6,
             overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
@@ -1913,9 +1921,10 @@ function App() {
         subColor={subColor}
         style={{
           // 左下隅の Tweaks ハンバーガー（約40px）の右へ寄せて重ならないようにする。
+          // 折り返さず 1 列の帯にして、はみ出しは横スクロール。右端近くまで使えるよう幅を広く取る。
           bottom: isNarrow ? 'calc(14px + var(--sab))' : 'calc(16px + var(--sab))',
           left: isNarrow ? 'calc(60px + var(--sal))' : 'calc(64px + var(--sal))',
-          maxWidth: 'calc(100vw - 168px)',
+          maxWidth: 'calc(100vw - 72px - var(--sal) - var(--sar))',
         }}
         items={[
           { key: 'preview', label: 'カメラ', on: t.preview, toggle: () => setTweak('preview', !t.preview) },
