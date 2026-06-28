@@ -55,8 +55,8 @@ const VERSION_LABEL =
   GIT_SHA === 'dev'
     ? `v${APP_VERSION} · dev`
     : `v${APP_VERSION} · ${GIT_SHA} · ${BUILD_DATE}`;
-// 狭い画面用の短縮版（日付を落としてビルド識別だけ残す）。右下 Tweaks ボタンの上に
-// 1行で収め、左下コントロールに被らない長さにする。
+// 狭い画面用の短縮版（日付を落としてビルド識別だけ残す）。右下に1行で収め、
+// 左下のコントロール（チップ列・Tweaks ハンバーガー）に被らない長さにする。
 const VERSION_LABEL_SHORT =
   GIT_SHA === 'dev' ? `v${APP_VERSION} · dev` : `v${APP_VERSION} · ${GIT_SHA}`;
 
@@ -99,7 +99,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "tiltMax": 23,
   "tiltPivotY": 72,
   "invertTilt": false,
-  "tiltYawComp": -3.0,
+  "tiltYawComp": 0,
   "rollYawTiltB": 0,
   "biasRollDeg": 0,
   "slideEnabled": true,
@@ -1053,7 +1053,7 @@ function App() {
       if (compX != null) edits.slidePoseCompX = compX; // 逆符号・振り不足は据え置き
       // かしげ差 b = 「いま実際に表示されているかしげ（= a と幾何補正 tiltYawComp を通した後の roll）」。
       // 右なら +b、左なら -b を覚え、実行時は右向きで rollGeo-b、左向きで rollGeo+b になるので、押した
-      // 向きの姿勢でちょうど 0（垂直）になる。tiltYawComp が 0 でなくても（既定 -3.0 でも）、その幾何項
+      // 向きの姿勢でちょうど 0（垂直）になる。tiltYawComp が 0 でなくても（手動で動かしても）、その幾何項
       // 由来のかしげごと打ち消せるのがポイント（生 roll から取ると幾何項が残り、垂直にならない）。
       // 「正」を先に押して a を決めておく前提（パネルの案内通り）。0.1°刻みで保持。
       const rawRoll = rollRef.current - t.biasRollDeg * DEG;
@@ -1102,7 +1102,7 @@ function App() {
   }
   function resetTilt() {
     // 自動校正するかしげ値（正面中立 a=biasRoll・左右のかしげ差 b）を 0 に戻す。
-    // 左右向き補正 tiltYawComp は手動スライダー（既定 -3.0）なのでここでは触らない。
+    // 左右向き補正 tiltYawComp は手動スライダー（既定 0）なのでここでは触らない。
     setTweak({ biasRollDeg: 0, rollYawTiltB: 0 });
   }
 
@@ -1567,7 +1567,7 @@ function App() {
         borderRadius: 11, cursor: 'pointer', whiteSpace: 'normal',
         boxShadow: '0 4px 14px rgba(60,48,38,0.08)', userSelect: 'none', touchAction: 'manipulation'
       }}>
-      {editMode ? '調整中' : '位置調整'}
+      {editMode ? '設定中' : '設定'}
     </button>
   );
   const cueButtonList = cueController.cues.map((c) => {
@@ -1588,7 +1588,7 @@ function App() {
         onPointerLeave={cancelCueLongPress}
         onPointerCancel={cancelCueLongPress}
         title={editMode
-          ? (editable ? `${c.label}: ドラッグで位置調整` : `${c.label}: 位置調整なし（スタンプ無し）`)
+          ? (editable ? `${c.label}: ドラッグで位置を調整` : `${c.label}: 設定なし（スタンプ無し）`)
           : `${c.label}（キー: ${c.key || '-'}）`}
         style={{
           position: 'relative',
@@ -1632,7 +1632,9 @@ function App() {
         disabled={!showPreview}
         onClose={() => setTweak('preview', false)}
         closeLabel="カメラ映像を隠す"
-        defaultStyle={{ top: 16, left: 16 }}
+        // 演出ボタン列を左端へ移したので、PC ではカメラ枠を右側（上部リンク群の下）へ逃がして
+        // 列と重ならないようにする。スマホは演出が画面下の横帯なので従来どおり左上で干渉しない。
+        defaultStyle={isNarrow ? { top: 16, left: 16 } : { top: 160, right: 16 }}
         defaultWidth="min(160px, 34vw)"
         style={showPreview ? {
           zIndex: 5, borderRadius: 10, overflow: 'hidden', background: '#000', color: '#fff',
@@ -1711,7 +1713,7 @@ function App() {
           （顔追従/ドラッグ/ズームに連動）。place で 頭の上/頭にオーバーレイ を切替。obs でも表示。 */}
       <CueStampLayer ref={cueStampRef} anchorRef={charRef}></CueStampLayer>
 
-      {/* 演出ボタン列（操作用・右端中央）。配信(obsMode)/受信(rx)では非表示。Tweaks で表示トグル可。
+      {/* 演出ボタン列（操作用・左端中央）。配信(obsMode)/受信(rx)では非表示。設定詳細で表示トグル可。
           編集モード中はオーバーレイ(z30)より上へ出して対象を選べるよう z を上げる。 */}
       {!obsMode && !isRx && t.sbButtons ? (
         isNarrow ? (
@@ -1738,20 +1740,20 @@ function App() {
             {cueButtonList}
           </div>
         ) : (
-          // PC: 右端中央。「位置調整」は固定（flex 0 0 auto）し、cue 列だけを縦スクロール。
+          // PC: 左端中央。「設定」トグルは固定（flex 0 0 auto）し、cue 列だけを縦スクロール。
           // 上限高さをブラウザ表示領域(dvh)−上下マージンにし、足りなければ cue 列が縮んで
-          // スクロールする。これで高さが小さくても「位置調整」は常に見える。
+          // スクロールする。これで高さが小さくても「設定」は常に見える。
           // ホイールはネイティブの overflow-y がそのまま縦スクロールに使う（追加 JS 不要）。
           <div style={{
-            position: 'absolute', right: 'calc(14px + var(--sar))', top: '50%',
+            position: 'absolute', left: 'calc(14px + var(--sal))', top: '50%',
             transform: 'translateY(-50%)',
-            display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8,
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
             maxHeight: 'calc(100dvh - 24px)',
             zIndex: editMode ? 40 : 6,
           }}>
             {cueToggleButton}
             <div ref={cueScrollRef} className="cuebar-scroll" style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8,
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
               flex: '1 1 auto', minHeight: 0, // 残り高さを取り、超過分をスクロール
               overflowY: 'auto', overflowX: 'hidden',
               overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
@@ -1910,9 +1912,10 @@ function App() {
         inkColor={inkColor}
         subColor={subColor}
         style={{
+          // 左下隅の Tweaks ハンバーガー（約40px）の右へ寄せて重ならないようにする。
           bottom: isNarrow ? 'calc(14px + var(--sab))' : 'calc(16px + var(--sab))',
-          left: isNarrow ? 'calc(12px + var(--sal))' : 'calc(16px + var(--sal))',
-          maxWidth: 'calc(100vw - 120px)',
+          left: isNarrow ? 'calc(60px + var(--sal))' : 'calc(64px + var(--sal))',
+          maxWidth: 'calc(100vw - 168px)',
         }}
         items={[
           { key: 'preview', label: 'カメラ', on: t.preview, toggle: () => setTweak('preview', !t.preview) },
@@ -1951,7 +1954,7 @@ function App() {
       )}
 
       {/* バージョン表記（右下に控えめに）。配信に映らないよう obsMode では非表示。
-          右下 Tweaks ボタンの真上に逃がして重ならないようにする。狭い画面では
+          右端の演出ボタン列と重ならないよう少し上へ逃がす。狭い画面では
           日付を落とした短縮版にして左下コントロールにも被らない長さにする。 */}
       {!obsMode && (
       <div style={{
@@ -1977,23 +1980,8 @@ function App() {
           border: '1px solid rgba(229,72,77,0.6)', boxShadow: '0 8px 28px rgba(0,0,0,0.4)'
         }}>
           <div style={{ fontWeight: 700, color: '#E5484D', marginBottom: 8, letterSpacing: '0.04em' }}>カメラエラー詳細</div>
-          {/* 解決策（OBS の起動方法）を最初に表示する。OBS のブラウザソースは
-              --enable-media-stream 付きで起動しないとカメラを使えない
-              （詳細は docs-camera/04-OBSでライブ配信.md）。 */}
-          <div style={{
-            padding: '10px 12px', borderRadius: 8,
-            background: 'rgba(229,162,61,0.14)', border: '1px solid rgba(229,162,61,0.5)',
-            color: '#FFE0B0'
-          }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>OBS で使うには</div>
-            <div>OBS を <span style={{ color: '#FFD27A' }}>--enable-media-stream</span> 付きで起動：</div>
-            <div style={{ marginTop: 2 }}>obs64.exe --enable-media-stream</div>
-            <div style={{ marginTop: 4, opacity: 0.85 }}>
-              ショートカットの「リンク先」末尾にフラグを追加（作業フォルダーは変更しない）。
-            </div>
-          </div>
-          {/* 原因切り分け用の診断詳細はその下に表示する。 */}
-          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+          {/* 原因切り分け用の診断詳細を表示する。 */}
+          <div style={{ marginTop: 4 }}>
             {(status.errorDetail && status.errorDetail.length ? status.errorDetail : [status.error || 'unknown']).map((line, i) => (
               <div key={i}>{line}</div>
             ))}
@@ -2121,7 +2109,7 @@ function App() {
       ) : null}
 
       {!isRx && (!obsMode || panelOpen) && (
-      <TweaksPanel closeOnOutsideClick={false}>
+      <TweaksPanel title="設定詳細" closeOnOutsideClick={false}>
         {/* fork:sections — よく触る3つを上に集約し初期展開。残りは折りたたみ
             （開閉は localStorage に永続化）。各セクションはコントロールを内側に
             入れ子にする（兄弟並びは折りたたみ対象にならない）。 */}

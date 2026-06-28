@@ -182,7 +182,7 @@ describe('a/b モデル（正で a・右/左で b）→ 実行時パイプライ
     expect(Math.abs(right.tilt)).toBeLessThan(0.6); // 右: roll-a-b≒0
   });
 
-  it('tiltYawComp≠0(既定 -3.0)でも、右で押した姿勢で 0 になる（実機の症状の修正）', () => {
+  it('tiltYawComp≠0(例: -3.0)でも、右で押した姿勢で 0 になる（実機の症状の修正）', () => {
     // 右 ~29°＋少し下。推定 roll はほぼ 0 だが tiltYawComp=-3.0 の幾何項がかしげを作る。
     // b を「表示中のかしげ(幾何補正後)」から取れば、その幾何項ごと打ち消して垂直になる。
     const pose = { roll: 0.0, yaw: 0.5, pitch: 0.12 };

@@ -71,9 +71,10 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const __TWEAKS_STYLE = `
-  .twk-fab{position:fixed;right:calc(16px + env(safe-area-inset-right));
+  .twk-fab{position:fixed;left:calc(16px + env(safe-area-inset-left));
     bottom:calc(16px + env(safe-area-inset-bottom));z-index:2147483646;
-    appearance:none;border:0;border-radius:999px;padding:10px 14px;
+    appearance:none;border:0;border-radius:999px;padding:9px;
+    display:inline-flex;align-items:center;justify-content:center;
     background:rgba(41,38,27,.86);color:#fff;
     -webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);
     box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 0 rgba(255,255,255,.2) inset;
@@ -220,8 +221,8 @@ const __TWEAKS_STYLE = `
   /* モバイル（狭いポートレイト）: 横幅いっぱい＋タッチしやすい大きめUI */
   @media (max-width:480px){
     .twk-panel{width:calc(100vw - 24px);right:12px;bottom:12px;max-height:72vh}
-    .twk-fab{right:calc(12px + env(safe-area-inset-right));
-      bottom:calc(12px + env(safe-area-inset-bottom));padding:12px 16px;font-size:15px}
+    .twk-fab{left:calc(12px + env(safe-area-inset-left));
+      bottom:calc(12px + env(safe-area-inset-bottom));padding:11px}
     .twk-hd{padding:12px 10px 12px 16px}
     .twk-hd b{font-size:16px}
     .twk-x{width:32px;height:32px;font-size:18px}
@@ -603,7 +604,9 @@ function TweaksPanel({ title = 'Tweaks', storageKey, closeOnOutsideClick = true,
     if (!open || !closeOnOutsideClick) return undefined;
     const onOutsidePointer = (e) => {
       const panel = dragRef.current;
-      if (panel && !panel.contains(e.target)) {
+      // 常時表示の FAB（.twk-fab）クリックはトグル扱いにしたいので外側閉じから除外する。
+      const onFab = e.target && e.target.closest && e.target.closest('.twk-fab');
+      if (panel && !panel.contains(e.target) && !onFab) {
         setOpen(false);
         window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
       }
@@ -640,33 +643,32 @@ function TweaksPanel({ title = 'Tweaks', storageKey, closeOnOutsideClick = true,
     window.addEventListener('mouseup', up);
   };
 
-  if (!open) {
-    return (
-      <>
-        <style>{__TWEAKS_STYLE}</style>
-        <button type="button" className="twk-fab" onClick={() => setOpen(true)}>
-          Tweaks
-        </button>
-      </>
-    );
-  }
   return (
     <>
       <style>{__TWEAKS_STYLE}</style>
-      <div ref={dragRef} className="twk-panel" data-omelette-chrome=""
-           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
-        <div className="twk-hd" onMouseDown={onDragStart}>
-          <b>{title}</b>
-          <button className="twk-x" aria-label="Close tweaks"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={dismiss}>✕</button>
+      {/* ハンバーガーは常時表示。クリックでパネルを開閉トグルする（外側クリック閉じ処理は
+          .twk-fab を除外しているので二重発火しない）。 */}
+      <button type="button" className="twk-fab" onClick={() => setOpen((o) => !o)} aria-label={title} title={title}>
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+          <path d="M4 6h14M4 11h14M4 16h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open && (
+        <div ref={dragRef} className="twk-panel" data-omelette-chrome=""
+             style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+          <div className="twk-hd" onMouseDown={onDragStart}>
+            <b>{title}</b>
+            <button className="twk-x" aria-label="Close tweaks"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={dismiss}>✕</button>
+          </div>
+          <div className="twk-body">
+            <CollapseProvider storageKey={storageKey}>
+              {children}
+            </CollapseProvider>
+          </div>
         </div>
-        <div className="twk-body">
-          <CollapseProvider storageKey={storageKey}>
-            {children}
-          </CollapseProvider>
-        </div>
-      </div>
+      )}
     </>
   );
 }

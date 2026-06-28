@@ -296,9 +296,9 @@ function CueOffsetEditor({
       />
       <DraggablePanel
         id="cueoffset-editor"
-        title={`位置調整: ${cue.label || cue.id}`}
+        title={`設定: ${cue.label || cue.id}`}
         onClose={onClose}
-        closeLabel="調整をやめる"
+        closeLabel="設定をやめる"
         resizable={false}
         defaultStyle={{ left: 16, bottom: 16, top: 'auto' }}
         style={{
