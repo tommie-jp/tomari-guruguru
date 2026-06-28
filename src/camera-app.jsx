@@ -6,10 +6,11 @@ import { useFacePose } from './face/use-face-pose';
 import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
 import { computeStateFrame, createExprState } from './face/avatar-state';
-import { computeDirectionRange } from './face/direction-range';
+import { computeDirectionRange, rawDirForDisplay } from './face/direction-range';
 import {
   computeSlidePoseCompX, computeSlidePoseCompY, computeZoomPitchComp,
 } from './face/calibrate-comp';
+import { compensateRollForYaw } from './face/compensate-roll-for-yaw';
 import { compensateScaleForMouth } from './face/mouth-compensated-scale';
 import { applyState, createSmoothState } from './face/apply-state';
 import { encodeStateFrame, decodeStateFrame } from './face/state-codec';
@@ -745,7 +746,13 @@ function App() {
   //   （距離は左右では不変＝faceScale は高さ基準で yaw に強い。かしげは上下では混入しない。）
   // 顔の向きだけ変えて（平行移動せず・距離を変えず）押す前提。逆向き・振り不足は
   // computeDirectionRange が null を返すので ✗ を出して何も書かない。
-  function calibrateDirection(dir) {
+  //
+  // 表示(グリッド/アバター)は invertX/invertY で左右・上下が反転する（head-pose の x=-x / y=-y）。
+  // ボタンはユーザーが見ている「表示の向き」なので、生 yaw/pitch 空間での向き(rawDir)へ写してから
+  // 校正する。invertX(=既定 true)のとき「右ボタン」は生 yaw が負の側＝raw 'left' に対応する。
+  // これを写さないと、顔を右に向けて右を押しても「逆向き」と判定されて常に ✗ になる。
+  function calibrateDirection(uiDir) {
+    const dir = rawDirForDisplay(uiDir, { invertX: t.invertX, invertY: t.invertY }); // 生 yaw/pitch 空間の向き
     const yaw = poseRef.current.yaw;
     const pitch = poseRef.current.pitch;
     const res = computeDirectionRange({
@@ -758,7 +765,7 @@ function App() {
       minDeg: CALIBRATE_MIN_SWING_DEG,
     });
     if (!res) {
-      flashDir(dir, false);
+      flashDir(uiDir, false); // フィードバックは押したボタン(表示向き)に出す
       return;
     }
     const edits = { [res.key]: res.deg };
@@ -766,15 +773,16 @@ function App() {
     if (dir === 'left' || dir === 'right') {
       const compX = computeSlidePoseCompX({ posX: posRef.current.x, yaw, invertSlide: t.invertSlide });
       if (compX != null) edits.slidePoseCompX = compX; // 逆符号・振り不足は据え置き
-      // かしげ差 b = 「a(正面のかしげ=biasRoll)を引いた後の、今のかしげ」。右なら +b、左なら -b。
-      // 実行時は右向きで roll-a-b、左向きで roll-a+b になるので、押した向きの姿勢でちょうど 0。
+      // かしげ差 b = 「いま実際に表示されているかしげ（= a と幾何補正 tiltYawComp を通した後の roll）」。
+      // 右なら +b、左なら -b を覚え、実行時は右向きで rollGeo-b、左向きで rollGeo+b になるので、押した
+      // 向きの姿勢でちょうど 0（垂直）になる。tiltYawComp が 0 でなくても（既定 -3.0 でも）、その幾何項
+      // 由来のかしげごと打ち消せるのがポイント（生 roll から取ると幾何項が残り、垂直にならない）。
       // 「正」を先に押して a を決めておく前提（パネルの案内通り）。0.1°刻みで保持。
-      const rollAfterBias = rollRef.current / DEG - t.biasRollDeg; // a 差し引き後の今のかしげ(deg)
-      const b = dir === 'right' ? rollAfterBias : -rollAfterBias;
+      const rawRoll = rollRef.current - t.biasRollDeg * DEG;
+      const rollGeo = compensateRollForYaw(rawRoll, yaw, t.tiltYawComp, pitch); // 表示中のかしげ(rad)
+      const rollShownDeg = rollGeo / DEG;
+      const b = dir === 'right' ? rollShownDeg : -rollShownDeg;
       edits.rollYawTiltB = Math.round(b * 10) / 10;
-      // 左右向き補正(幾何モデル tiltYawComp) は手動スライダー（既定 -3.0）として独立に扱い、
-      // ここでは変更しない。水平向き(pitch≈0)では tiltYawComp の寄与は基底≈0 でほぼ 0 なので、
-      // 生 roll から求めた b が押下姿勢でそのまま効く。
     }
     // 上下: ズーム変化(zoomPitchComp) と 位置ズレ(slidePoseCompY) を打ち消す。
     // ズームは実行時パイプラインに合わせ、口開き補正(zoomMouthComp)を先に通したサイズで逆算
@@ -796,7 +804,7 @@ function App() {
     setTweak(edits);
     // 押した瞬間に平滑化のランプを飛ばし、新しい補正へ即スナップさせる（「すぐ垂直」を保証）。
     snapMotionUntilRef.current = performance.now() + SNAP_MOTION_MS;
-    flashDir(dir, true);
+    flashDir(uiDir, true); // フィードバックは押したボタン(表示向き)に出す
   }
   // 上下左右の振り幅を既定（≒従来の対称レンジ）へ戻す。1回の setTweak でまとめて反映する。
   function resetRanges() {

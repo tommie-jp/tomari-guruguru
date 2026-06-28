@@ -13,6 +13,24 @@
 
 const DEG = Math.PI / 180;
 
+// 反対向き（左右・上下のペア）。
+const OPPOSITE_DIR = { left: 'right', right: 'left', up: 'down', down: 'up' };
+
+/**
+ * 表示(グリッド/アバター)の向きボタンを、生 yaw/pitch 空間の向きへ写す。
+ * 表示は invertX/invertY で左右・上下が反転する（head-pose の x=-x / y=-y）。ボタンは
+ * ユーザーが見ている「表示の向き」なので、生空間で校正するにはこの写像が要る。invertX のとき
+ * 左右、invertY のとき上下を入れ替える。例: invertX=true で「右ボタン」は生 yaw が負の側＝'left'。
+ * @param {'up'|'down'|'left'|'right'} uiDir 押したボタン（表示の向き）
+ * @param {{ invertX?: boolean, invertY?: boolean }} [opts]
+ * @returns {'up'|'down'|'left'|'right'} 生 yaw/pitch 空間での向き
+ */
+export function rawDirForDisplay(uiDir, { invertX = false, invertY = false } = {}) {
+  const flip = (invertX && (uiDir === 'left' || uiDir === 'right'))
+    || (invertY && (uiDir === 'up' || uiDir === 'down'));
+  return flip ? (OPPOSITE_DIR[uiDir] || uiDir) : uiDir;
+}
+
 // 各方向が「振り切ったときに増える生角度」の軸と符号、書き込み先キー。
 //   right: yaw+ / left: yaw- / up: pitch+ / down: pitch-
 const DIRECTIONS = {

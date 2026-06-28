@@ -8,6 +8,7 @@ import { computeDirectionRange } from './direction-range';
 import {
   computeTiltYawComp, computeSlidePoseCompX, computeSlidePoseCompY,
 } from './calibrate-comp';
+import { compensateRollForYaw } from './compensate-roll-for-yaw';
 
 const DEG = Math.PI / 180;
 
@@ -135,17 +136,20 @@ describe('方向校正 → 実行時パイプラインの往復', () => {
 // a/b モデルの校正経路。正ボタンで a=正面のかしげ(biasRoll)、右/左ボタンで b=左右のかしげ差を
 // 記録し、実行時に 右→roll-a-b / 左→roll-a+b / 正面→roll-a となる往復を端から端まで検証する。
 describe('a/b モデル（正で a・右/左で b）→ 実行時パイプラインの往復', () => {
-  // camera-app の calibrateDirection（左右）と同じ b の解き方: b = (押下時 roll[deg] − a[deg])、左は符号反転。
-  function solveB({ rollDeg, dir, biasRollDeg = 0 }) {
-    const rollAfterBias = rollDeg - biasRollDeg; // a を引いた後の今のかしげ(deg)
-    const b = dir === 'right' ? rollAfterBias : -rollAfterBias;
+  // camera-app の calibrateDirection（左右）と同じ b の解き方: b = 「いま表示中のかしげ」=
+  // 幾何補正(tiltYawComp)後の roll[deg]。左は符号反転。これで tiltYawComp≠0 でも押下姿勢が 0 になる。
+  function solveB({ roll, yaw, pitch = 0, dir, biasRollDeg = 0, tiltYawComp = 0 }) {
+    const rawRoll = roll - biasRollDeg * DEG;
+    const rollGeo = compensateRollForYaw(rawRoll, yaw, tiltYawComp, pitch);
+    const rollShownDeg = rollGeo / DEG;
+    const b = dir === 'right' ? rollShownDeg : -rollShownDeg;
     return Math.round(b * 10) / 10;
   }
 
   it('水平に右を向いて押すと、その姿勢でかしげが 0 になる（症状の本丸）', () => {
     // 真横に右 ~29°。pitch=0 だが推定器の癖で roll=0.12rad が乗っている。a=0。
     const pose = { roll: 0.12, yaw: 0.5, pitch: 0 };
-    const b = solveB({ rollDeg: pose.roll / DEG, dir: 'right' });
+    const b = solveB({ ...pose, dir: 'right' });
     const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
     const f = computeStateFrame(signals(pose), t, createExprState(), 0);
     expect(Math.abs(f.tilt)).toBeLessThan(0.5);
@@ -153,14 +157,14 @@ describe('a/b モデル（正で a・右/左で b）→ 実行時パイプライ
 
   it('水平に左を向いて押すと、その姿勢でかしげが 0 になる（左ボタンも同様）', () => {
     const pose = { roll: -0.1, yaw: -0.5, pitch: 0 };
-    const b = solveB({ rollDeg: pose.roll / DEG, dir: 'left' });
+    const b = solveB({ ...pose, dir: 'left' });
     const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
     const f = computeStateFrame(signals(pose), t, createExprState(), 0);
     expect(Math.abs(f.tilt)).toBeLessThan(0.5);
   });
 
   it('右で記録した b は正面(yaw=0)を傾けない（中立は roll-a のみ）', () => {
-    const b = solveB({ rollDeg: 0.12 / DEG, dir: 'right' });
+    const b = solveB({ roll: 0.12, yaw: 0.5, pitch: 0, dir: 'right' });
     const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
     const front = computeStateFrame(signals({ roll: 0, yaw: 0, pitch: 0 }), t, createExprState(), 0);
     expect(Math.abs(front.tilt)).toBeLessThan(0.5);
@@ -170,7 +174,7 @@ describe('a/b モデル（正で a・右/左で b）→ 実行時パイプライ
     // 正面で常時 roll=0.02 → 正ボタンが a=biasRollDeg に記録。右向きはそれ＋推定バイアス。
     const biasRollDeg = Math.round((0.02 / DEG) * 10) / 10;
     const pose = { roll: 0.02 + 0.1, yaw: 0.5, pitch: 0 };
-    const b = solveB({ rollDeg: pose.roll / DEG, dir: 'right', biasRollDeg });
+    const b = solveB({ ...pose, dir: 'right', biasRollDeg });
     const t = tweaks({ rollYawTiltB: b, biasRollDeg, tiltGain: 1.3, tiltMax: 23 });
     const front = computeStateFrame(signals({ roll: 0.02, yaw: 0, pitch: 0 }), t, createExprState(), 0);
     const right = computeStateFrame(signals(pose), t, createExprState(), 0);
@@ -178,10 +182,22 @@ describe('a/b モデル（正で a・右/左で b）→ 実行時パイプライ
     expect(Math.abs(right.tilt)).toBeLessThan(0.6); // 右: roll-a-b≒0
   });
 
-  it('pitch を付けて振っても押した姿勢で 0 になる（b は a 差し引き後の roll をそのまま使う）', () => {
-    // 右 40°＋下向き。physically 整合な行列から読んだ roll をそのまま b にする。
+  it('tiltYawComp≠0(既定 -3.0)でも、右で押した姿勢で 0 になる（実機の症状の修正）', () => {
+    // 右 ~29°＋少し下。推定 roll はほぼ 0 だが tiltYawComp=-3.0 の幾何項がかしげを作る。
+    // b を「表示中のかしげ(幾何補正後)」から取れば、その幾何項ごと打ち消して垂直になる。
+    const pose = { roll: 0.0, yaw: 0.5, pitch: 0.12 };
+    const tiltYawComp = -3.0;
+    const b = solveB({ ...pose, dir: 'right', tiltYawComp });
+    expect(Math.abs(b)).toBeGreaterThan(1); // 幾何項由来で b は非ゼロ（「変化なし」だった症状の修正）
+    const t = tweaks({ tiltYawComp, rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
+    const f = computeStateFrame(signals(pose), t, createExprState(), 0);
+    expect(Math.abs(f.tilt)).toBeLessThan(0.6);
+  });
+
+  it('pitch を付けて振っても押した姿勢で 0 になる（b は表示中のかしげから求める）', () => {
+    // 右 40°＋下向き。physically 整合な行列から読んだ roll を表示中のかしげとして b にする。
     const s = posed(0.7, 0.26);
-    const b = solveB({ rollDeg: s.roll / DEG, dir: 'right' });
+    const b = solveB({ roll: s.roll, yaw: s.yaw, pitch: s.pitch, dir: 'right' });
     const t = tweaks({ rollYawTiltB: b, tiltGain: 1.3, tiltMax: 23 });
     const f = computeStateFrame(signals({ roll: s.roll, yaw: s.yaw, pitch: s.pitch }), t, createExprState(), 0);
     expect(Math.abs(f.tilt)).toBeLessThan(0.6);

@@ -1,7 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { computeDirectionRange } from './direction-range';
+import { computeDirectionRange, rawDirForDisplay } from './direction-range';
 
 const DEG = Math.PI / 180;
+
+describe('rawDirForDisplay（表示の向きボタン → 生 yaw/pitch 空間の向き）', () => {
+  it('反転なしならそのまま', () => {
+    expect(rawDirForDisplay('right', {})).toBe('right');
+    expect(rawDirForDisplay('left', {})).toBe('left');
+    expect(rawDirForDisplay('up', {})).toBe('up');
+    expect(rawDirForDisplay('down', {})).toBe('down');
+  });
+
+  it('invertX で左右だけ入れ替わる（上下は不変）', () => {
+    expect(rawDirForDisplay('right', { invertX: true })).toBe('left');
+    expect(rawDirForDisplay('left', { invertX: true })).toBe('right');
+    expect(rawDirForDisplay('up', { invertX: true })).toBe('up');
+    expect(rawDirForDisplay('down', { invertX: true })).toBe('down');
+  });
+
+  it('invertY で上下だけ入れ替わる（左右は不変）', () => {
+    expect(rawDirForDisplay('up', { invertY: true })).toBe('down');
+    expect(rawDirForDisplay('down', { invertY: true })).toBe('up');
+    expect(rawDirForDisplay('right', { invertY: true })).toBe('right');
+    expect(rawDirForDisplay('left', { invertY: true })).toBe('left');
+  });
+
+  it('両方反転なら左右も上下も入れ替わる', () => {
+    expect(rawDirForDisplay('right', { invertX: true, invertY: true })).toBe('left');
+    expect(rawDirForDisplay('up', { invertX: true, invertY: true })).toBe('down');
+  });
+});
 
 // 共通の入力。dir / sensitivity / bias を上書きしてテストする。
 function input(over = {}) {
