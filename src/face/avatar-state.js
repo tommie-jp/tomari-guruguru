@@ -1,6 +1,6 @@
 // signals(+tweaks) → 「状態フレーム」を作る純ロジック。
 //
-// docs-camera/05 の構成で producer(iPhone/ローカル) 側が毎フレーム実行する。派生・ゲイン・
+// docs-camera/11 の構成で producer(iPhone/ローカル) 側が毎フレーム実行する。派生・ゲイン・
 // 反転・向き補正・表情の確定（口3段/まばたき）をここで済ませ、CEF へは小さな状態フレームだけ送る。
 // 連続値(colX/rowY/tilt/slideX/slideY/zoom)は「平滑化前のターゲット」で、平滑化は受信側
 // (apply-state.js)が担う＝ネットワークのジッタを吸収するため。sheet だけは離散値で即確定。

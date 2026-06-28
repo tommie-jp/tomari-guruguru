@@ -77,7 +77,8 @@
 
 - **ファイル(F) → 名前を付けてエクスポート**
 - 拡張子を **`.png`** または **`.webp`** にする（`.jpg` は透過を保持できない）。
-- 本プロジェクトのキャラ画像は WebP（`public/slices2/<状態>/r<行>c<列>.webp`）。
+- デフォルト(01-tomari)の個別スライスのみ `public/slices2/`（`<状態>/r<行>c<列>.webp`）。
+  02 以降のアバターはシート方式 `public/slices2-sheets/<id>/{A..F}.webp`。
   個別スライスを直接直すならこの形式に合わせる。
 
 ## このプロジェクトとの関係
@@ -85,8 +86,10 @@
 スライス済み画像を1枚ずつ直すより、**元の角度シート（`assets/<id>/{A..F}.png`）を
 GIMP で直してから再変換**するほうが整合が取りやすい。
 
+tomari 以外はシート全体（編集対象は `assets/<id>/` などの元シート）を編集 → `doAvatarConvert.sh` で再変換が基本。
+
 1. `assets/<id>/` の A〜F シートを GIMP で編集（透過・描き足し）。
 2. `.png` でエクスポートして上書き。
-3. `./doAvatarConvert.sh assets/<id> <id>`（既定 fill=0.95）で `slices2` 系へ再変換。
+3. `./doAvatarConvert.sh assets/<id> <id>`（既定 fill=0.95）で `public/slices2-sheets/<id>/` へ再変換。
 
 詳細は [31-アバターの追加.md](31-アバターの追加.md) を参照。

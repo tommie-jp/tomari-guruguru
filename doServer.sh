@@ -7,7 +7,7 @@
 # 別ポートで中継したいときに使う。中継ロジックは server/relay-core.mjs を vite-plugin-relay と共有する。
 #
 # 中継サーバは tx(?tx, カメラ＋推論) が送る状態フレーム/config を rx(?rx, OBS の CEF) へ
-# 素通しするだけ（docs-camera/08-WS中継の接続手順.md）。別マシン中継時は rx 側で
+# 素通しするだけ（docs-camera/11-WS中継の接続手順.md）。別マシン中継時は rx 側で
 # ?relay=ws(s)://<host>:<port> を明示する（dev とモードを揃える）。
 #
 # 接続モード（既定: localhost）:

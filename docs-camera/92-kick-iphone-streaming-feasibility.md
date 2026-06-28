@@ -1,6 +1,6 @@
 # iPhone での Kick 配信にアバターを使えるか（調査メモ）
 
-調査日: 2026-06-16
+調査日: 2026-06-16（2026-06 PixiJS canvas 移行で状況が変化）
 
 ## 質問
 
@@ -33,16 +33,19 @@ iPhone で kick.com にライブ配信するとき、通常のカメラ映像の
   Web 上で同時に行うのは不可。ネイティブの `AVCaptureMultiCamSession` なら
   2 眼同時が可能だが、Web（getUserMedia）には開放されていない。
 
-### 3. 本プロジェクトはアバターだけを映像として抜き出せない
+### 3. 本プロジェクトはアバターだけを映像として抜き出せない（カメラ版は一部解消）
 
-リポジトリ調査（`guruguru-avatar/src/talk-app.jsx` / `guruguru-avatar/src/app.jsx`）:
+リポジトリ調査（`guruguru-avatar/src/camera-app.jsx` / `guruguru-avatar/src/talk-app.jsx` / `guruguru-avatar/src/app.jsx`）:
 
-- アバターは `<canvas>` ではなく DOM の `<img>` の不透明度切り替えで描画
-  （25 方向 × 6 表情のプリレンダ WebP）。
+- **カメラ版（index.html）**: 2026-06 に PixiJS SpriteAvatar の `<canvas>` 描画へ移行済み
+  （`src/camera-app.jsx`）。`canvas.captureStream()` の技術的障壁は解消。
+  ただし captureStream の呼び出しおよび RTMP・WHIP 出力路は未実装のため、
+  現状では画面キャプチャなしに映像として送り出すことはできない。
+- **talk 版・ぐるぐる版（talk.html / guruguru.html）**: 依然として DOM の `<img>`
+  の不透明度切り替えで描画（25 方向 × 6 表情のプリレンダ WebP）。
+  `canvas.captureStream()` は使えず、画面キャプチャでしか映像化できない。
 - カメラ映像は MediaPipe FaceLandmarker で顔の向き・口・まばたきを推定する
   ためだけに使用（左上に小さくプレビュー表示）。
-- → `canvas.captureStream()` でアバターだけを取り出せず、画面キャプチャでしか
-  映像化できない。
 
 ## 現実的にできる構成
 
@@ -114,8 +117,11 @@ D_VT --> KICK : Custom RTMP
 
 ## 本プロジェクト側の改善余地（任意）
 
-1. アバターを `<canvas>` 描画にも対応させると `canvas.captureStream()` が使え、
-   ブラウザ内で単一 MediaStream 化できる（iOS 15.4+ で対応, WebKit #181663）。
+1. カメラ版（index.html）は PixiJS SpriteAvatar による `<canvas>` 描画に移行済みで、
+   `canvas.captureStream()` を呼び出せば単一 MediaStream 化できる
+   （iOS 15.4+ で対応, WebKit #181663）。captureStream の呼び出しと
+   RTMP・WHIP 出力路の実装が次の課題。talk 版・ぐるぐる版も `<canvas>` 化すれば
+   同様に対応可能になる。
 2. ブラウザから RTMP は全プラットフォームで不可。配信するなら WebRTC（WHIP）で
    メディアサーバに送って RTMP/HLS に変換する経路が必要。
 3. 顔推定はフロントカメラ 1 台で兼用する前提に整理すると、iOS の 2 カメラ制約を

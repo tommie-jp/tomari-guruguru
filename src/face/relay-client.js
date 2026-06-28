@@ -1,6 +1,6 @@
 // 中継サーバ(server/relay.mjs)につなぐ最小 WebSocket クライアント。
 //
-// docs-camera/05 のメッセージ規約:
+// docs-camera/11 のメッセージ規約:
 //   - 状態フレーム: JSON 配列 [...]（state-codec の encode/decode 済み）
 //   - それ以外: JSON オブジェクト { type, ... }
 //       config        : { type:'config', tweaks }     producer→consumer（設定配布）

@@ -4,7 +4,7 @@ import { applyState, createSmoothState } from './apply-state';
 import { encodeStateFrame, decodeStateFrame } from './state-codec';
 
 // producer 側の signals → 状態フレーム → (JSON 経由) → consumer 側の描画状態、という
-// docs-camera/05 の全データ経路を1本で検証する（WS は server の smoke で別途確認済み）。
+// docs-camera/11 の全データ経路を1本で検証する（WS は server の smoke で別途確認済み）。
 function tweaks(over = {}) {
   return {
     smoothing: 1, motionSmoothing: 1, // 1フレームで収束させ判定を簡単に

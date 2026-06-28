@@ -3,6 +3,8 @@
 カメラ版アバター（`index.html`）を OBS の **ブラウザソース**として読み込み、
 **背景透過でアバターだけ**を配信オーバーレイにするための手順メモ。
 
+> **スコープ**: 本ページはローカル直 OBS（中継なし）の手順です。WS 中継でブラウザを軽くする方法は [11-WS中継.md](11-WS中継.md) / [56-relay-mode.md](56-relay-mode.md) を参照してください。
+
 関連: [01-使い方.md](01-使い方.md)
 
 ## 全体像
@@ -39,7 +41,8 @@ compose --> overlay
 
 - `?obs=1` … 背景透過＋UI 非表示（アバターのみのオーバーレイ）
 - 影は Tweaks の「影の濃さ」（`shadow`、0〜6）で調整する（旧 `?shadow=n` は廃止）。`T` キーで
-  パネルを開いて変更でき、tx 側の値は config 同期で rx(OBS) に反映される
+  パネルを開いて変更でき、この方式（`?obs=1`・中継なしのローカル直 OBS）では調整値は
+  localStorage に保存され次回も維持される（config 同期は `?tx` → `?rx` の relay モードのみ）
 - ステージモード中だけ **`T` キー**で Tweaks パネルを開閉できる（OBS の「対話」で較正する用）
 
 例: `http://localhost:5173/index.html?obs=1`
@@ -80,7 +83,7 @@ obs64.exe --enable-media-stream
 obs64.exe --enable-media-stream --use-fake-ui-for-media-stream
 ```
 
-> 検証実績: Windows + OBS 32.0.1 + `localhost` で、**`--enable-media-stream`（方法A）だけで解決**。
+> 検証実績: Windows + OBS（執筆時 32.0.1）+ `localhost` で、**`--enable-media-stream`（方法A）だけで解決**。
 
 ## OBS 側のセットアップ
 
@@ -91,6 +94,8 @@ obs64.exe --enable-media-stream --use-fake-ui-for-media-stream
 3. 幅・高さ: 1280×720 か 1920×1080
 4. 「ソースが非アクティブのときシャットダウン」OFF（トラッキングを温存）
 5. ソースを右クリック →「対話」でカメラ許可の確認、`T` キーで Tweaks を出して較正
+6. **より軽い受信側方式（推奨）**: `index.html?rx` を OBS のブラウザソースに指定すると、
+   顔トラッキングを OBS 外で行い OBS は受信のみにできる（→ [11-WS中継.md](11-WS中継.md)）
 
 ## カメラ許可の確認のしかた
 

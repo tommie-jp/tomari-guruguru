@@ -26,7 +26,7 @@ if errorlevel 1 (
 )
 
 rem 配信物（dist-local）が無ければ初回ビルド
-if not exist "dist-local\camera.html" (
+if not exist "dist-local\index.html" (
   echo [準備] dist-local が無いのでビルドします（初回のみ・数十秒）...
   call npm install
   if errorlevel 1 ( echo [エラー] npm install に失敗しました。& pause & exit /b 1 )
@@ -40,14 +40,14 @@ start "guruguru-relay" /min cmd /c node server\relay.mjs --web-root dist-local -
 
 rem サーバ起動を待ってから送信側ブラウザを既定ブラウザで開く
 timeout /t 2 /nobreak >nul
-start "" "http://%HOST%:%PORT%/camera.html?tx"
+start "" "http://%HOST%:%PORT%/?tx"
 
 echo.
 echo ============================================================
-echo  送信側(tx) ブラウザ : http://%HOST%:%PORT%/camera.html?tx
+echo  送信側(tx) ブラウザ : http://%HOST%:%PORT%/?tx
 echo    カメラを許可して顔を動かす（設定 UI もここ）
 echo.
-echo  OBS 受信側(rx) URL  : http://%HOST%:%PORT%/camera.html?rx^&obs=1
+echo  OBS 受信側(rx) URL  : http://%HOST%:%PORT%/?rx
 echo    OBS の「ブラウザ」ソースに上の rx URL を貼る（背景は透過）
 echo ============================================================
 echo.

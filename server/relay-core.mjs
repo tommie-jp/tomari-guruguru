@@ -10,7 +10,7 @@
 //    にして「1 ハブ = 1 中継インスタンス」にする（複数サーバ同居・テストで状態が混ざらない）。
 //  - handleConnection(ws, role) は req(URL) を受け取らない＝ws/http 非依存で単体テストできる。
 //    role 文字列への変換は attachRelay 内の roleOf(req) が担う（境界を 1 か所に寄せる）。
-//  - メッセージ規約は docs-camera/05 のとおり: 状態フレーム= JSON 配列、その他= {type,...}。
+//  - メッセージ規約は docs-camera/11 のとおり: 状態フレーム= JSON 配列、その他= {type,...}。
 
 // req.url の ?role を取り出す純関数（パス非依存。/__relay でも / でも同じ）。不正/未指定は null。
 export function roleOf(req) {

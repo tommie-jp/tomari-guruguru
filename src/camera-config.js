@@ -1,6 +1,6 @@
 // カメラ選択まわりの純関数レジストリ（character-config.js と同じ立ち位置）。
 // navigator/DOM 非依存・副作用なしで、enumerateDevices の結果を「引数」で受け取る。
-// こうすることでカメラ実機なしで Vitest 単体テストできる（docs-camera/14-テスト.md 方針）。
+// こうすることでカメラ実機なしで Vitest 単体テストできる（docs-camera/54-テスト.md 方針）。
 
 // 既定の映像サイズ。webcam.js の DEFAULT_CONSTRAINTS と値を揃える（ズレ防止）。
 const VIDEO_IDEAL = { width: { ideal: 640 }, height: { ideal: 480 } };

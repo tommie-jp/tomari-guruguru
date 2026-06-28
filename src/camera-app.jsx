@@ -1827,16 +1827,18 @@ function App() {
           // スクロールする。これで高さが小さくても「編集」は常に見える。
           // ホイールはネイティブの overflow-y がそのまま縦スクロールに使う（追加 JS 不要）。
           <div style={{
-            position: 'absolute', left: 'calc(14px + var(--sal))', top: '50%',
-            transform: 'translateY(-50%)',
-            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
-            maxHeight: 'calc(100dvh - 24px)',
+            position: 'absolute', left: 'calc(14px + var(--sal))',
+            // 縦は「上12px〜下84px」の帯に収め、その中で中央寄せ(justifyContent:center)する。
+            // 下端を空けて左下のハンバーガー(.twk-fab: bottom32+約40px)・チップ列と重ねない。
+            top: 'calc(12px + var(--sat))', bottom: 'calc(84px + var(--sab))',
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 8,
             zIndex: editMode ? 40 : 6,
           }}>
             {cueToggleButton}
             <div ref={cueScrollRef} className="cuebar-scroll" style={{
               display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
-              flex: '1 1 auto', minHeight: 0, // 残り高さを取り、超過分をスクロール
+              // 短いときは伸びず中央寄せ、帯を超えたときだけ縮んでスクロール(flex-shrink + minHeight:0)。
+              flex: '0 1 auto', minHeight: 0,
               overflowY: 'auto', overflowX: 'hidden',
               overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
               padding: '2px 0',
@@ -1899,7 +1901,10 @@ function App() {
       <div style={{
         position: 'absolute',
         top: 'calc(8px + var(--sat))',
-        left: 'calc(12px + var(--sal))', right: 'auto',
+        // PC で左端に演出アイコン帯(幅~50px)が出ているときは、その分だけ右へ寄せて重ねない。
+        // スマホ(帯は画面下)や rx/帯非表示のときは従来どおり左端に置く。
+        left: (!isNarrow && !isRx && t.sbButtons) ? 'calc(76px + var(--sal))' : 'calc(12px + var(--sal))',
+        right: 'auto',
         textAlign: 'left', pointerEvents: 'none', whiteSpace: 'nowrap'
       }}>
         <div style={{ fontSize: 'clamp(18px, 2.4vmin, 28px)', fontWeight: 700, color: inkColor, letterSpacing: '0.06em' }}>ぐるぐるアバター カメラ版</div>
