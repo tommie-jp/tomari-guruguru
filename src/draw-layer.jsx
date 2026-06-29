@@ -76,13 +76,22 @@ function DrawLayerImpl(props, ref) {
     return { scene: fc.toObject(['erasable']), w: fc.getWidth(), h: fc.getHeight() };
   }, []);
 
-  // view: 送信元(w,h)→自分(getWidth/Height)へ全体を拡縮する viewportTransform を当てる。
+  // view: 送信元(w,h)→自分(getWidth/Height)へ拡縮する viewportTransform を当てる。
+  // X/Y を別倍率にすると tx と OBS の縦横比が違うとき絵が歪む（正方形が長方形になる）。
+  // → 等倍スケール＋中央合わせにして縦横比を保つ。基準はアバターと同じ vmin(=短辺)。
+  //    アバターは vmin・中央寄せでレイアウトされるので、同じ基準・中央で拡縮すると
+  //    絵がアバター/シーンに追従しつつ歪まない。はみ出しは画面外へ（クリップ）。
   const applyVpt = useCallback(() => {
     const fc = fcRef.current;
     if (!fc) return;
     const { w, h } = lastSrcRef.current;
     if (!w || !h) return;
-    fc.setViewportTransform([fc.getWidth() / w, 0, 0, fc.getHeight() / h, 0, 0]);
+    const rw = fc.getWidth();
+    const rh = fc.getHeight();
+    const s = Math.min(rw, rh) / Math.min(w, h); // 等倍（vmin 基準）
+    const e = rw / 2 - s * (w / 2); // 中央合わせ（X）
+    const f = rh / 2 - s * (h / 2); // 中央合わせ（Y）
+    fc.setViewportTransform([s, 0, 0, s, e, f]);
   }, []);
 
   // --- 履歴（undo） -------------------------------------------------------
