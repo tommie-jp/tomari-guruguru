@@ -13,6 +13,10 @@
 //       draw-scene    : { type:'draw-scene', data:{ scene, w, h } }  producer→consumer
 //                       （お絵かきオーバーレイの fabric シーン全体。w,h は送信元キャンバスの
 //                        論理サイズで、rx 側が viewportTransform で自分のサイズへ拡縮する）
+//       draw-live     : { type:'draw-live', data:{ phase, id, pts?, color?, width?, w?, h? } }  producer→consumer
+//                       （描画途中のペンストロークをリアルタイムに流す。phase='start'|'move'|'end'。
+//                        start=初点+color/width/w/h、move=増分ポイントのみ、end=id だけ。cursor と同じく
+//                        ephemeral＝後着 OBS への再送はしない。確定は draw-scene が担い rx が到着で置換）
 //       need-config   : { type:'need-config' }         server→producer（CEF 接続時の要求）
 //       peer          : { type:'peer', ... }           server→producer（CEF 接続/切断の通知）
 //
@@ -30,16 +34,17 @@ const MAX_BACKOFF_MS = 8000;
  * @param {(tweaks:object)=>void} [o.onConfig]         config 受信（rx 用）
  * @param {(id:string, over:{stamp?:string,color?:string,size?:number,shadow?:string,offset?:{x:number,y:number}})=>void} [o.onCue]  cue 受信（rx 用・演出トリガ＋カスタム文字/色/倍率/影色/位置）
  * @param {(data:{scene:object,w:number,h:number})=>void} [o.onDrawScene]  draw-scene 受信（rx 用・お絵かきシーン）
+ * @param {(data:{phase:string,id:number,pts?:Array,color?:string,width?:number,w?:number,h?:number})=>void} [o.onDrawLive]  draw-live 受信（rx 用・描画途中のライブストローク）
  * @param {(data:{x:number,y:number,w:number,h:number,show:boolean})=>void} [o.onCursor]  cursor 受信（rx 用・マウスカーソル）
  * @param {()=>void} [o.onNeedConfig]                  config 要求受信（tx 用）
  * @param {(msg:object)=>void} [o.onPeer]              接続通知受信（tx 用）
  * @param {(s:{connected:boolean})=>void} [o.onStatus] 自身の接続状態変化
  * @param {(url:string)=>WebSocket} [o.makeSocket]     テスト用の差し替え口
- * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string, over?:{stamp?:string,color?:string})=>void, sendDrawScene:(data:object)=>void, sendCursor:(data:object)=>void, close:()=>void }}
+ * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string, over?:{stamp?:string,color?:string})=>void, sendDrawScene:(data:object)=>void, sendDrawLive:(data:object)=>void, sendCursor:(data:object)=>void, close:()=>void }}
  */
 export function createRelayClient(o) {
   const {
-    url, role, onState, onConfig, onCue, onDrawScene, onCursor, onNeedConfig, onPeer, onStatus,
+    url, role, onState, onConfig, onCue, onDrawScene, onDrawLive, onCursor, onNeedConfig, onPeer, onStatus,
     makeSocket = (u) => new WebSocket(u),
   } = o;
 
@@ -76,6 +81,7 @@ export function createRelayClient(o) {
           rotation: msg.rotation, place: msg.place, halo: msg.halo, glow: msg.glow, glowColor: msg.glowColor, gain: msg.gain,
         }); break;
         case 'draw-scene': onDrawScene?.(msg.data); break;
+        case 'draw-live': onDrawLive?.(msg.data); break;
         case 'cursor': onCursor?.(msg.data); break;
         case 'need-config': onNeedConfig?.(); break;
         case 'peer': onPeer?.(msg); break;
@@ -127,6 +133,7 @@ export function createRelayClient(o) {
       rawSend(JSON.stringify(m));
     },
     sendDrawScene(data) { rawSend(JSON.stringify({ type: 'draw-scene', data })); },
+    sendDrawLive(data) { rawSend(JSON.stringify({ type: 'draw-live', data })); },
     sendCursor(data) { rawSend(JSON.stringify({ type: 'cursor', data })); },
     close() {
       closed = true;

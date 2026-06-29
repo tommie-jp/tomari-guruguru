@@ -562,9 +562,12 @@ function App() {
   const drawMode = isRx ? 'view' : (drawParam.draw === false ? 'off' : 'edit');
   const drawLayerRef = useRef(null);
   const drawSendRef = useRef(null); // relayApi.sendDrawScene を後で差す（render 末で代入）
+  const drawLiveSendRef = useRef(null); // relayApi.sendDrawLive を後で差す（描画途中のライブ）
   const cursorSendRef = useRef(null); // relayApi.sendCursor を後で差す
   // tx: お絵かきが確定したら relay で rx へ送る。relayApi は毎レンダー変わるので ref 越しに呼ぶ。
   const handleDrawSceneChange = useCallback((payload) => { drawSendRef.current?.(payload); }, []);
+  // tx: 描画途中のライブストロークを relay で rx(OBS) へ送る（ephemeral・確定は scene が担う）。
+  const handleDrawLive = useCallback((data) => { drawLiveSendRef.current?.(data); }, []);
   // tx: マウスカーソル位置を relay で rx(OBS) へ送る。
   const handleCursorMove = useCallback((data) => { cursorSendRef.current?.(data); }, []);
   const [panelOpen, setPanelOpen] = useState(false); // obsMode 中に T キーで Tweaks を開閉
@@ -1032,6 +1035,8 @@ function App() {
     onConfig: (cfg) => setRxConfig((prev) => ({ ...prev, ...cfg })),
     // rx: 受信したお絵かきシーンを再描画（DrawLayer 側で件数・サイズを検証）。
     onDrawScene: (data) => drawLayerRef.current?.loadScene(data),
+    // rx: 描画途中のライブストロークを一時表示（DrawLayer 側で点列・色・太さを検証）。
+    onDrawLive: (data) => drawLayerRef.current?.setLive(data),
     // rx: 受信したマウスカーソルを表示（DrawLayer 側で座標を検証）。
     onCursor: (data) => drawLayerRef.current?.setCursor(data),
     // rx: tx から来た演出をこの端末(OBS)で再生。カスタム文字/色が同梱されていれば一時オーバーライドに
@@ -1063,8 +1068,9 @@ function App() {
   });
   // tx の発火を rx へ転送するための送信口。毎レンダー最新の sendCue を ref に差す。
   cueSendRef.current = relayApi.sendCue;
-  // お絵かきシーン・カーソルの送信口も同様に毎レンダー差し替える。
+  // お絵かきシーン・ライブストローク・カーソルの送信口も同様に毎レンダー差し替える。
   drawSendRef.current = relayApi.sendDrawScene;
+  drawLiveSendRef.current = relayApi.sendDrawLive;
   cursorSendRef.current = relayApi.sendCursor;
 
   // tx: 設定が変わったら CEF へ config を送る（数秒ごとの再送はしない＝変更時のみ）。
@@ -1827,6 +1833,7 @@ function App() {
           active={t.drawEnabled}
           showToolbar={drawMode === 'edit' && !obsMode && t.drawEnabled}
           onSceneChange={handleDrawSceneChange}
+          onDrawLive={handleDrawLive}
           cursorOn={t.cursorEnabled}
           onCursorMove={handleCursorMove}
           // 既定位置は演出アイコン帯の上（narrow=下帯の上、wide=下部の操作群の上）。中央寄せ。

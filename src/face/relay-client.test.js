@@ -91,6 +91,24 @@ describe('createRelayClient', () => {
     expect(JSON.parse(get().sent[1])).toEqual({ type: 'cue', id: 'clap' });
   });
 
+  it('draw-live は onDrawLive に data を渡す（描画途中のライブストローク）', () => {
+    const onDrawLive = vi.fn();
+    const { get } = setup({ onDrawLive });
+    get().open();
+    get().recv({ type: 'draw-live', data: { phase: 'move', id: 3, pts: [[1, 1], [2, 3]] } });
+    expect(onDrawLive).toHaveBeenCalledWith({ phase: 'move', id: 3, pts: [[1, 1], [2, 3]] });
+  });
+
+  it('sendDrawLive は {type:draw-live,data} を送る', () => {
+    const { client, get } = setup();
+    get().open();
+    client.sendDrawLive({ phase: 'start', id: 1, pts: [[0, 0]], color: '#ff0000', width: 6, w: 800, h: 600 });
+    expect(JSON.parse(get().sent[0])).toEqual({
+      type: 'draw-live',
+      data: { phase: 'start', id: 1, pts: [[0, 0]], color: '#ff0000', width: 6, w: 800, h: 600 },
+    });
+  });
+
   it('壊れた JSON は無視して落ちない', () => {
     const onState = vi.fn();
     const { get } = setup({ onState });
