@@ -140,6 +140,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showDebug": false,
   "showExpr": false,
   "showCalib": false,
+  "drawEnabled": true,
   "cameraLabel": "",
   "facingMode": "user",
   "useWorker": true,
@@ -429,7 +430,7 @@ const DEFAULT_CUES = [
 //  - sbMutedTx … 手元(tx)モニタのミュート。tx 自身だけ黙らせる（rx に影響させない）→ 非同期。
 //  - sbMutedRx … 配信(rx)のミュート。rx に UI が無いので tx から同期して遠隔操作 → 同期する(除外しない)。
 //  - sbGain/sbButtons … 各ページのローカル音量/UI（rx 全体音量は OBS ミキサーで調整）→ 非同期。
-const LOCAL_ONLY_TWEAKS = ['sbMutedTx', 'sbGain', 'sbButtons'];
+const LOCAL_ONLY_TWEAKS = ['sbMutedTx', 'sbGain', 'sbButtons', 'drawEnabled'];
 function syncableTweaks(tw) {
   const out = { ...tw };
   for (const k of LOCAL_ONLY_TWEAKS) delete out[k];
@@ -550,13 +551,14 @@ function App() {
   // ステージモードの既定: obs 未指定なら rx のときだけ ON（rx=OBS の CEF 用なので透過が既定）。
   // ?obs=1 で常時 ON、?obs=0 で常時 OFF（rx をブラウザのタブでデバッグするとき用）。
   const obsMode = stage.obs ?? isRx;
-  // お絵かきオーバーレイのモード。rx(OBS)は受信して常に表示(view)、tx/local は ?draw で操作可能(edit)、
-  // それ以外は off（レイヤー自体を出さない）。URL は起動時固定なので一度だけ解析。
+  // お絵かきオーバーレイのモード。rx(OBS)は受信して常に表示(view)、tx/local は既定で操作可能(edit)。
+  // ?draw=0 のときだけ off（レイヤー自体を出さない）。URL は起動時固定なので一度だけ解析。
+  // 実際にツールバーを出す/入力を受けるかは drawEnabled トグル(下部ボタン列)で切替える。
   const drawParam = useMemo(
     () => parseDrawParams(typeof window !== 'undefined' ? window.location.search : ''),
     [],
   );
-  const drawMode = isRx ? 'view' : (drawParam.draw ? 'edit' : 'off');
+  const drawMode = isRx ? 'view' : (drawParam.draw === false ? 'off' : 'edit');
   const drawLayerRef = useRef(null);
   const drawSendRef = useRef(null); // relayApi.sendDrawScene を後で差す（render 末で代入）
   // tx: お絵かきが確定したら relay で rx へ送る。relayApi は毎レンダー変わるので ref 越しに呼ぶ。
@@ -1815,7 +1817,8 @@ function App() {
         <DrawLayer
           ref={drawLayerRef}
           mode={drawMode}
-          showToolbar={drawMode === 'edit' && !obsMode}
+          active={t.drawEnabled}
+          showToolbar={drawMode === 'edit' && !obsMode && t.drawEnabled}
           onSceneChange={handleDrawSceneChange}
         ></DrawLayer>
       ) : null}
@@ -2040,6 +2043,9 @@ function App() {
           { key: 'preview', label: 'カメラ', on: t.preview, toggle: () => setTweak('preview', !t.preview) },
           { key: 'debug', label: 'デバッグ', on: t.showDebug, toggle: () => setTweak('showDebug', !t.showDebug) },
           { key: 'expr', label: '表情', on: t.showExpr, toggle: () => setTweak('showExpr', !t.showExpr) },
+          // お絵かきツール（ツールバー表示＋描画入力）の ON/OFF。描いた線は OFF にしても配信に残る。
+          { key: 'draw', label: 'お絵かき', on: t.drawEnabled, toggle: () => setTweak('drawEnabled', !t.drawEnabled),
+            title: 'お絵かきツールバーの表示と描画入力の ON/OFF（描いた線は OFF にしても残る）' },
           // 向き校正は顔追従(カメラ)専用。マウス追従では pose が無いので出さない。
           ...(effDirection === 'face' ? [{ key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) }] : []),
           // 手元(tx/local)の演出音。ローカルなので rx には影響しない。

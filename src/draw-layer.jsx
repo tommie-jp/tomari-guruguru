@@ -41,7 +41,7 @@ function savePrefs(p) {
 }
 
 function DrawLayerImpl(props, ref) {
-  const { mode, showToolbar } = props; // mode: 'edit' | 'view'
+  const { mode, showToolbar, active = true } = props; // mode: 'edit' | 'view'
   const isEdit = mode === 'edit';
 
   // 最新の onSceneChange を ref で持つ（再購読せずに中身だけ差し替え）。
@@ -265,6 +265,11 @@ function DrawLayerImpl(props, ref) {
     undo: doUndo,
   }), [applyScene, serialize, doClear, doUndo]);
 
+  // お絵かき OFF（active=false）にしたら道具を「手」に戻す（入力を下のアバターへ通す）。
+  useEffect(() => {
+    if (isEdit && !active) setTool('off');
+  }, [isEdit, active]);
+
   const onPickColor = (v) => { setColor(v); savePrefs({ ...loadPrefs(), color: v }); };
   const onPickWidth = (v) => { setWidth(v); savePrefs({ ...loadPrefs(), width: v }); };
 
@@ -274,8 +279,8 @@ function DrawLayerImpl(props, ref) {
       aria-hidden={!isEdit}
       style={{
         position: 'absolute', inset: 0, zIndex: 6,
-        // 'off' と view では下のアバター操作を通す。道具選択中だけ pointer を受ける。
-        pointerEvents: isEdit && tool !== 'off' ? 'auto' : 'none',
+        // OFF・'手'・view では下のアバター操作を通す。お絵かき ON かつ道具選択中だけ pointer を受ける。
+        pointerEvents: isEdit && active && tool !== 'off' ? 'auto' : 'none',
       }}
     >
       <canvas ref={canvasElRef} />
