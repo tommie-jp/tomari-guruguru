@@ -32,6 +32,8 @@ const SEND_DEBOUNCE_MS = 140;    // 描画確定→送信のまとめ送り
 const HISTORY_MAX = 40;          // undo スナップショット上限
 const MAX_OBJECTS = 4000;        // rx 受信時の防御（無認証 WS の偽注入対策）
 const FONT_FAMILY = "'Zen Maru Gothic', sans-serif";
+const CURSOR_SEND_MS = 40;       // カーソル送信の間引き（約25fps）
+const CURSOR_HIDE_MS = 4000;     // 受信が途切れたら残像を消す
 
 // 色/太さの簡易永続化（localStorage）。失敗は握りつぶす（描画機能の本質ではない）。
 const LS_KEY = 'guruguru-draw';
@@ -46,9 +48,12 @@ function DrawLayerImpl(props, ref) {
   const { mode, showToolbar, active = true, toolbarDefaultStyle } = props; // mode: 'edit' | 'view'
   const isEdit = mode === 'edit';
 
-  // 最新の onSceneChange を ref で持つ（再購読せずに中身だけ差し替え）。
+  const { cursorOn = false } = props; // OBS にマウスカーソルを表示する（操作側→配信側へ送る）か
+  // 最新のコールバックを ref で持つ（再購読せずに中身だけ差し替え）。
   const onSceneChangeRef = useRef(props.onSceneChange);
   onSceneChangeRef.current = props.onSceneChange;
+  const onCursorMoveRef = useRef(props.onCursorMove);
+  onCursorMoveRef.current = props.onCursorMove;
 
   const containerRef = useRef(null);
   const canvasElRef = useRef(null);
@@ -58,6 +63,10 @@ function DrawLayerImpl(props, ref) {
   const historyRef = useRef([]);          // edit: scene JSON 文字列のスナップショット
   const suppressRef = useRef(false);      // load 中は変更通知を止める
   const eraserDisposerRef = useRef(null); // EraserBrush の 'end' リスナ解除関数
+  const cursorElRef = useRef(null);       // view: 受信カーソルを描く DOM 要素
+  const cursorHideTimerRef = useRef(0);   // view: 残像消し用タイマー
+  const cursorPosRef = useRef({ x: 0, y: 0 }); // edit: 最新ポインタ位置
+  const cursorSendTimerRef = useRef(0);   // edit: 送信間引きタイマー
 
   const prefs = loadPrefs();
   const [tool, setTool] = useState('off'); // 'off' | 'pen' | 'eraser' | 'select' | 'text'
@@ -273,6 +282,29 @@ function DrawLayerImpl(props, ref) {
       if (!objs.length) return null;
       return serialize();
     },
+    // rx: 受信したカーソル位置を、描画と同じ等倍＋中央マップで表示する。
+    setCursor(data) {
+      const el = cursorElRef.current;
+      const fc = fcRef.current;
+      if (!el) return;
+      const x = Number(data && data.x);
+      const y = Number(data && data.y);
+      const w = Number(data && data.w);
+      const h = Number(data && data.h);
+      const ok = data && data.show !== false && fc
+        && [x, y, w, h].every(Number.isFinite) && w > 0 && h > 0;
+      if (!ok) { el.style.display = 'none'; clearTimeout(cursorHideTimerRef.current); return; }
+      const W = fc.getWidth();
+      const H = fc.getHeight();
+      const s = Math.min(W, H) / Math.min(w, h);   // 描画と同じ vmin 等倍
+      el.style.left = `${s * x + (W / 2 - s * w / 2)}px`;
+      el.style.top = `${s * y + (H / 2 - s * h / 2)}px`;
+      el.style.display = 'block';
+      clearTimeout(cursorHideTimerRef.current);
+      cursorHideTimerRef.current = setTimeout(() => {
+        if (cursorElRef.current) cursorElRef.current.style.display = 'none';
+      }, CURSOR_HIDE_MS);
+    },
     clear: doClear,
     undo: doUndo,
   }), [applyScene, serialize, doClear, doUndo]);
@@ -281,6 +313,31 @@ function DrawLayerImpl(props, ref) {
   useEffect(() => {
     if (isEdit && !active) setTool('off');
   }, [isEdit, active]);
+
+  // 操作側(edit): カーソル ON のとき、ウィンドウのポインタ位置を間引いて配信側へ送る。
+  // 送る座標は描画と同じ「キャンバス＝ウィンドウ px」。rx 側が同じ等倍マップで表示する。
+  useEffect(() => {
+    if (!isEdit) return undefined;
+    if (!cursorOn) {
+      onCursorMoveRef.current?.({ show: false }); // OFF にしたら残像を消す
+      return undefined;
+    }
+    const flush = () => {
+      cursorSendTimerRef.current = 0;
+      const { x, y } = cursorPosRef.current;
+      onCursorMoveRef.current?.({ x, y, w: window.innerWidth, h: window.innerHeight, show: true });
+    };
+    const onMove = (e) => {
+      cursorPosRef.current = { x: e.clientX, y: e.clientY };
+      if (!cursorSendTimerRef.current) cursorSendTimerRef.current = setTimeout(flush, CURSOR_SEND_MS);
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      if (cursorSendTimerRef.current) { clearTimeout(cursorSendTimerRef.current); cursorSendTimerRef.current = 0; }
+      onCursorMoveRef.current?.({ show: false }); // 抜けるとき消す
+    };
+  }, [isEdit, cursorOn]);
 
   const onPickColor = (v) => { setColor(v); savePrefs({ ...loadPrefs(), color: v }); };
   const onPickWidth = (v) => { setWidth(v); savePrefs({ ...loadPrefs(), width: v }); };
@@ -296,6 +353,18 @@ function DrawLayerImpl(props, ref) {
       }}
     >
       <canvas ref={canvasElRef} />
+      {/* view(rx/OBS): 受信したマウスカーソル。先端が指定座標に来るよう左上原点で置く。 */}
+      {!isEdit ? (
+        <div
+          ref={cursorElRef}
+          aria-hidden="true"
+          style={{ position: 'absolute', left: 0, top: 0, display: 'none', pointerEvents: 'none', zIndex: 7, willChange: 'left, top' }}
+        >
+          <svg width="26" height="26" viewBox="0 0 24 24" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>
+            <path d="M1 1 L1 18 L5.4 13.8 L8.6 21 L11.5 19.8 L8.3 12.8 L15 12.8 Z" fill="#fff" stroke="#000" strokeWidth="1.4" strokeLinejoin="round" />
+          </svg>
+        </div>
+      ) : null}
       {showToolbar ? (
         <DrawToolbar
           tool={tool} setTool={setTool}

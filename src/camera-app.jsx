@@ -141,6 +141,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showExpr": false,
   "showCalib": false,
   "drawEnabled": true,
+  "cursorEnabled": false,
   "cameraLabel": "",
   "facingMode": "user",
   "useWorker": true,
@@ -430,7 +431,7 @@ const DEFAULT_CUES = [
 //  - sbMutedTx … 手元(tx)モニタのミュート。tx 自身だけ黙らせる（rx に影響させない）→ 非同期。
 //  - sbMutedRx … 配信(rx)のミュート。rx に UI が無いので tx から同期して遠隔操作 → 同期する(除外しない)。
 //  - sbGain/sbButtons … 各ページのローカル音量/UI（rx 全体音量は OBS ミキサーで調整）→ 非同期。
-const LOCAL_ONLY_TWEAKS = ['sbMutedTx', 'sbGain', 'sbButtons', 'drawEnabled'];
+const LOCAL_ONLY_TWEAKS = ['sbMutedTx', 'sbGain', 'sbButtons', 'drawEnabled', 'cursorEnabled'];
 function syncableTweaks(tw) {
   const out = { ...tw };
   for (const k of LOCAL_ONLY_TWEAKS) delete out[k];
@@ -561,8 +562,11 @@ function App() {
   const drawMode = isRx ? 'view' : (drawParam.draw === false ? 'off' : 'edit');
   const drawLayerRef = useRef(null);
   const drawSendRef = useRef(null); // relayApi.sendDrawScene を後で差す（render 末で代入）
+  const cursorSendRef = useRef(null); // relayApi.sendCursor を後で差す
   // tx: お絵かきが確定したら relay で rx へ送る。relayApi は毎レンダー変わるので ref 越しに呼ぶ。
   const handleDrawSceneChange = useCallback((payload) => { drawSendRef.current?.(payload); }, []);
+  // tx: マウスカーソル位置を relay で rx(OBS) へ送る。
+  const handleCursorMove = useCallback((data) => { cursorSendRef.current?.(data); }, []);
   const [panelOpen, setPanelOpen] = useState(false); // obsMode 中に T キーで Tweaks を開閉
   // rx は受信した設定で描画し、それ以外はローカルの tweaks を使う。
   const [rxConfig, setRxConfig] = useState(TWEAK_DEFAULTS);
@@ -1028,6 +1032,8 @@ function App() {
     onConfig: (cfg) => setRxConfig((prev) => ({ ...prev, ...cfg })),
     // rx: 受信したお絵かきシーンを再描画（DrawLayer 側で件数・サイズを検証）。
     onDrawScene: (data) => drawLayerRef.current?.loadScene(data),
+    // rx: 受信したマウスカーソルを表示（DrawLayer 側で座標を検証）。
+    onCursor: (data) => drawLayerRef.current?.setCursor(data),
     // rx: tx から来た演出をこの端末(OBS)で再生。カスタム文字/色が同梱されていれば一時オーバーライドに
     // 積んで run（同期）→ pop コールバックが拾う→直後に clear。relay 値は信頼私設網前提だが念のため検証する。
     onCue: (id, over) => {
@@ -1057,8 +1063,9 @@ function App() {
   });
   // tx の発火を rx へ転送するための送信口。毎レンダー最新の sendCue を ref に差す。
   cueSendRef.current = relayApi.sendCue;
-  // お絵かきシーンの送信口も同様に毎レンダー差し替える。
+  // お絵かきシーン・カーソルの送信口も同様に毎レンダー差し替える。
   drawSendRef.current = relayApi.sendDrawScene;
+  cursorSendRef.current = relayApi.sendCursor;
 
   // tx: 設定が変わったら CEF へ config を送る（数秒ごとの再送はしない＝変更時のみ）。
   useEffect(() => {
@@ -1820,6 +1827,8 @@ function App() {
           active={t.drawEnabled}
           showToolbar={drawMode === 'edit' && !obsMode && t.drawEnabled}
           onSceneChange={handleDrawSceneChange}
+          cursorOn={t.cursorEnabled}
+          onCursorMove={handleCursorMove}
           // 既定位置は演出アイコン帯の上（narrow=下帯の上、wide=下部の操作群の上）。中央寄せ。
           toolbarDefaultStyle={{
             left: '50%', transform: 'translateX(-50%)',
@@ -2051,6 +2060,9 @@ function App() {
           // お絵かきツール（ツールバー表示＋描画入力）の ON/OFF。描いた線は OFF にしても配信に残る。
           { key: 'draw', label: 'お絵かき', on: t.drawEnabled, toggle: () => setTweak('drawEnabled', !t.drawEnabled),
             title: 'お絵かきツールバーの表示と描画入力の ON/OFF（描いた線は OFF にしても残る）' },
+          // OBS(配信)にマウスカーソルを表示する ON/OFF。操作側の手元カーソルを rx へ送る。
+          { key: 'cursor', label: 'カーソル', on: t.cursorEnabled, toggle: () => setTweak('cursorEnabled', !t.cursorEnabled),
+            title: 'OBS(配信)に操作側のマウスカーソルを表示する ON/OFF' },
           // 向き校正は顔追従(カメラ)専用。マウス追従では pose が無いので出さない。
           ...(effDirection === 'face' ? [{ key: 'calib', label: '向き校正', on: t.showCalib, toggle: () => setTweak('showCalib', !t.showCalib) }] : []),
           // 手元(tx/local)の演出音。ローカルなので rx には影響しない。
