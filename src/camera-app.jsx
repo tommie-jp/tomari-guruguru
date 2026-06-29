@@ -8,6 +8,7 @@ import { useMicLevel } from './face/use-mic-level';
 import { composeSignals } from './face/compose-signals';
 import { parseObsParams } from './obs-mode';
 import { parseRelayMode } from './relay-mode';
+import { parseDrawParams } from './draw-mode';
 import { computeStateFrame, createExprState } from './face/avatar-state';
 import { computeDirectionRange, rawDirForDisplay } from './face/direction-range';
 import {
@@ -26,6 +27,7 @@ import { applyThemeColor } from './theme-color.js';
 import { createSoundboard } from './cue-audio.js';
 import { createCueController, isTypingTarget, parseCueParam } from './cue-system.js';
 import { CueStampLayer } from './cue-stamp.jsx';
+import { DrawLayer } from './draw-layer.jsx';
 import { CueOffsetEditor } from './cue-offset-editor.jsx';
 import {
   loadCueOffsets, saveCueOffsets, clampCueOffset,
@@ -548,6 +550,17 @@ function App() {
   // ステージモードの既定: obs 未指定なら rx のときだけ ON（rx=OBS の CEF 用なので透過が既定）。
   // ?obs=1 で常時 ON、?obs=0 で常時 OFF（rx をブラウザのタブでデバッグするとき用）。
   const obsMode = stage.obs ?? isRx;
+  // お絵かきオーバーレイのモード。rx(OBS)は受信して常に表示(view)、tx/local は ?draw で操作可能(edit)、
+  // それ以外は off（レイヤー自体を出さない）。URL は起動時固定なので一度だけ解析。
+  const drawParam = useMemo(
+    () => parseDrawParams(typeof window !== 'undefined' ? window.location.search : ''),
+    [],
+  );
+  const drawMode = isRx ? 'view' : (drawParam.draw ? 'edit' : 'off');
+  const drawLayerRef = useRef(null);
+  const drawSendRef = useRef(null); // relayApi.sendDrawScene を後で差す（render 末で代入）
+  // tx: お絵かきが確定したら relay で rx へ送る。relayApi は毎レンダー変わるので ref 越しに呼ぶ。
+  const handleDrawSceneChange = useCallback((payload) => { drawSendRef.current?.(payload); }, []);
   const [panelOpen, setPanelOpen] = useState(false); // obsMode 中に T キーで Tweaks を開閉
   // rx は受信した設定で描画し、それ以外はローカルの tweaks を使う。
   const [rxConfig, setRxConfig] = useState(TWEAK_DEFAULTS);
@@ -1007,8 +1020,12 @@ function App() {
   const relayApi = useRelay(mode, {
     relayUrl: relay.relayUrl,
     getConfig: () => syncableTweaks(tweaksRef.current),
+    // tx: 後着 OBS(rx) へ現在のお絵かきシーンを再送する（空なら null）。
+    getDrawScene: () => drawLayerRef.current?.getScene() ?? null,
     onState: (arr) => { latestFrameRef.current = decodeStateFrame(arr); },
     onConfig: (cfg) => setRxConfig((prev) => ({ ...prev, ...cfg })),
+    // rx: 受信したお絵かきシーンを再描画（DrawLayer 側で件数・サイズを検証）。
+    onDrawScene: (data) => drawLayerRef.current?.loadScene(data),
     // rx: tx から来た演出をこの端末(OBS)で再生。カスタム文字/色が同梱されていれば一時オーバーライドに
     // 積んで run（同期）→ pop コールバックが拾う→直後に clear。relay 値は信頼私設網前提だが念のため検証する。
     onCue: (id, over) => {
@@ -1038,6 +1055,8 @@ function App() {
   });
   // tx の発火を rx へ転送するための送信口。毎レンダー最新の sendCue を ref に差す。
   cueSendRef.current = relayApi.sendCue;
+  // お絵かきシーンの送信口も同様に毎レンダー差し替える。
+  drawSendRef.current = relayApi.sendDrawScene;
 
   // tx: 設定が変わったら CEF へ config を送る（数秒ごとの再送はしない＝変更時のみ）。
   useEffect(() => {
@@ -1789,6 +1808,17 @@ function App() {
       {/* リアクション・スタンプ。アバター本体(charRef)の実位置・サイズに毎フレーム追従
           （顔追従/ドラッグ/ズームに連動）。place で 頭の上/頭にオーバーレイ を切替。obs でも表示。 */}
       <CueStampLayer ref={cueStampRef} anchorRef={charRef}></CueStampLayer>
+
+      {/* お絵かきオーバーレイ（fabric）。tx/local は ?draw で操作(edit)、rx(OBS)は受信表示(view)。
+          透過のまま重なり、操作UIは edit かつ非配信(!obsMode)のときだけ出す。off ではマウントしない。 */}
+      {drawMode !== 'off' ? (
+        <DrawLayer
+          ref={drawLayerRef}
+          mode={drawMode}
+          showToolbar={drawMode === 'edit' && !obsMode}
+          onSceneChange={handleDrawSceneChange}
+        ></DrawLayer>
+      ) : null}
 
       {/* 演出ボタン列（操作用・左端中央）。配信(obsMode)/受信(rx)では非表示。設定詳細で表示トグル可。
           編集モード中はオーバーレイ(z30)より上へ出して対象を選べるよう z を上げる。 */}

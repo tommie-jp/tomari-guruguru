@@ -17,13 +17,15 @@ const { useRef, useState, useEffect } = React;
  * @param {Object} o
  * @param {string} o.relayUrl
  * @param {()=>object} [o.getConfig]          tx: need-config への応答に使う現在の tweaks
+ * @param {()=>(object|null)} [o.getDrawScene] tx: need-config 時に後着 OBS へ再送するお絵かきシーン（無ければ null）
  * @param {(frame:Array<number>)=>void} [o.onState]  rx: 状態フレーム受信
  * @param {(tweaks:object)=>void} [o.onConfig]       rx: config 受信
  * @param {(id:string, over:{stamp?:string,color?:string})=>void} [o.onCue]  rx: 演出キュー受信（tx の発火＋カスタム文字/色を再生）
+ * @param {(data:{scene:object,w:number,h:number})=>void} [o.onDrawScene]  rx: お絵かきシーン受信
  * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string, over?:{stamp?:string,color?:string})=>void,
- *            peer:{connected:boolean,count:number}, linkUp:boolean }}
+ *            sendDrawScene:(data:object)=>void, peer:{connected:boolean,count:number}, linkUp:boolean }}
  */
-export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue } = {}) {
+export function useRelay(mode, { relayUrl, getConfig, getDrawScene, onState, onConfig, onCue, onDrawScene } = {}) {
   const clientRef = useRef(null);
   // CEF（consumer）の接続状態。tx の画面表示用。
   const [peer, setPeer] = useState({ connected: false, count: 0 });
@@ -32,7 +34,7 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue }
 
   // 最新の closure を ref に保持（再接続を起こさずに中身だけ差し替える）。
   const cbRef = useRef({});
-  cbRef.current = { getConfig, onState, onConfig, onCue };
+  cbRef.current = { getConfig, getDrawScene, onState, onConfig, onCue, onDrawScene };
 
   useEffect(() => {
     if (mode === 'local') {
@@ -46,10 +48,15 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue }
       onState: mode === 'rx' ? (f) => cbRef.current.onState?.(f) : undefined,
       onConfig: mode === 'rx' ? (t) => cbRef.current.onConfig?.(t) : undefined,
       onCue: mode === 'rx' ? (id, over) => cbRef.current.onCue?.(id, over) : undefined,
+      onDrawScene: mode === 'rx' ? (data) => cbRef.current.onDrawScene?.(data) : undefined,
+      // CEF(OBS) が後から繋がったら、config に加えてお絵かきシーンも再送する（取りこぼし防止）。
+      // 累積状態なので pose のように毎フレーム送らない → 接続時の再送が必須。
       onNeedConfig: mode === 'tx'
         ? () => {
             const cfg = cbRef.current.getConfig?.();
             if (cfg) client.sendConfig(cfg);
+            const scene = cbRef.current.getDrawScene?.();
+            if (scene) client.sendDrawScene(scene);
           }
         : undefined,
       onPeer: mode === 'tx'
@@ -68,6 +75,7 @@ export function useRelay(mode, { relayUrl, getConfig, onState, onConfig, onCue }
     sendState(frame) { clientRef.current?.sendState(frame); },
     sendConfig(tweaks) { clientRef.current?.sendConfig(tweaks); },
     sendCue(id, over) { clientRef.current?.sendCue(id, over); },
+    sendDrawScene(data) { clientRef.current?.sendDrawScene(data); },
     peer,
     linkUp,
   };

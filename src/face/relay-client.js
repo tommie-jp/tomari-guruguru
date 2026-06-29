@@ -7,6 +7,9 @@
 //       cue           : { type:'cue', id, stamp?, color?, size?, shadow?, offset?, hold?, anim?, weight?, stroke?,
 //                         rotation?, place?, halo?, glow?, glowColor?, gain? }
 //                       producer→consumer（演出トリガ＋スタンプ見た目の全カスタム。効果音差し替えは非対象）
+//       draw-scene    : { type:'draw-scene', data:{ scene, w, h } }  producer→consumer
+//                       （お絵かきオーバーレイの fabric シーン全体。w,h は送信元キャンバスの
+//                        論理サイズで、rx 側が viewportTransform で自分のサイズへ拡縮する）
 //       need-config   : { type:'need-config' }         server→producer（CEF 接続時の要求）
 //       peer          : { type:'peer', ... }           server→producer（CEF 接続/切断の通知）
 //
@@ -23,15 +26,16 @@ const MAX_BACKOFF_MS = 8000;
  * @param {(frame:Array<number>)=>void} [o.onState]    状態フレーム受信（rx 用）
  * @param {(tweaks:object)=>void} [o.onConfig]         config 受信（rx 用）
  * @param {(id:string, over:{stamp?:string,color?:string,size?:number,shadow?:string,offset?:{x:number,y:number}})=>void} [o.onCue]  cue 受信（rx 用・演出トリガ＋カスタム文字/色/倍率/影色/位置）
+ * @param {(data:{scene:object,w:number,h:number})=>void} [o.onDrawScene]  draw-scene 受信（rx 用・お絵かきシーン）
  * @param {()=>void} [o.onNeedConfig]                  config 要求受信（tx 用）
  * @param {(msg:object)=>void} [o.onPeer]              接続通知受信（tx 用）
  * @param {(s:{connected:boolean})=>void} [o.onStatus] 自身の接続状態変化
  * @param {(url:string)=>WebSocket} [o.makeSocket]     テスト用の差し替え口
- * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string, over?:{stamp?:string,color?:string})=>void, close:()=>void }}
+ * @returns {{ sendState:Function, sendConfig:Function, sendCue:(id:string, over?:{stamp?:string,color?:string})=>void, sendDrawScene:(data:object)=>void, close:()=>void }}
  */
 export function createRelayClient(o) {
   const {
-    url, role, onState, onConfig, onCue, onNeedConfig, onPeer, onStatus,
+    url, role, onState, onConfig, onCue, onDrawScene, onNeedConfig, onPeer, onStatus,
     makeSocket = (u) => new WebSocket(u),
   } = o;
 
@@ -67,6 +71,7 @@ export function createRelayClient(o) {
           hold: msg.hold, anim: msg.anim, weight: msg.weight, stroke: msg.stroke,
           rotation: msg.rotation, place: msg.place, halo: msg.halo, glow: msg.glow, glowColor: msg.glowColor, gain: msg.gain,
         }); break;
+        case 'draw-scene': onDrawScene?.(msg.data); break;
         case 'need-config': onNeedConfig?.(); break;
         case 'peer': onPeer?.(msg); break;
         default: break;
@@ -116,6 +121,7 @@ export function createRelayClient(o) {
       if (over && over.gain != null) m.gain = over.gain;
       rawSend(JSON.stringify(m));
     },
+    sendDrawScene(data) { rawSend(JSON.stringify({ type: 'draw-scene', data })); },
     close() {
       closed = true;
       clearTimeout(reconnectTimer);
