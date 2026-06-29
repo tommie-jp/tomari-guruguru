@@ -1820,6 +1820,11 @@ function App() {
           active={t.drawEnabled}
           showToolbar={drawMode === 'edit' && !obsMode && t.drawEnabled}
           onSceneChange={handleDrawSceneChange}
+          // 既定位置は演出アイコン帯の上（narrow=下帯の上、wide=下部の操作群の上）。中央寄せ。
+          toolbarDefaultStyle={{
+            left: '50%', transform: 'translateX(-50%)',
+            bottom: isNarrow ? 'calc(122px + var(--sab))' : 'calc(96px + var(--sab))',
+          }}
         ></DrawLayer>
       ) : null}
 

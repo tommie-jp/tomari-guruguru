@@ -42,7 +42,7 @@ function savePrefs(p) {
 }
 
 function DrawLayerImpl(props, ref) {
-  const { mode, showToolbar, active = true } = props; // mode: 'edit' | 'view'
+  const { mode, showToolbar, active = true, toolbarDefaultStyle } = props; // mode: 'edit' | 'view'
   const isEdit = mode === 'edit';
 
   // 最新の onSceneChange を ref で持つ（再購読せずに中身だけ差し替え）。
@@ -292,6 +292,7 @@ function DrawLayerImpl(props, ref) {
           width={width} onWidth={onPickWidth}
           onClear={doClear}
           onUndo={doUndo}
+          defaultStyle={toolbarDefaultStyle}
         />
       ) : null}
     </div>
@@ -307,42 +308,58 @@ const TOOL_BTNS = [
 ];
 
 const TOOLBTN_STYLE = (on) => ({
+  flex: '0 0 auto', // 横スクロール内で縮ませない（潰さず溢れさせてスクロール）
   border: 'none', borderRadius: 7, cursor: 'pointer',
   padding: '5px 9px', fontSize: 12, fontWeight: 700,
   background: on ? '#3b74e8' : 'rgba(255,255,255,0.14)', color: '#fff',
 });
 
-function DrawToolbar({ tool, setTool, color, onColor, width, onWidth, onClear, onUndo }) {
+const DEFAULT_TOOLBAR_POS = { top: 10, left: '50%', transform: 'translateX(-50%)' };
+
+function DrawToolbar({ tool, setTool, color, onColor, width, onWidth, onClear, onUndo, defaultStyle }) {
   // DraggablePanel で掴んで移動（位置は localStorage に永続化・ダブルクリックで戻す）。
-  // 操作子は [data-no-drag] でドラッグ開始を抑止し、左端に明確なドラッグハンドルを置く。
+  // 左端に固定のドラッグハンドル、その右に操作子の横スクロール帯（演出帯と同じ cuebar-scroll）。
+  // パネルは maxWidth で画面幅に収め、はみ出す操作子は横ドラッグでスライドできる。
   return (
     <DraggablePanel
       id="draw-toolbar"
       resizable={false}
-      defaultStyle={{ top: 10, left: '50%', transform: 'translateX(-50%)' }}
+      defaultStyle={defaultStyle || DEFAULT_TOOLBAR_POS}
       style={{
         zIndex: 7, pointerEvents: 'auto',
+        // 親 touch-action:none を解除（中の帯を横スクロールできるように。ハンドルは個別に none）。
+        touchAction: 'auto',
         display: 'flex', gap: 6, alignItems: 'stretch',
         padding: 5, background: 'rgba(30,30,34,0.9)', color: '#fff',
         borderRadius: 10, fontSize: 12, fontFamily: FONT_FAMILY,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.3)', userSelect: 'none', whiteSpace: 'nowrap',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.3)', userSelect: 'none',
+        // 見切れ防止: 画面幅に収める。はみ出しは中の帯を横スクロール。
+        maxWidth: 'calc(100vw - 16px)', boxSizing: 'border-box',
       }}
     >
-      {/* ドラッグ専用ハンドル（つかみやすい領域）。data-no-drag を付けないのでここで掴める。 */}
+      {/* ドラッグ専用ハンドル（固定・つかみやすい領域）。data-no-drag を付けないのでここで掴める。 */}
       <div
         title="ドラッグで移動（ダブルクリックで位置を戻す）"
         style={{
+          flex: '0 0 auto',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'move', padding: '0 8px', marginRight: 2,
+          cursor: 'move', touchAction: 'none', padding: '0 8px',
           borderRadius: 7, background: 'rgba(255,255,255,0.16)',
           fontSize: 16, lineHeight: 1, letterSpacing: 1, color: 'rgba(255,255,255,0.85)',
         }}
       >⠿</div>
-      {/* 操作子はドラッグ対象外。誤ってパネルを動かしたり位置リセットしないよう抑止する。 */}
+      {/* 操作子: 横スクロール帯。ドラッグ対象外(data-no-drag)で、横ドラッグはスクロールに使う。 */}
       <div
+        className="cuebar-scroll"
         data-no-drag
         onDoubleClick={(e) => e.stopPropagation()}
-        style={{ display: 'flex', gap: 6, alignItems: 'center' }}
+        style={{
+          flex: '1 1 auto', minWidth: 0,
+          display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'nowrap',
+          overflowX: 'auto', overflowY: 'hidden', touchAction: 'pan-x',
+          WebkitOverflowScrolling: 'touch', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'none',
+          padding: '1px 2px',
+        }}
       >
         {TOOL_BTNS.map((b) => (
           <button key={b.id} onClick={() => setTool(b.id)} style={TOOLBTN_STYLE(tool === b.id)}>{b.label}</button>
@@ -350,13 +367,13 @@ function DrawToolbar({ tool, setTool, color, onColor, width, onWidth, onClear, o
         <input
           type="color" value={color} onChange={(e) => onColor(e.target.value)}
           title="色" aria-label="色"
-          style={{ width: 28, height: 26, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+          style={{ flex: '0 0 auto', width: 28, height: 26, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
         />
         <input
           type="range" min={1} max={40} step={1} value={width}
           onChange={(e) => onWidth(Number(e.target.value))}
           title="太さ" aria-label="太さ"
-          style={{ width: 80 }}
+          style={{ flex: '0 0 auto', width: 80 }}
         />
         <button onClick={onUndo} style={TOOLBTN_STYLE(false)}>戻す</button>
         <button onClick={onClear} style={{ ...TOOLBTN_STYLE(false), background: 'rgba(229,72,77,0.85)' }}>全消し</button>
