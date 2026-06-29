@@ -29,7 +29,7 @@ const { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallbac
 
 const DEFAULT_COLOR = '#ff3b30';
 const DEFAULT_WIDTH = 6;
-const WIDTH_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // 太さのドロップダウン候補（スマホで選びやすい）
+const WIDTH_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]; // 太さのドロップダウン候補（スマホで選びやすい）
 const ERASER_SCALE = 3;          // 消しゴム幅 = ペン幅 × 係数
 const SEND_DEBOUNCE_MS = 140;    // 描画確定→送信のまとめ送り
 const HISTORY_MAX = 40;          // undo スナップショット上限
@@ -38,6 +38,7 @@ const FONT_FAMILY = "'Zen Maru Gothic', sans-serif";
 const CURSOR_SEND_MS = 40;       // カーソル送信の間引き（約25fps）
 const CURSOR_HIDE_MS = 4000;     // 受信が途切れたら残像を消す
 const LIVE_ORPHAN_MS = 1500;     // ライブ終了後に確定(draw-scene)が来ないとき、残ったプレビューを消すまで
+const MOVE_SEND_MS = 40;         // 選択ツールでの移動/拡縮/回転のライブ反映の間引き（約25fps）
 
 // 色/太さの簡易永続化（localStorage）。失敗は握りつぶす（描画機能の本質ではない）。
 const LS_KEY = 'guruguru-draw';
@@ -77,11 +78,13 @@ function DrawLayerImpl(props, ref) {
   const liveTxRef = useRef({ id: 0, pts: [], sent: 0, pending: false, raf: 0 });
   // view(rx): 受信したライブストロークの一時プレビュー。1ストローク = Path 1本。
   const liveRxRef = useRef({ id: 0, pts: [], color: DEFAULT_COLOR, width: DEFAULT_WIDTH, path: null, endTimer: 0, raf: 0 });
+  // edit(tx): 選択ツールでの移動/拡縮/回転のライブ送信スロットル。
+  const moveThrottleRef = useRef({ timer: 0 });
 
   const prefs = loadPrefs();
   const [tool, setTool] = useState('off'); // 'off' | 'pen' | 'eraser' | 'select' | 'text'
   const [color, setColor] = useState(prefs.color || DEFAULT_COLOR);
-  // 保存値が候補(1〜8)外（旧スライダーの最大40 等）なら既定へ寄せる。
+  // 保存値が候補(1〜12)外（旧スライダーの最大40 等）なら既定へ寄せる。
   const [width, setWidth] = useState(WIDTH_OPTIONS.includes(prefs.width) ? prefs.width : DEFAULT_WIDTH);
 
   // イベントハンドラ（init で1度だけ束縛）から最新値を読むための ref。
@@ -203,6 +206,7 @@ function DrawLayerImpl(props, ref) {
     // ライブ状態オブジェクトは初回固定で再代入されない。effect 内で捕捉して cleanup でも同一参照を使う。
     const liveTx = liveTxRef.current;
     const liveRx = liveRxRef.current;
+    const moveThrottle = moveThrottleRef.current;
 
     if (isEdit) {
       // 追加された実オブジェクトは消しゴム対象にする（@erase2d は erasable 真のみ消す）。
@@ -215,6 +219,20 @@ function DrawLayerImpl(props, ref) {
       fc.on('object:removed', change);
       fc.on('object:modified', change);
       fc.on('text:changed', change);
+
+      // 選択ツールでの移動/拡縮/回転を rx へリアルタイム反映する。
+      // object:modified は離した時にしか出ないので、ドラッグ中の moving/scaling/rotating を
+      // 間引いて全シーンを送る（pushHistory はしない＝undo を汚さない。確定は modified が担う）。
+      const scheduleLiveScene = () => {
+        const m = moveThrottle;
+        if (m.timer || suppressRef.current) return; // クールダウン中・読込中は送らない
+        const payload = serialize();
+        if (payload) onSceneChangeRef.current?.(payload);
+        m.timer = setTimeout(() => { m.timer = 0; }, MOVE_SEND_MS);
+      };
+      fc.on('object:moving', scheduleLiveScene);
+      fc.on('object:scaling', scheduleLiveScene);
+      fc.on('object:rotating', scheduleLiveScene);
       // テキスト道具: 空き領域クリックで IText を置いて即編集に入る。
       fc.on('mouse:down', (opt) => {
         if (toolRef.current !== 'text' || opt.target) return;
@@ -290,6 +308,7 @@ function DrawLayerImpl(props, ref) {
       if (liveTx.raf) { cancelAnimationFrame(liveTx.raf); liveTx.raf = 0; }
       if (liveRx.raf) { cancelAnimationFrame(liveRx.raf); liveRx.raf = 0; }
       clearTimeout(liveRx.endTimer); liveRx.endTimer = 0; liveRx.path = null;
+      clearTimeout(moveThrottle.timer); moveThrottle.timer = 0;
       try { fc.dispose(); } catch { /* noop */ }
       fcRef.current = null;
     };
