@@ -81,6 +81,23 @@ function assertSheetImages() {
   }
 }
 
+// PWA 成果物（vite-plugin-pwa が emit する manifest / SW / アイコン）が dist 直下に揃うか検査。
+// manifest 内のアイコン src は HTML には現れないため、ここでファイル実在を直接確認する。
+const PWA_ARTIFACTS = [
+  'manifest.webmanifest',
+  'sw.js',
+  'pwa-192x192.png',
+  'pwa-512x512.png',
+  'pwa-maskable-512x512.png',
+  'apple-touch-icon-180.png',
+];
+
+function assertPwaArtifacts() {
+  for (const name of PWA_ARTIFACTS) {
+    assertFile(join(DIST, name));
+  }
+}
+
 for (const file of HTML_FILES) {
   const html = readDistHtml(file);
   assertNoRootAssetReference(file, html);
@@ -91,5 +108,6 @@ for (const file of HTML_FILES) {
 
 assertSliceImages();
 assertSheetImages();
+assertPwaArtifacts();
 
 console.log('Pages build verification passed.');

@@ -20,6 +20,10 @@ public/*
 !public/default-themes/
 !public/ogp.png
 !public/favicon.svg
+!public/pwa-192x192.png
+!public/pwa-512x512.png
+!public/pwa-maskable-512x512.png
+!public/apple-touch-icon-180.png
 .DS_Store
 Thumbs.db
 

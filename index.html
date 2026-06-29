@@ -10,6 +10,9 @@
 <meta name="apple-mobile-web-app-title" content="ぐるぐる">
 <title>ぐるぐるアバター カメラ版</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<!-- iOS は manifest の icons を読まないため apple-touch-icon を別途指定（不透明 PNG）。
+     manifest / SW の登録は vite-plugin-pwa が <head> に注入する。 -->
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180.png">
 <meta name="description" content="Webカメラで顔の向き・口の動きに合わせて同調するブラウザアバター（PixiJS スプライト描画版）。">
 <!-- OGP / Twitter Card（SNS のカード表示用。画像・URL は本番の絶対URL） -->
 <meta property="og:type" content="website">

@@ -12,7 +12,9 @@ import { loadEnv } from 'vite';
 import { resolve, basename } from 'path';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
+import { VitePWA } from 'vite-plugin-pwa';
 import relayWsPlugin from './vite-plugin-relay.mjs';
+import { guruguruPwaManifest } from './pwa-manifest.js';
 
 // ビルドされたコミットを一意に特定するための short SHA。
 // CI(GitHub Actions)は checkout 済みなので git で取れる。取れない場合は
@@ -74,11 +76,96 @@ export default function forkConfig({ command, mode }) {
     return '';
   })();
 
+  // PWA / base で共有する基準パス。build:local の VITE_BASE=/ も含め一箇所に集約し、
+  // manifest の start_url / scope / icons[].src が base とズレないようにする。
+  const pwaBase = env.VITE_BASE || (command === 'build' ? '/guruguru-avatar/' : '/');
+
   const config = {
     // dev/preview に WS 中継を同居させる（配信版と同じ「1プロセス・同一オリジン」）。
     // mergeConfig は plugins 配列を連結するので upstream の react() と共存する。
     // 既定は loopback 限定。RELAY_EXPOSE=1（shell or .env.local）で LAN 公開にオプトイン。
-    plugins: [relayWsPlugin({ expose: env.RELAY_EXPOSE === '1' })],
+    plugins: [
+      relayWsPlugin({ expose: env.RELAY_EXPOSE === '1' }),
+      // index.html（カメラ版）をインストール可能な PWA にする。manifest / Service Worker /
+      // 登録スクリプトを Vite ビルドに同梱する。WS 中継には介在しない（navigateFallback:null）。
+      VitePWA({
+        registerType: 'autoUpdate', // 新版は次回読込で静かに有効化（配信中にトーストを出さない）
+        filename: 'sw.js',
+        injectRegister: 'auto', // 各 HTML の <head> に登録スクリプトを注入（アプリ側コード不要）
+        manifest: guruguruPwaManifest(pwaBase),
+        workbox: {
+          // app shell のみ precache。大容量の slices2 / slices2-sheets / mediapipe は除外し
+          // runtimeCaching で扱う（precache を肥大させない／2MiB 超の黙殺・ビルドエラーを避ける）。
+          globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+          globIgnores: ['**/slices2/**', '**/slices2-sheets/**', '**/mediapipe/**'],
+          // multi-page サイトなので SPA フォールバックは誤り（talk/guruguru/tracking を直に配信）。
+          navigateFallback: null,
+          // pixi/mediapipe の JS バンドルを precache に通すため上限を引き上げる（既定 2MiB）。
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          cleanupOutdatedCaches: true,
+          runtimeCaching: [
+            {
+              // MediaPipe wasm/.task（数十MB）。precache せず初回アクセスで CacheFirst。
+              urlPattern: ({ url }) =>
+                url.pathname.includes('/mediapipe/')
+                || url.pathname.endsWith('.wasm')
+                || url.pathname.endsWith('.task'),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'mediapipe-assets',
+                cacheableResponse: { statuses: [0, 200] },
+                expiration: {
+                  maxEntries: 12,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                  purgeOnQuotaError: true, // iOS の quota 逼迫時に自己回復
+                },
+                rangeRequests: true,
+              },
+            },
+            {
+              // アバターのスライス画像（多数・大容量）。CacheFirst で runtime キャッシュ。
+              urlPattern: ({ url }) =>
+                url.pathname.includes('/slices2/')
+                || url.pathname.includes('/slices2-sheets/'),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'avatar-slices',
+                expiration: {
+                  maxEntries: 2000,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                  purgeOnQuotaError: true,
+                },
+              },
+            },
+            {
+              // Google Fonts のスタイルシート（fonts.googleapis.com）= StaleWhileRevalidate
+              urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'google-fonts-stylesheets',
+                cacheableResponse: { statuses: [0, 200] },
+              },
+            },
+            {
+              // Google Fonts の本体 woff2（fonts.gstatic.com）= CacheFirst・1年（opaque=status 0）
+              urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-webfonts',
+                cacheableResponse: { statuses: [0, 200] },
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                  purgeOnQuotaError: true,
+                },
+              },
+            },
+          ],
+        },
+        // dev では SW を無効（必要なら true にして devOptions で検証）。
+        devOptions: { enabled: false, type: 'module' },
+      }),
+    ],
     // ビルド時に静的置換される定数。camera-app.jsx などから参照する。
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
@@ -94,7 +181,7 @@ export default function forkConfig({ command, mode }) {
     // VITE_BASE があれば最優先（ローカル統合サーバ配信用に base '/' を流し込む。
     //   build:local: cross-env VITE_BASE=/ vite build --outDir dist-local
     // ＝ node server/relay.mjs --web-root dist-local がルート配信で動くようにする）。
-    base: env.VITE_BASE || (command === 'build' ? '/guruguru-avatar/' : '/'),
+    base: pwaBase,
     server: {
       port: DEV_PORT,
       strictPort: true,
