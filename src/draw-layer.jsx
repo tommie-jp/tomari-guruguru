@@ -26,6 +26,7 @@ const { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallbac
 
 const DEFAULT_COLOR = '#ff3b30';
 const DEFAULT_WIDTH = 6;
+const WIDTH_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // 太さのドロップダウン候補（スマホで選びやすい）
 const ERASER_SCALE = 3;          // 消しゴム幅 = ペン幅 × 係数
 const SEND_DEBOUNCE_MS = 140;    // 描画確定→送信のまとめ送り
 const HISTORY_MAX = 40;          // undo スナップショット上限
@@ -61,7 +62,8 @@ function DrawLayerImpl(props, ref) {
   const prefs = loadPrefs();
   const [tool, setTool] = useState('off'); // 'off' | 'pen' | 'eraser' | 'select' | 'text'
   const [color, setColor] = useState(prefs.color || DEFAULT_COLOR);
-  const [width, setWidth] = useState(prefs.width || DEFAULT_WIDTH);
+  // 保存値が候補(1〜8)外（旧スライダーの最大40 等）なら既定へ寄せる。
+  const [width, setWidth] = useState(WIDTH_OPTIONS.includes(prefs.width) ? prefs.width : DEFAULT_WIDTH);
 
   // イベントハンドラ（init で1度だけ束縛）から最新値を読むための ref。
   const toolRef = useRef(tool); toolRef.current = tool;
@@ -378,12 +380,20 @@ function DrawToolbar({ tool, setTool, color, onColor, width, onWidth, onClear, o
           title="色" aria-label="色"
           style={{ flex: '0 0 auto', width: 28, height: 26, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
         />
-        <input
-          type="range" min={1} max={40} step={1} value={width}
+        <select
+          value={WIDTH_OPTIONS.includes(width) ? width : DEFAULT_WIDTH}
           onChange={(e) => onWidth(Number(e.target.value))}
           title="太さ" aria-label="太さ"
-          style={{ flex: '0 0 auto', width: 80 }}
-        />
+          style={{
+            flex: '0 0 auto', height: 28, borderRadius: 7, cursor: 'pointer',
+            border: 'none', padding: '0 6px', fontSize: 12, fontWeight: 700,
+            background: 'rgba(255,255,255,0.16)', color: '#fff',
+          }}
+        >
+          {WIDTH_OPTIONS.map((n) => (
+            <option key={n} value={n} style={{ color: '#000', background: '#fff' }}>太さ {n}</option>
+          ))}
+        </select>
         <button onClick={onUndo} style={TOOLBTN_STYLE(false)}>戻す</button>
         <button onClick={onClear} style={{ ...TOOLBTN_STYLE(false), background: 'rgba(229,72,77,0.85)' }}>全消し</button>
       </div>
