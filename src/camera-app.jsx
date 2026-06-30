@@ -85,6 +85,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "avatarId": "06-elf01",
   "inputDirection": "face",
   "mouthSource": "camera",
+  "cameraSourceMode": "pc",
   "followRange": 340,
   "micGain": 1.5,
   "smoothing": 0.3,
@@ -431,7 +432,9 @@ const DEFAULT_CUES = [
 //  - sbMutedTx … 手元(tx)モニタのミュート。tx 自身だけ黙らせる（rx に影響させない）→ 非同期。
 //  - sbMutedRx … 配信(rx)のミュート。rx に UI が無いので tx から同期して遠隔操作 → 同期する(除外しない)。
 //  - sbGain/sbButtons … 各ページのローカル音量/UI（rx 全体音量は OBS ミキサーで調整）→ 非同期。
-const LOCAL_ONLY_TWEAKS = ['sbMutedTx', 'sbGain', 'sbButtons', 'drawEnabled', 'cursorEnabled'];
+// cameraSourceMode は「PC のカメラを使うか／スマホ(tx)に渡すか」という tx ローカルの運用切替で、
+// rx(OBS) には無関係なので同期対象から外す（rx 側の保存 tweaks を汚さない）。
+const LOCAL_ONLY_TWEAKS = ['sbMutedTx', 'sbGain', 'sbButtons', 'drawEnabled', 'cursorEnabled', 'cameraSourceMode'];
 function syncableTweaks(tw) {
   const out = { ...tw };
   for (const k of LOCAL_ONLY_TWEAKS) delete out[k];
@@ -885,6 +888,10 @@ function App() {
   // 逆向きは 'err' を一定時間出す。方向ごとに別タイマーで消す。
   const [dirFlash, setDirFlash] = useState({});
   const dirFlashTimersRef = useRef({});
+  // アバターのダブルクリック校正のとき、正ボタンが隠れていても効いたと分かるよう
+  // アバター上に短く出すピル。猶予は十字校正と同じ CALIBRATE_FEEDBACK_MS。
+  const [centerCalibFlash, setCenterCalibFlash] = useState(false);
+  const centerCalibFlashTimerRef = useRef(null);
   const [showCalibDetail, setShowCalibDetail] = useState(false); // 向き校正パネルの説明を展開するか
   const [showDebugDetail, setShowDebugDetail] = useState(false); // デバッグパネルの数値を展開するか
   // スマホ用「反映先」トグル。ON のとき操作は local 層（この端末だけ・CEF へ送らない）。
@@ -957,7 +964,11 @@ function App() {
   // フォールバック中(カメラ不可)に口=カメラのままは成立しないので閉じへ寄せる（mic は手動で選ぶ）。
   const effMouthSrc = (autoMouseFallback && t.mouthSource === 'camera') ? 'none' : t.mouthSource;
   // 各ソースの有効/無効。3フックは常に呼び、この enabled だけで切替える（Rules of Hooks）。
-  const camEnabled = !isRx && (effDirection === 'face' || effMouthSrc === 'camera');
+  // tx で「カメラ源=スマホ」を選ぶと PC カメラを止める（スマホが tx になって pose を送る）。
+  // tx 以外（local / rx）では cameraSourceMode を無視して従来どおり（local 起動でカメラが
+  // 止まったまま戻せなくなるのを防ぐ。トグル UI も tx のときだけ出す）。
+  const pcCamActive = mode !== 'tx' || t.cameraSourceMode === 'pc';
+  const camEnabled = !isRx && pcCamActive && (effDirection === 'face' || effMouthSrc === 'camera');
   const mouseEnabled = !isRx && effDirection === 'mouse';
   const micEnabled = !isRx && effMouthSrc === 'mic';
   // カメラで実まばたきが取れるのは口=カメラのときだけ。それ以外は自動まばたきに委譲する。
@@ -1103,6 +1114,14 @@ function App() {
         return next;
       });
     }, CALIBRATE_FEEDBACK_MS);
+  }
+
+  // アバターのダブルクリック校正用フィードバック。十字「正」ボタンは校正パネルを
+  // 開いていないと見えないため、アバター上に短くピルを出して効いたことを知らせる。
+  function flashCenterCalib() {
+    setCenterCalibFlash(true);
+    clearTimeout(centerCalibFlashTimerRef.current);
+    centerCalibFlashTimerRef.current = setTimeout(() => setCenterCalibFlash(false), CALIBRATE_FEEDBACK_MS);
   }
 
   // 十字の「正」ボタン: 旧「校正」ボタンと同じ＝今の向き＝正面・距離＝基準・目＝まばたき
@@ -1337,7 +1356,9 @@ function App() {
           readSignals(), twFrame, exprStateRef.current, now,
           { blinkOverride: autoBlinkRef.current, user: sentUser },
         );
-        if (mode === 'tx' && now - lastSent >= SEND_INTERVAL_MS) {
+        // カメラ源=スマホ のときは PC からは送らない（PC の neutral フレームがスマホ tx と
+        // 競合してアバターがブレるのを防ぐ＝同時に有効な tx は 1 つ）。
+        if (mode === 'tx' && tw.cameraSourceMode === 'pc' && now - lastSent >= SEND_INTERVAL_MS) {
           lastSent = now;
           relayApi.sendState(encodeStateFrame(frame));
         }
@@ -2278,6 +2299,14 @@ function App() {
             （開閉は localStorage に永続化）。各セクションはコントロールを内側に
             入れ子にする（兄弟並びは折りたたみ対象にならない）。 */}
         <TweakSection label="入力ソース" collapsible defaultOpen>
+          {/* カメラ源: PC の Web カメラ / スマホ(QR で ?tx を渡す)。tx のときだけ意味を持つ。
+              スマホを選ぶと PC カメラと送信を止め、右上の QR からスマホが tx を引き継ぐ。
+              （スマホ実機が中継へ届くのは wss フェーズ。同一機なら別タブ ?tx で擬似確認可） */}
+          {mode === 'tx' && (
+            <TweakRadio label="カメラ入力源" value={t.cameraSourceMode}
+              options={[{ value: 'pc', label: 'PCカメラ' }, { value: 'phone', label: 'スマホ(QR)' }]}
+              onChange={(v) => setTweak('cameraSourceMode', v)}></TweakRadio>
+          )}
           <TweakRadio label="向きの入力" value={t.inputDirection}
             options={[{ value: 'face', label: 'カメラ' }, { value: 'mouse', label: 'マウス' }]}
             onChange={(v) => {
