@@ -13,6 +13,7 @@ node_modules/
 dist/
 dist-local/
 dist-exe/
+dist-electron/
 public/*
 !public/slices2/
 !public/slices2-sheets/
