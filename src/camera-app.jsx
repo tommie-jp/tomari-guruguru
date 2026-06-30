@@ -71,9 +71,16 @@ const VERSION_LABEL_SHORT =
 // 公開オリジン（tailscale 証明書名 → https://FQDN:5173）を注入する。無ければ現在開いている
 // オリジン（tailscale URL で開いていればそれで正しい）。パスは BASE_URL を尊重するので
 // GitHub Pages の /guruguru-avatar/ サブパスでも壊れない。
+// Electron 窓は ?txorigin= でスマホ到達可能な公開オリジン(https FQDN)を渡す。これを最優先で
+// QR に使う（窓自身は loopback を読むが、QR だけはスマホが開ける URL を指す）。dev サーバの
+// __TX_PUBLIC_ORIGIN__（ビルド define）→ location.origin の順にフォールバック（従来動作）。
+const TX_ORIGIN_OVERRIDE =
+  (typeof location !== 'undefined'
+    && new URLSearchParams(location.search).get('txorigin')) || '';
 const TX_PUBLIC_ORIGIN =
-  (typeof __TX_PUBLIC_ORIGIN__ !== 'undefined' && __TX_PUBLIC_ORIGIN__) ||
-  (typeof location !== 'undefined' ? location.origin : '');
+  TX_ORIGIN_OVERRIDE
+  || (typeof __TX_PUBLIC_ORIGIN__ !== 'undefined' && __TX_PUBLIC_ORIGIN__)
+  || (typeof location !== 'undefined' ? location.origin : '');
 const TX_URL = `${TX_PUBLIC_ORIGIN}${import.meta.env.BASE_URL}index.html?tx`;
 
 // 配布デフォルト値。旧 default-themes/camera.html.json の "01-for-PC(Default)" を

@@ -12,6 +12,7 @@ import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEmbeddedServer } from './embedded-server.mjs';
+import { getTailscaleFqdn } from './tailscale.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.join(__dirname, '..');
@@ -26,6 +27,9 @@ const WEB_ROOT = app.isPackaged
 let mainWindow = null;
 /** @type {{ server: import('node:http').Server, port: number } | null} */
 let embedded = null;
+// スマホ(tx) の QR が指す公開オリジン（https://<tailscale-fqdn>）。Tailscale 検出時のみ設定。
+// 未設定なら QR は従来どおり loopback http（＝同一機ブラウザでの tx 用）。
+let txPublicOrigin = '';
 
 const appOrigin = () => `http://${HOST}:${embedded?.port}`;
 
@@ -78,7 +82,10 @@ function createWindow() {
   });
 
   // 窓 = 既存 ?tx ページ（既定 PCカメラ）。カメラ源トグルは app 内で pc/phone を切替える。
-  mainWindow.loadURL(`${appOrigin()}/index.html?tx`);
+  // txPublicOrigin があれば ?txorigin= で渡す＝窓自身は loopback を読みつつ、スマホ向け QR
+  // だけが https FQDN を指すようになる（QR は ?txorigin を最優先で TX_URL に使う）。
+  const txParam = txPublicOrigin ? `&txorigin=${encodeURIComponent(txPublicOrigin)}` : '';
+  mainWindow.loadURL(`${appOrigin()}/index.html?tx${txParam}`);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -100,6 +107,23 @@ if (!app.requestSingleInstanceLock()) {
     console.log(`[guru] serving ${WEB_ROOT} at ${appOrigin()}`);
     // eslint-disable-next-line no-console
     console.log(`[guru] OBS browser source: ${appOrigin()}/index.html?rx&obs`);
+
+    // スマホ(tx)用: Tailscale FQDN を検出できれば QR を https FQDN に向ける。
+    // TLS 終端は別途このPCで一度: tailscale serve --bg --https=443 http://127.0.0.1:<port>
+    try {
+      const fqdn = await getTailscaleFqdn();
+      txPublicOrigin = `https://${fqdn}`; // serve --https=443 → ポート無し
+      // eslint-disable-next-line no-console
+      console.log(`[guru] tailscale FQDN: ${fqdn}`);
+      // eslint-disable-next-line no-console
+      console.log(`[guru] スマホtx URL（serve起動後）: ${txPublicOrigin}/index.html?tx`);
+      // eslint-disable-next-line no-console
+      console.log(`[guru] このPCで一度だけ実行: tailscale serve --bg --https=443 http://127.0.0.1:${embedded.port}`);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log(`[guru] Tailscale FQDN 取得不可（${e.message}）→ QRはloopbackのまま（スマホtxは要Tailscale）`);
+    }
+
     setupPermissions();
     createWindow();
     app.on('activate', () => {
